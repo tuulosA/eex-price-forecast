@@ -10,6 +10,9 @@ Command groups:
 - eex backfill entsoe: backfill DE price + wind/solar/load actuals.
 - eex backfill weather: backfill weather history at the chosen points.
 - eex analyze correlation: feature correlation matrix over the backfilled data.
+- eex model train: train the generation sub-models and the price model.
+- eex model tune: Optuna walk-forward hyperparameter tuning for one model.
+- eex forecast: run the pipeline and write the 14-day price forecast.
 """
 
 from __future__ import annotations
@@ -21,6 +24,9 @@ from typing import Annotated
 import typer
 
 from eex_forecast import backfill as backfill_ops
+from eex_forecast import forecast as forecast_ops
+from eex_forecast import model as model_ops
+from eex_forecast import tuning
 from eex_forecast.analysis import (
     aggregate_features,
     correlation_matrix,
@@ -28,8 +34,15 @@ from eex_forecast.analysis import (
     save_heatmap,
 )
 from eex_forecast.analysis.correlation import correlations_with
-from eex_forecast.config import ANALYSIS_DIR, CANDIDATES_DIR, RANK_DIR, get_settings
+from eex_forecast.config import (
+    ANALYSIS_DIR,
+    CANDIDATES_DIR,
+    HORIZON_DAYS,
+    RANK_DIR,
+    get_settings,
+)
 from eex_forecast.db import connect, init_db, read_frame, read_target_series
+from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
 from eex_forecast.weather.point_search import (
@@ -51,11 +64,13 @@ backfill_app = typer.Typer(help="Backfill data into the database.", no_args_is_h
 analyze_app = typer.Typer(
     help="Exploratory analysis over the backfilled data.", no_args_is_help=True
 )
+model_app = typer.Typer(help="Train and tune the forecast models.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
 app.add_typer(points_app, name="points")
 app.add_typer(backfill_app, name="backfill")
 app.add_typer(analyze_app, name="analyze")
+app.add_typer(model_app, name="model")
 
 
 class Mode(StrEnum):
@@ -67,6 +82,14 @@ class Target(StrEnum):
     wind = "wind"
     temp = "temp"
     solar = "solar"
+
+
+class ModelName(StrEnum):
+    all = "all"
+    wind = "wind"
+    solar = "solar"
+    load = "load"
+    price = "price"
 
 
 @app.callback()
@@ -220,6 +243,76 @@ def analyze_correlation(
     typer.echo(f"Correlation matrix -> {csv_path}, {png_path}")
     if top:
         typer.echo(f"  vs price: {top}")
+
+
+# -- model ----------------------------------------------------------------------
+@model_app.command("train")
+def model_train(
+    target: Annotated[
+        ModelName, typer.Option(help="Which model to train ('all' for every model).")
+    ] = ModelName.all,
+) -> None:
+    """Train the generation sub-models and/or the price model on the full backfilled history."""
+    names = list(ALL_MODELS) if target is ModelName.all else [target.value]
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+    for name in names:
+        trained = model_ops.train(REGISTRY[name], frame)
+        path = trained.save()
+        typer.echo(f"Trained '{name}' ({len(trained.feature_names)} features) -> {path}")
+
+
+@model_app.command("tune")
+def model_tune(
+    target: Annotated[ModelName, typer.Option(help="Model to tune (not 'all').")],
+    trials: Annotated[int, typer.Option(help="Optuna trials.")] = 40,
+    cutoffs: Annotated[int, typer.Option(help="Walk-forward cutoffs.")] = 8,
+    horizon_hours: Annotated[int, typer.Option(help="Backtest horizon per cutoff.")] = HORIZON_DAYS
+    * 24,
+) -> None:
+    """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json."""
+    if target is ModelName.all:
+        raise typer.BadParameter(
+            "Tune one model at a time (wind / solar / load / price), not 'all'."
+        )
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+    result = tuning.tune(
+        REGISTRY[target.value],
+        frame,
+        n_trials=trials,
+        n_cutoffs=cutoffs,
+        horizon_hours=horizon_hours,
+    )
+    path = model_ops.save_params(target.value, result.params)
+    typer.echo(
+        f"Tuned '{target.value}': mean MAE {result.best_value:.3f} over {result.n_folds} folds "
+        f"-> {path}"
+    )
+
+
+# -- forecast -------------------------------------------------------------------
+@app.command("forecast")
+def forecast_cmd(
+    horizon_days: Annotated[int, typer.Option(help="Forecast horizon in days.")] = HORIZON_DAYS,
+    write_db: Annotated[
+        bool, typer.Option(help="Also upsert the forecast into the database.")
+    ] = False,
+    plot: Annotated[bool, typer.Option(help="Also write a price-forecast plot.")] = False,
+) -> None:
+    """Run the pipeline (weather forecast -> sub-models -> price) and write the forecast to CSV."""
+    result = forecast_ops.run_forecast(
+        str(get_settings().db_path), horizon_days=horizon_days, write_db=write_db, plot=plot
+    )
+    prices = result["price_forecast_eur_mwh"]
+    typer.echo(
+        f"Forecast {len(result)} hours: price EUR/MWh "
+        f"min={prices.min():.1f} mean={prices.mean():.1f} max={prices.max():.1f}"
+    )
 
 
 if __name__ == "__main__":

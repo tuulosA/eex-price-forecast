@@ -15,6 +15,10 @@ points that best explain German generation, and forecast price out to a 14-day h
 2. **Data backfill into SQLite.** Pulls DE day-ahead prices and wind / solar / load actuals from
    ENTSO-E, and hourly weather (100 m wind, 2 m temperature, shortwave radiation) from Open-Meteo at
    the chosen points.
+3. **Multi-stage price forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and
+   load from the weather; the **price model** then forecasts the day-ahead price from those fundamentals
+   plus calendar, price lags, and weather aggregates. Hyperparameters are tuned by **Optuna walk-forward**
+   backtesting, and the pipeline writes a 14-day hourly forecast to CSV (with an optional plot).
 
 Actuals and forecasts are stored in **separate columns** for every series, so model predictions never
 overwrite measured values.
@@ -31,12 +35,18 @@ src/eex_forecast/
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
     openmeteo.py       # Open-Meteo client (archive history + forecast)
     point_search.py    # rank candidates by best lagged Pearson vs a target series
+  analysis/            # correlation matrix + candidate/ranked point map
   backfill.py          # orchestrate ENTSO-E + weather backfills
+  features.py          # calendar, price lags, weather aggregates, per-model feature builders
+  model.py             # XGBoost model registry (wind/solar/load/price) + train/predict/persist
+  tuning.py            # Optuna walk-forward hyperparameter tuning
+  forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
   cli.py               # `eex` command-line interface
 ```
 
 The geometry / candidate logic is pure Python (point-in-ring), so there is **no GIS/shapely
-dependency**.
+dependency**. The price model consumes the three generation sub-models' forecasts as its fundamentals,
+so the chain runs weather -> wind/solar/load -> price.
 
 ## Quickstart
 
@@ -97,6 +107,19 @@ eex analyze correlation                   # feature correlation matrix (CSV + he
 sensibly; `analyze correlation` reduces the database to the fundamentals plus a national mean per
 weather role and shows how each driver correlates with the day-ahead price before any model is built.
 
+Then train the models and run the forecast:
+
+```bash
+eex model tune --target price             # optional: Optuna walk-forward tuning (also wind/solar/load)
+eex model train                           # train all four models (wind, solar, load, price)
+eex forecast --plot                       # 14-day price forecast -> data/forecast/ (CSV + plot)
+```
+
+`model tune` writes the best hyperparameters to `config/hyperparams.json`, which `model train` then
+uses (falling back to sensible defaults when a model has not been tuned). `forecast` fetches the
+Open-Meteo weather forecast, runs the generation sub-models to fill the fundamentals, then the price
+model, and writes the hourly forecast (add `--write-db` to also store it in the database).
+
 ## Development
 
 With the venv activated:
@@ -114,9 +137,6 @@ needed to run the tests.
 
 Planned, to be implemented:
 
-- **Price model & forecast pipeline** — an XGBoost price model with engineered features (price lags,
-  calendar, fundamentals, weather), Optuna walk-forward hyperparameter tuning, and a pipeline that
-  writes a 14-day forecast to CSV (and optionally the database), with an optional plot.
 - **A/B feature-ablation tool** — measure each feature group's marginal contribution to forecast skill.
 - **Installed-capacity scaling** — fetch ENTSO-E installed wind/solar capacity and model generation in
   percent-of-capacity, so the wind/solar forecasts stay calibrated as the fleet grows.

@@ -34,6 +34,13 @@ def init_db(db_path: str | Path) -> None:
         create_schema(conn)
 
 
+def _utc_iso(value: str | pd.Timestamp) -> str:
+    """ISO-8601 UTC string for a bound, accepting naive or tz-aware inputs alike."""
+    ts = pd.Timestamp(value)
+    ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+    return str(ts.isoformat())
+
+
 def _normalize_timestamps(values: pd.Series) -> pd.Series:
     """Coerce a timestamp column to canonical ISO-8601 UTC strings (e.g. ``2026-06-25T13:00:00+00:00``)."""
     parsed = pd.to_datetime(values, utc=True, errors="coerce")
@@ -90,10 +97,10 @@ def read_frame(
     params: list[Any] = []
     if start is not None:
         clauses.append(f'"{TIMESTAMP}" >= ?')
-        params.append(pd.Timestamp(start, tz="UTC").isoformat())
+        params.append(_utc_iso(start))
     if end is not None:
         clauses.append(f'"{TIMESTAMP}" <= ?')
-        params.append(pd.Timestamp(end, tz="UTC").isoformat())
+        params.append(_utc_iso(end))
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     frame = pd.read_sql_query(
         f'SELECT {selected} FROM "{TABLE}"{where} ORDER BY "{TIMESTAMP}"', conn, params=params
