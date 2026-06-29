@@ -40,6 +40,8 @@ SOLAR_PRODUCTION_TYPES = ("Solar", "Solar photovoltaic")
 _RETRY_ATTEMPTS = 3
 _RETRY_BACKOFF_S = 5
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+# For load (a non-zero-baseline series), reject readings below scale / this ratio as stuck-zero glitches.
+_BASELINE_FLOOR_RATIO = 20.0
 
 T = TypeVar("T")
 Query = Callable[
@@ -148,15 +150,21 @@ def _sum_production_types(frame: pd.DataFrame, types: tuple[str, ...]) -> pd.Ser
     return frame[present].sum(axis=1, min_count=1)
 
 
-def _to_hourly_utc(series: pd.Series, *, guard: bool) -> pd.Series:
-    """UTC-index, de-duplicate, optionally guard, and resample sub-hourly data to an hourly mean."""
+def _to_hourly_utc(series: pd.Series, *, guard: bool, baseline: bool = False) -> pd.Series:
+    """UTC-index, de-duplicate, optionally guard, and resample sub-hourly data to an hourly mean.
+
+    ``baseline=True`` marks a series with a real non-zero floor (load); generation series, which reach
+    zero legitimately, are guarded against large-magnitude spikes only (no low-value floor).
+    """
     series = pd.to_numeric(series, errors="coerce")
     series.index = pd.to_datetime(series.index, utc=True)
     series = series.sort_index()
     series = series[~series.index.duplicated(keep="last")]
 
     if guard:
-        cleaned, rejected = clip_implausible(series, scale=window_scale(series))
+        scale = window_scale(series)
+        floor = scale / _BASELINE_FLOOR_RATIO if (baseline and scale is not None) else None
+        cleaned, rejected = clip_implausible(series, scale=scale, floor=floor)
         for index, value in rejected:
             logger.warning("Rejected implausible value %.0f at %s", value, index)
         series = cleaned
@@ -219,7 +227,7 @@ def fetch_load(start: str | date | datetime, end: str | date | datetime) -> pd.D
         series = raw[column] if column in raw.columns else raw.iloc[:, 0]
     else:
         series = raw
-    return _to_frame(_to_hourly_utc(series, guard=True), "load_actual_mw")
+    return _to_frame(_to_hourly_utc(series, guard=True, baseline=True), "load_actual_mw")
 
 
 def _empty(value_columns: list[str]) -> pd.DataFrame:

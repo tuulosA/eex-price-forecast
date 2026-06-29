@@ -23,8 +23,22 @@ def test_clip_is_noop_without_scale() -> None:
     assert cleaned.tolist() == [1.0, 2.0, 9e9]
 
 
-def test_clip_catches_negative_and_zero() -> None:
-    _, rejected = clip_implausible(pd.Series([-5.0, 0.0, 60_000.0]), scale=70_000.0)
+def test_clip_zero_baseline_keeps_low_values() -> None:
+    # Solar/wind at night/dawn are legitimately low; only a true spike must be rejected.
+    series = pd.Series([0.0, 1.0, 250.0, 1928.0, 45_000.0, 999_999.0])
+    cleaned, rejected = clip_implausible(series, scale=50_000.0)  # floor=None (zero-baseline)
+    assert [value for _, value in rejected] == [999_999.0]
+    assert cleaned.iloc[:5].tolist() == [0.0, 1.0, 250.0, 1928.0, 45_000.0]
+
+
+def test_clip_zero_baseline_rejects_large_negative_spike() -> None:
+    _, rejected = clip_implausible(pd.Series([0.0, -4_315_703.0, 100.0]), scale=50_000.0)
+    assert [value for _, value in rejected] == [-4_315_703.0]
+
+
+def test_clip_with_floor_rejects_low_values() -> None:
+    # Load has a real non-zero baseline, so a stuck-zero/negative reading is a glitch.
+    _, rejected = clip_implausible(pd.Series([-5.0, 0.0, 60_000.0]), scale=70_000.0, floor=3_500.0)
     assert {value for _, value in rejected} == {-5.0, 0.0}
 
 

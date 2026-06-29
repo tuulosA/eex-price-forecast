@@ -6,9 +6,11 @@ such a value into the hour silently corrupts it. :func:`clip_implausible` reject
 plausibility band derived from the series' own scale, so clean data is left untouched and only gross
 corruption is dropped to NaN (then excluded from the resample).
 
-This is a guard against corruption, not a smoother - the band is deliberately wide. It is magnitude-
-and direction-agnostic, catching huge spikes, negatives, and stuck-zero glitches alike. It is **not**
-applied to market prices, which are genuinely volatile (legitimate spikes to several thousand EUR/MWh).
+This is a guard against gross corruption, not a smoother - the band is deliberately wide. Series that
+legitimately reach zero (wind and solar generation) are guarded only against large-magnitude spikes of
+either sign; a series with a real non-zero baseline (load) is additionally floored, so a stuck-zero or
+negative glitch - which cannot be genuine for it - is caught. The guard is **not** applied to market
+prices, which are genuinely volatile (legitimate spikes to several thousand EUR/MWh).
 """
 
 from __future__ import annotations
@@ -26,18 +28,25 @@ def clip_implausible(
     *,
     scale: float | None,
     k: float = 3.0,
-    floor_ratio: float = 20.0,
+    floor: float | None = None,
 ) -> tuple[pd.Series, list[Rejection]]:
-    """Set values outside ``[scale / floor_ratio, k * scale]`` to NaN.
+    """Reject grossly implausible values to NaN. A no-op when ``scale`` is None/non-finite/non-positive.
+
+    Two modes:
+
+    - **Zero-baseline** (``floor=None``, the default): for a series that legitimately reaches zero, such
+      as wind or solar generation. Only ``|value| > k * scale`` is rejected (a huge spike of either
+      sign); every low or zero reading is kept.
+    - **Non-zero-baseline** (``floor`` given, e.g. ``scale / 20`` for load): values above ``k * scale``
+      *or* below ``floor`` are rejected - the latter catching stuck-zero/negative glitches that, for a
+      series with a real lower bound, cannot be genuine.
 
     Args:
         values: numeric series (its index is preserved for logging).
-        scale: the series' typical upper magnitude - e.g. a high percentile of the fetched window. A
-            no-op when ``scale`` is ``None`` / non-finite / non-positive.
-        k: ceiling headroom multiple above ``scale`` (default 3). A physical series such as load never
-            triples its own recent peak from one reading to the next.
-        floor_ratio: the floor is ``scale / floor_ratio`` (default 1/20 of scale), catching
-            zero/negative glitches without touching legitimate low values.
+        scale: the series' typical upper magnitude - e.g. a high percentile of the fetched window.
+        k: ceiling headroom multiple above ``scale`` (default 3) - a physical series does not triple
+            its own recent peak from one reading to the next.
+        floor: absolute lower bound for a non-zero-baseline series; ``None`` for a zero-baseline one.
 
     Returns:
         ``(cleaned, rejected)`` - the series with out-of-band points set to NaN, and the dropped
@@ -48,8 +57,8 @@ def clip_implausible(
         return series, []
 
     ceiling = k * scale
-    floor = scale / floor_ratio
-    bad = series.notna() & ((series > ceiling) | (series < floor))
+    out_of_band = series.abs() > ceiling if floor is None else (series > ceiling) | (series < floor)
+    bad = series.notna() & out_of_band
     rejected: list[Rejection] = [(idx, float(val)) for idx, val in series[bad].items()]
     if rejected:
         series = series.mask(bad)
