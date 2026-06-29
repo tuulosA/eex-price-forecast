@@ -22,6 +22,7 @@ GEO_DIR = DATA_DIR / "geo"
 CANDIDATES_DIR = DATA_DIR / "candidates"
 WEATHER_CACHE_DIR = DATA_DIR / "weather_cache"
 RANK_DIR = DATA_DIR / "rank"
+ANALYSIS_DIR = DATA_DIR / "analysis"  # correlation matrices and point maps
 
 # -- German market / domain constants -------------------------------------------
 AREA_CODE = "DE"

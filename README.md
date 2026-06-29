@@ -86,6 +86,17 @@ eex points rank --target solar
 eex backfill weather --start 2023-01-01   # weather at the chosen points
 ```
 
+Once the data is in place, two exploratory tools write to `data/analysis/`:
+
+```bash
+eex points map                            # candidates + ranked points on a map of Germany (PNG)
+eex analyze correlation                   # feature correlation matrix (CSV + heatmap PNG)
+```
+
+`points map` is a sanity check that the search reached offshore for wind and spread the chosen points
+sensibly; `analyze correlation` reduces the database to the fundamentals plus a national mean per
+weather role and shows how each driver correlates with the day-ahead price before any model is built.
+
 ## Development
 
 With the venv activated:
@@ -106,7 +117,7 @@ Planned, to be implemented:
 - **Price model & forecast pipeline** — an XGBoost price model with engineered features (price lags,
   calendar, fundamentals, weather), Optuna walk-forward hyperparameter tuning, and a pipeline that
   writes a 14-day forecast to CSV (and optionally the database), with an optional plot.
-- **Analysis tools** — a feature correlation-matrix tool and an A/B feature-ablation tool.
+- **A/B feature-ablation tool** — measure each feature group's marginal contribution to forecast skill.
 - **Installed-capacity scaling** — fetch ENTSO-E installed wind/solar capacity and model generation in
   percent-of-capacity, so the wind/solar forecasts stay calibrated as the fleet grows.
 - **Separate onshore/offshore wind** — experiment with splitting the combined wind series into its

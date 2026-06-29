@@ -20,11 +20,12 @@ dependencies = [
     "typer>=0.12",
     "pydantic>=2.5",
     "pydantic-settings>=2.1",
+    "matplotlib>=3.7",
 ]
 
 [project.optional-dependencies]
-# Optional model/pipeline dependencies — not needed for the data and point-search setup.
-model = ["xgboost>=2.0", "optuna>=3.6", "matplotlib>=3.7"]
+# Optional model/pipeline dependencies — not needed for the data, point-search, and analysis setup.
+model = ["xgboost>=2.0", "optuna>=3.6"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -64,7 +65,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 # Third-party libraries without type stubs:
 [[tool.mypy.overrides]]
-module = ["entsoe.*", "responses.*"]
+module = ["entsoe.*", "responses.*", "matplotlib.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 

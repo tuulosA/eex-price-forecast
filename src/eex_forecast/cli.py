@@ -6,8 +6,10 @@ Command groups:
 - eex geo download: download the land / land+sea geometry files (one-time).
 - eex points build: generate candidate weather points (--mode zones|land).
 - eex points rank: rank candidates against an actual and write the chosen points to config.
+- eex points map: plot candidate and selected points on a map of Germany.
 - eex backfill entsoe: backfill DE price + wind/solar/load actuals.
 - eex backfill weather: backfill weather history at the chosen points.
+- eex analyze correlation: feature correlation matrix over the backfilled data.
 """
 
 from __future__ import annotations
@@ -19,12 +21,20 @@ from typing import Annotated
 import typer
 
 from eex_forecast import backfill as backfill_ops
-from eex_forecast.config import CANDIDATES_DIR, RANK_DIR, get_settings
-from eex_forecast.db import connect, init_db, read_target_series
+from eex_forecast.analysis import (
+    aggregate_features,
+    correlation_matrix,
+    plot_points_map,
+    save_heatmap,
+)
+from eex_forecast.analysis.correlation import correlations_with
+from eex_forecast.config import ANALYSIS_DIR, CANDIDATES_DIR, RANK_DIR, get_settings
+from eex_forecast.db import connect, init_db, read_frame, read_target_series
 from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
 from eex_forecast.weather.point_search import (
     ROLES,
+    load_points_config,
     rank_candidates,
     save_points,
     select_points,
@@ -38,10 +48,14 @@ points_app = typer.Typer(
     help="Weather-point candidate generation and ranking.", no_args_is_help=True
 )
 backfill_app = typer.Typer(help="Backfill data into the database.", no_args_is_help=True)
+analyze_app = typer.Typer(
+    help="Exploratory analysis over the backfilled data.", no_args_is_help=True
+)
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
 app.add_typer(points_app, name="points")
 app.add_typer(backfill_app, name="backfill")
+app.add_typer(analyze_app, name="analyze")
 
 
 class Mode(StrEnum):
@@ -137,6 +151,31 @@ def points_rank(
     )
 
 
+@points_app.command("map")
+def points_map() -> None:
+    """Plot candidate and selected weather points on a map of Germany (writes a PNG)."""
+    candidates = [
+        candidate
+        for name in ("candidates_zones.csv", "candidates_land.csv")
+        if (CANDIDATES_DIR / name).exists()
+        for candidate in candidate_ops.read_candidates(CANDIDATES_DIR / name)
+    ]
+    if not candidates:
+        raise typer.BadParameter("No candidate CSVs found. Run `eex points build` first.")
+    land_rings = (
+        candidate_ops.germany_rings(geometry.LAND_PATH) if geometry.LAND_PATH.exists() else []
+    )
+    zones_rings = (
+        candidate_ops.germany_rings(geometry.ZONES_PATH) if geometry.ZONES_PATH.exists() else []
+    )
+    selected = load_points_config()
+    out_path = plot_points_map(
+        land_rings, zones_rings, candidates, selected, ANALYSIS_DIR / "candidate_map.png"
+    )
+    chosen = sum(len(points) for points in selected.values())
+    typer.echo(f"Mapped {len(candidates)} candidates and {chosen} selected points -> {out_path}")
+
+
 # -- backfill -------------------------------------------------------------------
 @backfill_app.command("entsoe")
 def backfill_entsoe(
@@ -156,6 +195,31 @@ def backfill_weather(
     """Backfill weather history at the configured points."""
     counts = backfill_ops.backfill_weather(get_settings().db_path, start=start, end=end)
     typer.echo(f"Backfilled {len(counts)} weather columns (e.g. {next(iter(counts), '-')}).")
+
+
+# -- analyze --------------------------------------------------------------------
+@analyze_app.command("correlation")
+def analyze_correlation(
+    start: Annotated[str | None, typer.Option(help="Start date (default: all data).")] = None,
+    end: Annotated[str | None, typer.Option(help="End date (default: all data).")] = None,
+) -> None:
+    """Compute the feature correlation matrix over the backfilled data (writes a CSV + heatmap PNG)."""
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn, start=start, end=end)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    corr = correlation_matrix(aggregate_features(frame))
+    ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
+    csv_path = ANALYSIS_DIR / "correlation.csv"
+    corr.round(4).to_csv(csv_path)
+    png_path = save_heatmap(corr, ANALYSIS_DIR / "correlation.png")
+
+    versus_price = correlations_with(corr, "price")
+    top = ", ".join(f"{name}={value:+.2f}" for name, value in versus_price.items())
+    typer.echo(f"Correlation matrix -> {csv_path}, {png_path}")
+    if top:
+        typer.echo(f"  vs price: {top}")
 
 
 if __name__ == "__main__":
