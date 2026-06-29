@@ -1,13 +1,13 @@
-"""``eex`` — the command-line interface.
+"""eex - command-line interface for the DE price-forecast data foundation.
 
 Command groups:
 
-- ``eex db init`` — create the SQLite database.
-- ``eex geo download`` — download the land / land+sea geometry files (one-time).
-- ``eex points build`` — generate candidate weather points (``--mode zones|land``).
-- ``eex points rank`` — rank candidates against an actual and write the chosen points to config.
-- ``eex backfill entsoe`` — backfill DE price + wind/solar/load actuals.
-- ``eex backfill weather`` — backfill weather history at the chosen points.
+- eex db init: create the SQLite database.
+- eex geo download: download the land / land+sea geometry files (one-time).
+- eex points build: generate candidate weather points (--mode zones|land).
+- eex points rank: rank candidates against an actual and write the chosen points to config.
+- eex backfill entsoe: backfill DE price + wind/solar/load actuals.
+- eex backfill weather: backfill weather history at the chosen points.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ def _main() -> None:
     )
 
 
-# ── db ─────────────────────────────────────────────────────────────────────────
+# -- db -------------------------------------------------------------------------
 @db_app.command("init")
 def db_init() -> None:
     """Initialise the SQLite database (creates the schema)."""
@@ -71,7 +71,7 @@ def db_init() -> None:
     typer.echo(f"Initialised database at {path}")
 
 
-# ── geo ────────────────────────────────────────────────────────────────────────
+# -- geo ------------------------------------------------------------------------
 @geo_app.command("download")
 def geo_download(
     overwrite: Annotated[bool, typer.Option(help="Re-download even if files exist.")] = False,
@@ -81,7 +81,7 @@ def geo_download(
     typer.echo(f"Land:  {land}\nZones: {zones}")
 
 
-# ── points ─────────────────────────────────────────────────────────────────────
+# -- points ---------------------------------------------------------------------
 @points_app.command("build")
 def points_build(
     mode: Annotated[
@@ -132,10 +132,12 @@ def points_rank(
     best = ", ".join(
         f"{p.column}(r={p.pearson:+.2f},lag={p.best_lag_hours}h)" for p in selected[:5]
     )
-    typer.echo(f"Selected {len(selected)} {target.value} points -> {config_path}\n  top: {best} ...")
+    typer.echo(
+        f"Selected {len(selected)} {target.value} points -> {config_path}\n  top: {best} ..."
+    )
 
 
-# ── backfill ───────────────────────────────────────────────────────────────────
+# -- backfill -------------------------------------------------------------------
 @backfill_app.command("entsoe")
 def backfill_entsoe(
     start: Annotated[str, typer.Option(help="Start date, e.g. 2023-01-01.")],

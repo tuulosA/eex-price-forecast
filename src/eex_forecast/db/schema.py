@@ -3,7 +3,7 @@
 One row per UTC hour, keyed on an ISO-8601 ``timestamp``. Measured **actuals** and model
 **forecasts** are deliberately kept in separate columns for every series, so a forecast run can never
 overwrite measured history. Weather feature columns (``ws_*``, ``t_*``, ``ghi_*``) are not declared
-here — they are added on demand by :func:`ensure_columns` once the weather-point search has chosen
+here - they are added on demand by :func:`ensure_columns` once the weather-point search has chosen
 which points to use.
 """
 

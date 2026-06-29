@@ -4,8 +4,8 @@ Pure-Python, no GIS dependency: read country polygons from GeoJSON, sample a hex
 points that fall inside the polygons (ray-casting point-in-polygon), then pick a spatially well-spread
 subset by farthest-point sampling. Two geometry modes:
 
-- ``zones`` — land **and** maritime (EEZ) polygons → includes offshore points, for **wind**.
-- ``land``  — land-only polygons, for **temperature** and **solar**.
+- ``zones`` - land **and** maritime (EEZ) polygons -> includes offshore points, for **wind**.
+- ``land``  - land-only polygons, for **temperature** and **solar**.
 
 Geometry primitives (:func:`point_in_ring`, :func:`haversine_km`, :func:`select_spread_points`) are
 pure and unit-tested directly.
@@ -46,7 +46,7 @@ class Candidate:
     source: str  # the geometry mode that produced it: "zones" | "land"
 
 
-# ── geometry primitives (pure) ─────────────────────────────────────────────────
+# -- geometry primitives (pure) -------------------------------------------------
 def point_in_ring(lat: float, lon: float, ring: Ring) -> bool:
     """Ray-casting point-in-polygon test for a single ring of ``(lon, lat)`` vertices."""
     inside = False
@@ -96,7 +96,7 @@ def select_spread_points(points: list[LatLon], count: int) -> list[LatLon]:
     return selected
 
 
-# ── GeoJSON parsing ────────────────────────────────────────────────────────────
+# -- GeoJSON parsing ------------------------------------------------------------
 def _iter_features(data: Any) -> Iterator[dict[str, Any]]:
     """Yield features from a FeatureCollection, a single Feature, or a top-level list of features.
 
@@ -148,7 +148,7 @@ def germany_rings(geojson_path: Path) -> list[Ring]:
     return rings
 
 
-# ── grid sampling ──────────────────────────────────────────────────────────────
+# -- grid sampling --------------------------------------------------------------
 def _clip_bbox(rings: list[Ring], bbox: BBox) -> BBox:
     lons = [lon for ring in rings for lon, _ in ring]
     lats = [lat for ring in rings for _, lat in ring]
@@ -194,7 +194,7 @@ def _sample_pool(rings: list[Ring], bbox: BBox, target_pool: int) -> list[LatLon
     return pool
 
 
-# ── public API ─────────────────────────────────────────────────────────────────
+# -- public API -----------------------------------------------------------------
 def build_candidates(
     geojson_path: Path, *, mode: Mode, points: int = 150, bbox: BBox = DE_BBOX
 ) -> list[Candidate]:

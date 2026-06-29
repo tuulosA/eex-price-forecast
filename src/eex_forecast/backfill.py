@@ -60,7 +60,7 @@ def backfill_weather(
     end = end or _default_end()
     points = [point for entries in load_points_config().values() for point in entries]
     if not points:
-        raise RuntimeError("No weather points configured — run `eex points rank` first.")
+        raise RuntimeError("No weather points configured - run `eex points rank` first.")
 
     counts: dict[str, int] = {}
     with connect(db_path) as conn:

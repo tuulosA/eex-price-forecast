@@ -8,9 +8,9 @@ Each weather *role* correlates a different Open-Meteo variable against a differe
 | temp  | ``temperature_2m``    | ``load_actual_mw`` | ``t_de``      | land only   |
 | solar | ``shortwave_radiation`` | ``solar_actual_mw`` | ``ghi_de``  | land only   |
 
-For each candidate we pull its weather history, find the lag (0–6 h) that maximises the absolute
+For each candidate we pull its weather history, find the lag (0-6 h) that maximises the absolute
 Pearson correlation with the target, and rank by that. The top points are assigned stable database
-column names (``ws_de01`` …) and written to ``config/weather_points.json``, which the weather backfill
+column names (``ws_de01`` ...) and written to ``config/weather_points.json``, which the weather backfill
 then reads. :func:`best_lagged_correlation` and :func:`select_points` are pure and unit-tested.
 """
 
@@ -165,7 +165,7 @@ def write_rank_csv(scores: Sequence[PointScore], path: Path) -> Path:
 
 
 def select_points(scores: Sequence[PointScore], *, role: Role, count: int) -> list[SelectedPoint]:
-    """Take the top ``count`` scores and assign stable database column names (``<prefix>01`` …)."""
+    """Take the top ``count`` scores and assign stable database column names (``<prefix>01`` ...)."""
     return [
         SelectedPoint(
             column=f"{role.column_prefix}{rank:02d}",
@@ -180,7 +180,7 @@ def select_points(scores: Sequence[PointScore], *, role: Role, count: int) -> li
     ]
 
 
-# ── points config (config/weather_points.json) ─────────────────────────────────
+# -- points config (config/weather_points.json) ---------------------------------
 def load_points_config(path: Path = WEATHER_POINTS_PATH) -> dict[str, list[SelectedPoint]]:
     """Load the chosen points per role, or an empty mapping if the config does not exist yet."""
     if not Path(path).exists():

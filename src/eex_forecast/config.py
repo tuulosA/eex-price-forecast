@@ -13,8 +13,8 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# ── Project paths ──────────────────────────────────────────────────────────────
-# src/eex_forecast/config.py → repo root is two levels up from the package directory.
+# -- Project paths --------------------------------------------------------------
+# src/eex_forecast/config.py -> repo root is two levels up from the package directory.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
@@ -23,9 +23,9 @@ CANDIDATES_DIR = DATA_DIR / "candidates"
 WEATHER_CACHE_DIR = DATA_DIR / "weather_cache"
 RANK_DIR = DATA_DIR / "rank"
 
-# ── German market / domain constants ───────────────────────────────────────────
+# -- German market / domain constants -------------------------------------------
 AREA_CODE = "DE"
-ENTSOE_ZONE = "DE_LU"  # entsoe-py area key for the German–Luxembourg bidding zone
+ENTSOE_ZONE = "DE_LU"  # entsoe-py area key for the German-Luxembourg bidding zone
 ENTSOE_ZONE_EIC = "10Y1001A1001A82H"
 MARKET_TIMEZONE = "Europe/Berlin"
 HORIZON_DAYS = 14

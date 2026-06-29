@@ -1,7 +1,7 @@
 """SQLite access helpers: connection, idempotent upsert, and windowed reads.
 
 The upsert is keyed on ``timestamp`` and only overwrites a stored value when the incoming value is
-non-null (``COALESCE(excluded.col, col)``). That means independent backfills compose safely — writing
+non-null (``COALESCE(excluded.col, col)``). That means independent backfills compose safely - writing
 weather columns never clears previously stored prices, and re-running a backfill is a no-op on
 unchanged data.
 """

@@ -3,9 +3,9 @@
 Wraps the ``entsoe`` (entsoe-py) pandas client and returns tidy **hourly, UTC** frames keyed on a
 ``timestamp`` column:
 
-- :func:`fetch_prices` → ``price_actual_eur_mwh``
-- :func:`fetch_generation` → ``wind_actual_mw`` + ``solar_actual_mw`` (onshore+offshore / PV summed)
-- :func:`fetch_load` → ``load_actual_mw``
+- :func:`fetch_prices` -> ``price_actual_eur_mwh``
+- :func:`fetch_generation` -> ``wind_actual_mw`` + ``solar_actual_mw`` (onshore+offshore / PV summed)
+- :func:`fetch_load` -> ``load_actual_mw``
 
 Requests are chunked by month with retry/backoff. Sub-hourly series (load, generation) are guarded
 against gross upstream glitches (:func:`eex_forecast.quality.clip_implausible`) **before** the hourly
@@ -47,7 +47,7 @@ Query = Callable[
 ]
 
 
-# ── network plumbing ───────────────────────────────────────────────────────────
+# -- network plumbing -----------------------------------------------------------
 def _client() -> EntsoePandasClient:
     return EntsoePandasClient(api_key=get_settings().require_entsoe_key())
 
@@ -107,13 +107,13 @@ def _iter_months(
 
 
 def _fetch_windowed(
-    query: Query, start: str | date | datetime, end: str | date | datetime
+    query: Query, start: str | date | datetime, end: str | date | datetime, *, label: str
 ) -> pd.DataFrame | pd.Series:
     start_ts, end_ts = _normalize_bounds(start, end)
     client = _client()
     parts: list[pd.DataFrame | pd.Series] = []
     for window_start, window_end in _iter_months(start_ts, end_ts):
-        logger.info("ENTSO-E fetch %s -> %s", window_start.date(), window_end.date())
+        logger.info("ENTSO-E fetch %s %s -> %s", label, window_start.date(), window_end.date())
         try:
             result = _call_with_retry(query, client, window_start, window_end)
         except NoMatchingDataError:
@@ -126,7 +126,7 @@ def _fetch_windowed(
     return pd.concat(parts)
 
 
-# ── pure parsing helpers (unit-tested) ─────────────────────────────────────────
+# -- pure parsing helpers (unit-tested) -----------------------------------------
 def _normalize_generation_columns(frame: pd.DataFrame) -> pd.DataFrame:
     """Flatten entsoe-py generation columns to plain production-type names (the 'Actual Aggregated' side)."""
     if isinstance(frame.columns, pd.MultiIndex):
@@ -173,11 +173,14 @@ def _to_frame(series: pd.Series, column: str) -> pd.DataFrame:
     return frame.dropna(subset=[column]).reset_index(drop=True)
 
 
-# ── public fetchers ────────────────────────────────────────────────────────────
+# -- public fetchers ------------------------------------------------------------
 def fetch_prices(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Day-ahead prices → frame[``timestamp``, ``price_actual_eur_mwh``] (hourly UTC)."""
+    """Day-ahead prices -> frame[``timestamp``, ``price_actual_eur_mwh``] (hourly UTC)."""
     raw = _fetch_windowed(
-        lambda c, s, e: c.query_day_ahead_prices(ENTSOE_ZONE, start=s, end=e), start, end
+        lambda c, s, e: c.query_day_ahead_prices(ENTSOE_ZONE, start=s, end=e),
+        start,
+        end,
+        label="prices",
     )
     if len(raw) == 0:
         return _empty(["price_actual_eur_mwh"])
@@ -186,9 +189,12 @@ def fetch_prices(start: str | date | datetime, end: str | date | datetime) -> pd
 
 
 def fetch_generation(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Generation → frame[``timestamp``, ``wind_actual_mw``, ``solar_actual_mw``] (hourly UTC)."""
+    """Generation -> frame[``timestamp``, ``wind_actual_mw``, ``solar_actual_mw``] (hourly UTC)."""
     raw = _fetch_windowed(
-        lambda c, s, e: c.query_generation(ENTSOE_ZONE, start=s, end=e), start, end
+        lambda c, s, e: c.query_generation(ENTSOE_ZONE, start=s, end=e),
+        start,
+        end,
+        label="generation",
     )
     if len(raw) == 0:
         return _empty(["wind_actual_mw", "solar_actual_mw"])
@@ -202,8 +208,10 @@ def fetch_generation(start: str | date | datetime, end: str | date | datetime) -
 
 
 def fetch_load(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Actual load → frame[``timestamp``, ``load_actual_mw``] (hourly UTC, glitch-guarded)."""
-    raw = _fetch_windowed(lambda c, s, e: c.query_load(ENTSOE_ZONE, start=s, end=e), start, end)
+    """Actual load -> frame[``timestamp``, ``load_actual_mw``] (hourly UTC, glitch-guarded)."""
+    raw = _fetch_windowed(
+        lambda c, s, e: c.query_load(ENTSOE_ZONE, start=s, end=e), start, end, label="load"
+    )
     if len(raw) == 0:
         return _empty(["load_actual_mw"])
     column = "Actual Load"

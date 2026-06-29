@@ -2,8 +2,8 @@
 
 Two files are needed:
 
-- **Land** — Eurostat GISCO country boundaries; used for land-only candidates (temperature, solar).
-- **Zones (land + sea)** — a Marine-Regions-derived land+EEZ dataset; used for wind candidates, which
+- **Land** - Eurostat GISCO country boundaries; used for land-only candidates (temperature, solar).
+- **Zones (land + sea)** - a Marine-Regions-derived land+EEZ dataset; used for wind candidates, which
   must include the offshore North Sea / Baltic where much of Germany's wind sits.
 
 Both are public, code-only downloads (no GIS toolchain required).

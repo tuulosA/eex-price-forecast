@@ -3,12 +3,12 @@
 Returns tidy frames keyed on a UTC ``timestamp`` column with one column per requested variable. The
 relevant variables for this project:
 
-- ``wind_speed_100m`` — 100 m wind speed (wind generation driver)
-- ``temperature_2m`` — 2 m temperature (load driver)
-- ``shortwave_radiation`` — global horizontal irradiance (solar generation driver)
+- ``wind_speed_100m`` - 100 m wind speed (wind generation driver)
+- ``temperature_2m`` - 2 m temperature (load driver)
+- ``shortwave_radiation`` - global horizontal irradiance (solar generation driver)
 
 If ``OPENMETEO_API_KEY`` is set the customer endpoint is used; otherwise the free public API. The pure
-JSON→frame parser (:func:`_hourly_frame`) is unit-tested; the network functions are thin wrappers.
+JSON->frame parser (:func:`_hourly_frame`) is unit-tested; the network functions are thin wrappers.
 """
 
 from __future__ import annotations
