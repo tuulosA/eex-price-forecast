@@ -107,6 +107,11 @@ Planned, to be implemented:
   calendar, fundamentals, weather), Optuna walk-forward hyperparameter tuning, and a pipeline that
   writes a 14-day forecast to CSV (and optionally the database), with an optional plot.
 - **Analysis tools** — a feature correlation-matrix tool and an A/B feature-ablation tool.
+- **Installed-capacity scaling** — fetch ENTSO-E installed wind/solar capacity and model generation in
+  percent-of-capacity, so the wind/solar forecasts stay calibrated as the fleet grows.
+- **Separate onshore/offshore wind** — experiment with splitting the combined wind series into its
+  onshore and offshore components, which have distinct weather points, capacity factors, and behaviour,
+  rather than summing them into one target.
 - **Additional drivers** — nuclear availability and cross-border (NTC / neighbour-wind) features.
 
 ## Data sources
