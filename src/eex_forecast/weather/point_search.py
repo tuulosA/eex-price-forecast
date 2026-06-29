@@ -39,6 +39,8 @@ logger = logging.getLogger(__name__)
 
 HistoryFetcher = Callable[..., pd.DataFrame]
 
+_PROGRESS_EVERY = 25  # candidates between progress log lines (each is a serial Open-Meteo fetch)
+
 
 @dataclass(frozen=True, slots=True)
 class Role:
@@ -124,17 +126,18 @@ def rank_candidates(
 ) -> list[PointScore]:
     """Score every candidate against ``target`` and return them sorted by ``|pearson|`` (best first)."""
     scores: list[PointScore] = []
-    for candidate in candidates:
+    total = len(candidates)
+    for index, candidate in enumerate(candidates, start=1):
         history = history_fetcher(
             candidate.lat, candidate.lon, start=start, end=end, variables=[variable]
         )
-        if history.empty:
-            continue
-        feature = history.set_index("timestamp")[variable]
-        lag, pearson = best_lagged_correlation(feature, target, max_lag_hours=max_lag_hours)
-        if pd.isna(pearson):
-            continue
-        scores.append(PointScore(candidate, lag, pearson, int(feature.notna().sum())))
+        if not history.empty:
+            feature = history.set_index("timestamp")[variable]
+            lag, pearson = best_lagged_correlation(feature, target, max_lag_hours=max_lag_hours)
+            if pd.notna(pearson):
+                scores.append(PointScore(candidate, lag, pearson, int(feature.notna().sum())))
+        if index % _PROGRESS_EVERY == 0 or index == total:
+            logger.info("Fetched %d/%d %s candidates", index, total, variable)
     scores.sort(key=lambda score: score.abs_pearson, reverse=True)
     logger.info("Ranked %d/%d candidates for %s", len(scores), len(candidates), variable)
     return scores
