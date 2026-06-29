@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eex-price-forecast"
+version = "0.1.0"
+description = "Short-term electricity price forecasting for the German (DE-LU) day-ahead market."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Aleksi Tuulos" }]
+keywords = ["energy", "electricity-price", "forecasting", "entso-e", "open-meteo"]
+
+dependencies = [
+    "entsoe-py>=0.6",
+    "requests>=2.31",
+    "pandas>=2.0,<3.0",
+    "numpy>=1.24,<2.0",
+    "typer>=0.12",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.1",
+]
+
+[project.optional-dependencies]
+# Optional model/pipeline dependencies — not needed for the data and point-search setup.
+model = ["xgboost>=2.0", "optuna>=3.6", "matplotlib>=3.7"]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "responses>=0.25",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pandas-stubs",
+    "types-requests",
+]
+
+[project.scripts]
+eex = "eex_forecast.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eex_forecast"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Sensible, not overzealous: pyflakes, pycodestyle, isort, bugbear, pyupgrade, comprehensions, naming.
+select = ["E", "F", "W", "I", "B", "UP", "C4", "N", "SIM"]
+ignore = ["E501"]  # line length is handled by the formatter
+
+[tool.ruff.lint.isort]
+known-first-party = ["eex_forecast"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+packages = ["eex_forecast"]
+strict = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Third-party libraries without type stubs:
+[[tool.mypy.overrides]]
+module = ["entsoe.*", "responses.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# ─────────────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
