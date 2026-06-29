@@ -155,7 +155,7 @@ def backfill_weather(
 ) -> None:
     """Backfill weather history at the configured points."""
     counts = backfill_ops.backfill_weather(get_settings().db_path, start=start, end=end)
-    typer.echo(f"Backfilled weather at {len(counts)} points (e.g. {next(iter(counts), '-')}).")
+    typer.echo(f"Backfilled {len(counts)} weather columns (e.g. {next(iter(counts), '-')}).")
 
 
 if __name__ == "__main__":

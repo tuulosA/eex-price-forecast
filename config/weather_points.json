@@ -1,0 +1,548 @@
+{
+  "wind": [
+    {
+      "column": "ws_de01",
+      "lat": 52.3471,
+      "lon": 9.4503,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_088",
+      "pearson": 0.878,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de02",
+      "lat": 52.9111,
+      "lon": 8.9886,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_017",
+      "pearson": 0.8714,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de03",
+      "lat": 52.5351,
+      "lon": 8.6808,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_126",
+      "pearson": 0.8669,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de04",
+      "lat": 52.7231,
+      "lon": 9.6555,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_137",
+      "pearson": 0.8631,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de05",
+      "lat": 52.9111,
+      "lon": 10.6303,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_127",
+      "pearson": 0.8624,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de06",
+      "lat": 52.5351,
+      "lon": 10.3224,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_036",
+      "pearson": 0.8586,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de07",
+      "lat": 53.2872,
+      "lon": 8.4755,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_110",
+      "pearson": 0.8576,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de08",
+      "lat": 52.5351,
+      "lon": 7.9625,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_052",
+      "pearson": 0.8565,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de09",
+      "lat": 53.2872,
+      "lon": 9.8094,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_063",
+      "pearson": 0.8531,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de10",
+      "lat": 52.9111,
+      "lon": 8.1677,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_138",
+      "pearson": 0.8493,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de11",
+      "lat": 53.6632,
+      "lon": 9.6042,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_140",
+      "pearson": 0.8484,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de12",
+      "lat": 51.2191,
+      "lon": 9.8607,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_119",
+      "pearson": 0.8473,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de13",
+      "lat": 51.9711,
+      "lon": 8.8347,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_034",
+      "pearson": 0.8471,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de14",
+      "lat": 53.6632,
+      "lon": 8.886,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_049",
+      "pearson": 0.8431,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de15",
+      "lat": 53.2872,
+      "lon": 7.7573,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_037",
+      "pearson": 0.842,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de16",
+      "lat": 53.4752,
+      "lon": 10.3737,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_144",
+      "pearson": 0.8415,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de17",
+      "lat": 52.5351,
+      "lon": 11.1433,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_107",
+      "pearson": 0.841,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de18",
+      "lat": 53.2872,
+      "lon": 10.9381,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_022",
+      "pearson": 0.8379,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de19",
+      "lat": 52.1591,
+      "lon": 10.6303,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_122",
+      "pearson": 0.8367,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de20",
+      "lat": 53.4752,
+      "lon": 7.0904,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_109",
+      "pearson": 0.8353,
+      "best_lag_hours": 1
+    }
+  ],
+  "temp": [
+    {
+      "column": "t_de01",
+      "lat": 52.6345,
+      "lon": 12.9603,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_094",
+      "pearson": -0.39,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de02",
+      "lat": 52.8076,
+      "lon": 12.251,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_037",
+      "pearson": -0.3899,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de03",
+      "lat": 51.9424,
+      "lon": 14.0006,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_035",
+      "pearson": -0.3892,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de04",
+      "lat": 52.2885,
+      "lon": 13.5277,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_102",
+      "pearson": -0.3858,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de05",
+      "lat": 52.9806,
+      "lon": 11.5417,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_127",
+      "pearson": -0.3854,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de06",
+      "lat": 52.4615,
+      "lon": 14.5207,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_065",
+      "pearson": -0.385,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de07",
+      "lat": 52.9806,
+      "lon": 13.1494,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_142",
+      "pearson": -0.3843,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de08",
+      "lat": 51.9424,
+      "lon": 14.6626,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_141",
+      "pearson": -0.3839,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de09",
+      "lat": 53.1537,
+      "lon": 12.5347,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_126",
+      "pearson": -0.3838,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de10",
+      "lat": 52.8076,
+      "lon": 13.7642,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_013",
+      "pearson": -0.3835,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de11",
+      "lat": 51.5963,
+      "lon": 14.4735,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_101",
+      "pearson": -0.383,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de12",
+      "lat": 52.2885,
+      "lon": 12.0146,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_092",
+      "pearson": -0.3823,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de13",
+      "lat": 52.6345,
+      "lon": 11.1634,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_074",
+      "pearson": -0.3821,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de14",
+      "lat": 52.6345,
+      "lon": 10.0286,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_046",
+      "pearson": -0.3815,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de15",
+      "lat": 51.2502,
+      "lon": 14.9463,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_006",
+      "pearson": -0.3811,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de16",
+      "lat": 53.1537,
+      "lon": 14.3316,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_086",
+      "pearson": -0.3809,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de17",
+      "lat": 51.7693,
+      "lon": 13.1967,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_116",
+      "pearson": -0.3805,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de18",
+      "lat": 50.9041,
+      "lon": 14.3789,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_088",
+      "pearson": -0.3804,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de19",
+      "lat": 51.7693,
+      "lon": 11.9673,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_072",
+      "pearson": -0.3802,
+      "best_lag_hours": 6
+    },
+    {
+      "column": "t_de20",
+      "lat": 49.8658,
+      "lon": 8.61,
+      "variable": "temperature_2m",
+      "candidate_id": "de_land_050",
+      "pearson": -0.3799,
+      "best_lag_hours": 6
+    }
+  ],
+  "solar": [
+    {
+      "column": "ghi_de01",
+      "lat": 51.2502,
+      "lon": 12.0146,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_115",
+      "pearson": 0.9279,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de02",
+      "lat": 51.7693,
+      "lon": 11.9673,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_072",
+      "pearson": 0.9251,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de03",
+      "lat": 51.4232,
+      "lon": 11.1161,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_062",
+      "pearson": 0.9251,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de04",
+      "lat": 49.8658,
+      "lon": 10.8797,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_140",
+      "pearson": 0.9248,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de05",
+      "lat": 52.1154,
+      "lon": 12.8184,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_051",
+      "pearson": 0.9246,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de06",
+      "lat": 50.9041,
+      "lon": 12.2983,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_125",
+      "pearson": 0.9244,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de07",
+      "lat": 52.1154,
+      "lon": 11.3053,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_023",
+      "pearson": 0.9238,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de08",
+      "lat": 50.9041,
+      "lon": 11.6363,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_038",
+      "pearson": 0.9238,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de09",
+      "lat": 51.4232,
+      "lon": 12.6293,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_015",
+      "pearson": 0.9236,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de10",
+      "lat": 51.7693,
+      "lon": 13.1967,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_116",
+      "pearson": 0.9232,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de11",
+      "lat": 49.8658,
+      "lon": 11.4471,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_113",
+      "pearson": 0.923,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de12",
+      "lat": 49.5197,
+      "lon": 10.5014,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_059",
+      "pearson": 0.9219,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de13",
+      "lat": 51.0771,
+      "lon": 10.3596,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_001",
+      "pearson": 0.9218,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de14",
+      "lat": 49.5197,
+      "lon": 12.0146,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_107",
+      "pearson": 0.9218,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de15",
+      "lat": 51.0771,
+      "lon": 13.1022,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_099",
+      "pearson": 0.9215,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de16",
+      "lat": 50.2119,
+      "lon": 11.0689,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_030",
+      "pearson": 0.9215,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de17",
+      "lat": 51.4232,
+      "lon": 13.575,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_064",
+      "pearson": 0.9211,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de18",
+      "lat": 52.6345,
+      "lon": 12.9603,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_094",
+      "pearson": 0.9207,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de19",
+      "lat": 52.2885,
+      "lon": 13.5277,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_102",
+      "pearson": 0.9205,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de20",
+      "lat": 50.2119,
+      "lon": 11.92,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_083",
+      "pearson": 0.92,
+      "best_lag_hours": 0
+    }
+  ]
+}

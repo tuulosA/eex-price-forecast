@@ -121,6 +121,22 @@ Planned, to be implemented:
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) — country land polygons.
 - [Marine Regions](https://www.marineregions.org/) — EEZ / maritime polygons (offshore points).
 
+### Weather variables
+
+Open-Meteo is queried for `wind_speed_100m` (wind), `temperature_2m` (load), and `shortwave_radiation`
+(solar). Two auxiliary variables are fetched at an existing role's coordinates with **no separate
+ranking**: each wind point also fetches `temperature_2m` (`t_ws_*`) as an air-density proxy (density
+scales the power a given wind speed yields), and each load (temperature) point also fetches
+`shortwave_radiation` (`ghi_t_*`) as a load driver (daylight activity, behind-the-meter solar
+self-consumption). Both reuse their role's already-ranked grid points.
+
+Temperature is taken at **2 m even for the wind points**, despite hub height being ~100 m. Open-Meteo's
+height-level temperatures (`temperature_80m/100m/120m/180m`) exist only on the **forecast** endpoint —
+the ERA5 **archive returns them all-null**, so there is no matching history to train on. Only
+`temperature_2m` is populated across both history and forecast, and the sub-1 °C hub-height offset is
+negligible next to the seasonal/diurnal swing that actually drives air-density variation. A true density
+feature (`temperature_2m` + surface pressure, both archived) is a possible future refinement.
+
 ## License
 
 MIT.

@@ -87,6 +87,29 @@ class SelectedPoint:
     best_lag_hours: int
 
 
+# Extra Open-Meteo variables fetched at an existing role's already-ranked points - no separate ranking,
+# they reuse that role's coordinates. Wind points add 2 m temperature (an air-density proxy: density
+# scales the power a given wind speed yields); the load (temp) points add shortwave radiation (a load
+# driver - daylight activity and behind-the-meter solar self-consumption). Each is stored as
+# ``<prefix><primary column>`` at the identical coordinate, e.g. ``t_ws_de01`` and ``ghi_t_de01``.
+AUXILIARY_VARIABLES: dict[str, dict[str, str]] = {
+    "wind": {TEMPERATURE_2M: "t_"},  # variable -> prefix prepended to the point's primary column
+    "temp": {SHORTWAVE_RADIATION: "ghi_"},
+}
+
+
+def point_columns(role_name: str, point: SelectedPoint) -> dict[str, str]:
+    """Map every Open-Meteo variable to fetch at ``point`` to its database column.
+
+    Always includes the point's own ranked variable; for roles listed in :data:`AUXILIARY_VARIABLES` it
+    also includes the auxiliary variables at the same coordinate (e.g. temperature at each wind point).
+    """
+    columns = {point.variable: point.column}
+    for variable, prefix in AUXILIARY_VARIABLES.get(role_name, {}).items():
+        columns[variable] = f"{prefix}{point.column}"
+    return columns
+
+
 def best_lagged_correlation(
     feature: pd.Series,
     target: pd.Series,

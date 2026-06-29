@@ -17,7 +17,7 @@ from eex_forecast.db import connect, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.sources import entsoe
 from eex_forecast.weather.openmeteo import fetch_history
-from eex_forecast.weather.point_search import load_points_config
+from eex_forecast.weather.point_search import load_points_config, point_columns
 
 logger = logging.getLogger(__name__)
 
@@ -58,25 +58,28 @@ def backfill_weather(
     Requires that ``eex points rank`` has chosen points (``config/weather_points.json``).
     """
     end = end or _default_end()
-    points = [point for entries in load_points_config().values() for point in entries]
-    if not points:
+    plan = [(role, point) for role, entries in load_points_config().items() for point in entries]
+    if not plan:
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
 
     counts: dict[str, int] = {}
     with connect(db_path) as conn:
         create_schema(conn)
-        for point in points:
+        for role, point in plan:
+            columns = point_columns(role, point)  # Open-Meteo variable -> database column
             history = fetch_history(
-                point.lat, point.lon, start=start, end=end, variables=[point.variable]
+                point.lat, point.lon, start=start, end=end, variables=list(columns)
             )
-            frame = history[["timestamp", point.variable]].rename(
-                columns={point.variable: point.column}
-            )
-            counts[point.column] = upsert(conn, frame)
+            if history.empty:
+                continue
+            frame = history[["timestamp", *columns]].rename(columns=columns)
+            rows = upsert(conn, frame)
+            for column in columns.values():
+                counts[column] = rows
             logger.info(
-                "Backfilled weather %s (%s): %d rows",
+                "Backfilled weather %s at %s: %d rows",
+                ", ".join(columns.values()),
                 point.column,
-                point.variable,
-                counts[point.column],
+                rows,
             )
     return counts

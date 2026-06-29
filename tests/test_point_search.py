@@ -11,8 +11,10 @@ import pandas as pd
 from eex_forecast.weather.candidates import Candidate
 from eex_forecast.weather.point_search import (
     ROLES,
+    SelectedPoint,
     best_lagged_correlation,
     load_points_config,
+    point_columns,
     rank_candidates,
     save_points,
     select_points,
@@ -73,3 +75,26 @@ def test_rank_and_select(tmp_path: Path) -> None:
 
 def test_load_points_config_missing_returns_empty(tmp_path: Path) -> None:
     assert load_points_config(tmp_path / "nope.json") == {}
+
+
+def test_point_columns_adds_temperature_at_wind_points() -> None:
+    wind = SelectedPoint("ws_de01", 54.0, 8.0, "wind_speed_100m", "de_zones_001", 0.88, 0)
+    # A wind point also fetches temperature (air-density proxy) at the same coordinate.
+    assert point_columns("wind", wind) == {
+        "wind_speed_100m": "ws_de01",
+        "temperature_2m": "t_ws_de01",
+    }
+
+
+def test_point_columns_adds_irradiance_at_temp_points() -> None:
+    temp = SelectedPoint("t_de01", 52.0, 10.0, "temperature_2m", "de_land_001", 0.7, 1)
+    # A load (temp) point also fetches shortwave radiation at the same coordinate as a load driver.
+    assert point_columns("temp", temp) == {
+        "temperature_2m": "t_de01",
+        "shortwave_radiation": "ghi_t_de01",
+    }
+
+
+def test_point_columns_leaves_solar_single_variable() -> None:
+    solar = SelectedPoint("ghi_de01", 49.0, 9.0, "shortwave_radiation", "de_land_002", 0.8, 0)
+    assert point_columns("solar", solar) == {"shortwave_radiation": "ghi_de01"}
