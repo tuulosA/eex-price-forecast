@@ -67,6 +67,8 @@ def make_timeseries(
             "wind_actual_mw": np.clip(wind_gen, 0, None),
             "solar_actual_mw": np.clip(solar_gen, 0, None),
             "load_actual_mw": load,
+            "wind_capacity_mw": 70000.0,  # installed capacity for percent-of-capacity scaling
+            "solar_capacity_mw": 90000.0,
             "ws_de01": wind_speed,
             "ws_de02": wind_speed + rng.normal(0, 0.5, n),
             "t_ws_de01": temperature,

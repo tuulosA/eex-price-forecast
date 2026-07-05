@@ -17,8 +17,11 @@ points that best explain German generation, and forecast price out to a 14-day h
    the chosen points.
 3. **Multi-stage price forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and
    load from the weather; the **price model** then forecasts the day-ahead price from those fundamentals
-   plus calendar, price lags, and weather aggregates. Hyperparameters are tuned by **Optuna walk-forward**
-   backtesting, and the pipeline writes a 14-day hourly forecast to CSV (with an optional plot).
+   plus calendar, price lags, and weather aggregates. Wind and solar are learned as a fraction of
+   **installed capacity** (fetched from ENTSO-E) so the models stay calibrated as the fleet grows;
+   fitting uses **early stopping** with residual **diagnostics** (Durbin-Watson, ACF). Hyperparameters
+   are tuned by **Optuna walk-forward** backtesting, and the pipeline writes a 14-day hourly forecast to
+   CSV (with an optional plot).
 
 Actuals and forecasts are stored in **separate columns** for every series, so model predictions never
 overwrite measured values.
@@ -29,7 +32,7 @@ overwrite measured values.
 src/eex_forecast/
   config.py            # typed settings (env), paths, DE constants, 14-day horizon
   db/                  # SQLite schema (separate actual/forecast columns) + upsert/query
-  sources/entsoe.py    # DE price + wind/solar generation + load actuals (entsoe-py)
+  sources/entsoe.py    # DE price + wind/solar generation + load actuals + installed capacity (entsoe-py)
   weather/
     geometry.py        # download GISCO land + Marine-Regions EEZ GeoJSON
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
@@ -38,7 +41,7 @@ src/eex_forecast/
   analysis/            # correlation matrix + candidate/ranked point map
   backfill.py          # orchestrate ENTSO-E + weather backfills
   features.py          # calendar, price lags, weather aggregates, per-model feature builders
-  model.py             # XGBoost model registry (wind/solar/load/price) + train/predict/persist
+  model.py             # XGBoost registry (wind/solar/load/price): capacity scaling, early stopping, diagnostics
   tuning.py            # Optuna walk-forward hyperparameter tuning
   forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
   cli.py               # `eex` command-line interface
@@ -155,8 +158,8 @@ needed to run the tests.
 Planned, to be implemented:
 
 - **A/B feature-ablation tool** — measure each feature group's marginal contribution to forecast skill.
-- **Installed-capacity scaling** — fetch ENTSO-E installed wind/solar capacity and model generation in
-  percent-of-capacity, so the wind/solar forecasts stay calibrated as the fleet grows.
+- **Recency sample weighting** — weight recent rows more heavily when fitting, so the models track the
+  latest market regime rather than treating three years of history equally.
 - **Separate onshore/offshore wind** — experiment with splitting the combined wind series into its
   onshore and offshore components, which have distinct weather points, capacity factors, and behaviour,
   rather than summing them into one target.

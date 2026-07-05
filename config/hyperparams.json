@@ -26,5 +26,33 @@
     "tree_method": "hist",
     "random_state": 42,
     "n_jobs": 0
+  },
+  "load": {
+    "n_estimators": 750,
+    "max_depth": 5,
+    "learning_rate": 0.07814542994683728,
+    "subsample": 0.6908823690258258,
+    "colsample_bytree": 0.8819708330406042,
+    "min_child_weight": 11.749490872181486,
+    "reg_alpha": 0.06866794632660822,
+    "reg_lambda": 0.001067734678946606,
+    "objective": "reg:squarederror",
+    "tree_method": "hist",
+    "random_state": 42,
+    "n_jobs": 0
+  },
+  "solar": {
+    "n_estimators": 750,
+    "max_depth": 5,
+    "learning_rate": 0.01031486692778047,
+    "subsample": 0.7973526106625468,
+    "colsample_bytree": 0.7669641188131113,
+    "min_child_weight": 7.384484119032307,
+    "reg_alpha": 2.6987550775854237,
+    "reg_lambda": 0.008986880978332926,
+    "objective": "reg:squarederror",
+    "tree_method": "hist",
+    "random_state": 42,
+    "n_jobs": 0
   }
 }

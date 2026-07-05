@@ -6,6 +6,7 @@ Wraps the ``entsoe`` (entsoe-py) pandas client and returns tidy **hourly, UTC** 
 - :func:`fetch_prices` -> ``price_actual_eur_mwh``
 - :func:`fetch_generation` -> ``wind_actual_mw`` + ``solar_actual_mw`` (onshore+offshore / PV summed)
 - :func:`fetch_load` -> ``load_actual_mw``
+- :func:`fetch_capacity` -> ``wind_capacity_mw`` + ``solar_capacity_mw`` (yearly, forward-filled hourly)
 
 Requests are chunked by month with retry/backoff. Sub-hourly series (load, generation) are guarded
 against gross upstream glitches (:func:`eex_forecast.quality.clip_implausible`) **before** the hourly
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 WIND_PRODUCTION_TYPES = ("Wind Onshore", "Wind Offshore")
 SOLAR_PRODUCTION_TYPES = ("Solar", "Solar photovoltaic")
+CAPACITY_COLUMNS = ["wind_capacity_mw", "solar_capacity_mw"]
 
 _RETRY_ATTEMPTS = 3
 _RETRY_BACKOFF_S = 5
@@ -228,6 +230,46 @@ def fetch_load(start: str | date | datetime, end: str | date | datetime) -> pd.D
     else:
         series = raw
     return _to_frame(_to_hourly_utc(series, guard=True, baseline=True), "load_actual_mw")
+
+
+def fetch_capacity(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
+    """Installed wind/solar capacity -> hourly frame[``timestamp``, ``wind_capacity_mw``, ``solar_capacity_mw``].
+
+    ENTSO-E publishes installed capacity once a year (one row per year). We forward-fill each year's value
+    onto the hourly grid so every row carries the capacity in force at that time; the latest published year
+    carries forward, since next year's figure does not exist yet. Wind is onshore + offshore.
+    """
+    start_ts, end_ts = _normalize_bounds(start, end)
+    # ENTSO-E mis-aligns the yearly series (values shift by a row) unless the query starts on a year
+    # boundary, so anchor to 1 January of the start year and forward-fill from there onto the window.
+    query_start = pd.Timestamp(year=start_ts.year, month=1, day=1, tz="UTC")
+    try:
+        raw = _call_with_retry(
+            _client().query_installed_generation_capacity,
+            ENTSOE_ZONE,
+            start=query_start,
+            end=end_ts,
+        )
+    except NoMatchingDataError:
+        return _empty(CAPACITY_COLUMNS)
+    if raw is None or len(raw) == 0:
+        return _empty(CAPACITY_COLUMNS)
+
+    years = pd.to_datetime(raw.index, utc=True).year
+    yearly = pd.DataFrame(
+        {
+            "wind_capacity_mw": _sum_production_types(raw, WIND_PRODUCTION_TYPES).to_numpy(),
+            "solar_capacity_mw": _sum_production_types(raw, SOLAR_PRODUCTION_TYPES).to_numpy(),
+        },
+        index=pd.to_datetime([f"{year}-01-01" for year in years], utc=True),
+    )
+    yearly = yearly[~yearly.index.duplicated(keep="last")].sort_index()
+
+    hours = pd.date_range(start_ts.floor("h"), end_ts.floor("h"), freq="h", tz="UTC")
+    hourly = yearly.reindex(yearly.index.union(hours)).sort_index().ffill().reindex(hours)
+    frame = hourly.reset_index()
+    frame.columns = ["timestamp", *CAPACITY_COLUMNS]
+    return frame.dropna(how="all", subset=CAPACITY_COLUMNS).reset_index(drop=True)
 
 
 def _empty(value_columns: list[str]) -> pd.DataFrame:
