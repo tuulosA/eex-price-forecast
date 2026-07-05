@@ -52,6 +52,7 @@ def backfill_entsoe(
         "prices": entsoe.fetch_prices(start, end),
         "generation": entsoe.fetch_generation(start, end),
         "load": entsoe.fetch_load(start, end),
+        "capacity": entsoe.fetch_capacity(start, end),
     }
     counts: dict[str, int] = {}
     with connect(db_path) as conn:

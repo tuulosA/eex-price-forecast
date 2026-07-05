@@ -28,7 +28,7 @@ from xgboost import XGBRegressor
 
 from eex_forecast.config import TUNING_DIR
 from eex_forecast.features import TIMESTAMP
-from eex_forecast.model import ModelSpec
+from eex_forecast.model import ModelSpec, capacity_for, capacity_scaled
 
 logger = logging.getLogger(__name__)
 
@@ -85,42 +85,59 @@ def walk_forward_cutoffs(
     return sorted(dict.fromkeys(cutoffs))
 
 
-def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
-    matrix = spec.build_features(frame)
-    target = pd.to_numeric(frame[spec.target_column], errors="coerce")
-    times = pd.to_datetime(frame[TIMESTAMP], utc=True)
-    return matrix, target, times
+@dataclass(frozen=True, slots=True)
+class _Data:
+    """The arrays a fold needs: features, the (capacity-scaled) fit target, the actual value it is scored
+    against in natural units (MW / EUR), the capacity used to reverse the scaling, and the timestamps."""
+
+    matrix: pd.DataFrame
+    fit_target: pd.Series  # what the model learns (capacity factor for generation, else raw)
+    actual: pd.Series  # scored against this, in MW / EUR
+    capacity: pd.Series | None  # reverses the capacity scaling when present
+    times: pd.Series
+
+
+def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> _Data:
+    return _Data(
+        matrix=spec.build_features(frame),
+        fit_target=capacity_scaled(spec, frame),
+        actual=pd.to_numeric(frame[spec.target_column], errors="coerce"),
+        capacity=capacity_for(spec, frame),
+        times=pd.to_datetime(frame[TIMESTAMP], utc=True),
+    )
 
 
 def _fold_metrics(
     spec: ModelSpec,
-    matrix: pd.DataFrame,
-    target: pd.Series,
-    times: pd.Series,
+    data: _Data,
     params: dict[str, Any],
     cutoffs: list[pd.Timestamp],
     horizon_hours: int,
 ) -> tuple[list[dict[str, Any]], float, float]:
-    """Per-cutoff MAE/RMSE for one param set, plus their means. Trains one model per cutoff."""
+    """Per-cutoff MAE/RMSE (in MW / EUR) for one param set, plus their means. One model fit per cutoff."""
     horizon = pd.Timedelta(hours=horizon_hours)
     folds: list[dict[str, Any]] = []
     maes: list[float] = []
     rmses: list[float] = []
     for cutoff in cutoffs:
-        train = (times <= cutoff) & target.notna()
-        test = (times > cutoff) & (times <= cutoff + horizon) & target.notna()
+        train = (data.times <= cutoff) & data.fit_target.notna()
+        test = (data.times > cutoff) & (data.times <= cutoff + horizon) & data.actual.notna()
         if int(train.sum()) < 24 or not test.any():
             continue
-        y_train = target[train]
-        if spec.clip_target_quantiles is not None:
+        y_train = data.fit_target[train]
+        if (
+            spec.clip_target_quantiles is not None
+        ):  # winsorise per fold (train-only) to avoid leakage
             low, high = (y_train.quantile(q) for q in spec.clip_target_quantiles)
             y_train = y_train.clip(lower=low, upper=high)
         booster = XGBRegressor(**params)
-        booster.fit(matrix[train], y_train)
-        prediction = booster.predict(matrix[test])
+        booster.fit(data.matrix[train], y_train)
+        prediction = booster.predict(data.matrix[test])
+        if data.capacity is not None:  # reverse the capacity scaling back to MW
+            prediction = prediction * data.capacity[test].to_numpy()
         if spec.non_negative:
             prediction = np.clip(prediction, 0.0, None)
-        error = target[test].to_numpy() - prediction
+        error = data.actual[test].to_numpy() - prediction
         mae = float(np.mean(np.abs(error)))
         rmse = float(np.sqrt(np.mean(error**2)))
         maes.append(mae)
@@ -140,14 +157,12 @@ def _fold_metrics(
 
 def _score(
     spec: ModelSpec,
-    matrix: pd.DataFrame,
-    target: pd.Series,
-    times: pd.Series,
+    data: _Data,
     params: dict[str, Any],
     cutoffs: list[pd.Timestamp],
     horizon_hours: int,
 ) -> float:
-    _, mean_mae, _ = _fold_metrics(spec, matrix, target, times, params, cutoffs, horizon_hours)
+    _, mean_mae, _ = _fold_metrics(spec, data, params, cutoffs, horizon_hours)
     return mean_mae
 
 
@@ -159,9 +174,8 @@ def evaluate_params(
     cutoffs: list[pd.Timestamp],
     horizon_hours: int,
 ) -> float:
-    """Mean walk-forward MAE of ``params`` for ``spec`` across ``cutoffs`` (lower is better)."""
-    matrix, target, times = _prepare(spec, frame)
-    return _score(spec, matrix, target, times, params, cutoffs, horizon_hours)
+    """Mean walk-forward MAE (MW / EUR) of ``params`` for ``spec`` across ``cutoffs`` (lower is better)."""
+    return _score(spec, _prepare(spec, frame), params, cutoffs, horizon_hours)
 
 
 def suggest_params(trial: optuna.Trial) -> dict[str, Any]:
@@ -190,7 +204,7 @@ def tune(
     seed: int = 42,
 ) -> TuneResult:
     """Run Optuna walk-forward tuning for ``spec`` and return the best complete hyperparameters."""
-    matrix, target, times = _prepare(spec, frame)
+    data = _prepare(spec, frame)
     cutoffs = walk_forward_cutoffs(
         frame[TIMESTAMP],
         horizon_hours=horizon_hours,
@@ -208,11 +222,14 @@ def tune(
         n_trials,
     )
     logger.info(
-        "Tuning '%s' on %d features: %s", spec.name, matrix.shape[1], ", ".join(matrix.columns)
+        "Tuning '%s' on %d features: %s",
+        spec.name,
+        data.matrix.shape[1],
+        ", ".join(data.matrix.columns),
     )
 
     def objective(trial: optuna.Trial) -> float:
-        return _score(spec, matrix, target, times, suggest_params(trial), cutoffs, horizon_hours)
+        return _score(spec, data, suggest_params(trial), cutoffs, horizon_hours)
 
     def log_trial(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
         value = "failed" if trial.value is None else f"{trial.value:.4f}"
@@ -233,9 +250,7 @@ def tune(
         n_trials,
     )
     # Re-score the winner to record its per-cutoff breakdown, and summarise every trial.
-    folds, best_mae, best_rmse = _fold_metrics(
-        spec, matrix, target, times, best_params, cutoffs, horizon_hours
-    )
+    folds, best_mae, best_rmse = _fold_metrics(spec, data, best_params, cutoffs, horizon_hours)
     all_trials = [
         {
             "trial": trial.number,
@@ -253,7 +268,7 @@ def tune(
             "horizon_hours": horizon_hours,
             "seed": seed,
         },
-        "features": list(matrix.columns),
+        "features": list(data.matrix.columns),
         "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
         "best_trial": {
             "trial": study.best_trial.number,

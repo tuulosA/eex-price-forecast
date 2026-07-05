@@ -4,11 +4,15 @@ Four models share this machinery. Three **generation sub-models** (wind, solar, 
 from weather + calendar; the **price model** learns the day-ahead price from calendar, price lags, weather
 aggregates, and the fundamentals (measured in history, the sub-models' forecasts in the future). Each is
 described by a :class:`ModelSpec` - its target column, where its forecast is written, its feature builder,
-and a couple of target-specific switches (non-negativity for generation/load, spike clipping for price).
+and target-specific switches (non-negativity for generation/load, spike clipping for price, and
+**capacity scaling** for wind/solar - learning a capacity factor and multiplying back by installed
+capacity, so the model generalises as the fleet grows).
 
-Hyperparameters come from ``config/hyperparams.json`` when present (written by ``eex model tune``) and fall
-back to :data:`DEFAULT_PARAMS`. Models persist as native XGBoost JSON plus a small sidecar recording the
-exact training feature order, so prediction always reindexes to the columns the model was fit on.
+Fitting uses **early stopping** on a chronological holdout, then refits on all rows at the chosen
+iteration count, and logs **residual diagnostics** (Durbin-Watson, ACF). Hyperparameters come from
+``config/hyperparams.json`` when present (written by ``eex model tune``) and fall back to
+:data:`DEFAULT_PARAMS`. Models persist as native XGBoost JSON plus a small sidecar recording the exact
+training feature order, so prediction always reindexes to the columns the model was fit on.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from xgboost import XGBRegressor
 
@@ -29,6 +34,12 @@ from eex_forecast.config import HYPERPARAMS_PATH, MODELS_DIR
 logger = logging.getLogger(__name__)
 
 FeatureBuilder = Callable[[pd.DataFrame], pd.DataFrame]
+
+# Early stopping: hold out the trailing slice (chronological) as a validation set, stop when it stops
+# improving, then refit on all rows at the chosen iteration count. Skipped when data is too small.
+_VAL_FRACTION = 0.1
+_EARLY_STOPPING_ROUNDS = 50
+_MIN_ROWS_FOR_EARLY_STOPPING = 500
 
 # Sensible, lightly-regularised defaults; the walk-forward tuner overrides these per model.
 DEFAULT_PARAMS: dict[str, Any] = {
@@ -57,14 +68,27 @@ class ModelSpec:
     build_features: FeatureBuilder
     non_negative: bool = False  # clamp predictions at 0 (generation and load cannot be negative)
     clip_target_quantiles: tuple[float, float] | None = None  # winsorise the target before fitting
+    # When set, learn the target as a fraction of installed capacity (a capacity factor) and multiply
+    # the prediction back by capacity - so the model generalises as the fleet grows year to year.
+    capacity_column: str | None = None
 
 
 REGISTRY: dict[str, ModelSpec] = {
     "wind": ModelSpec(
-        "wind", "wind_actual_mw", "wind_forecast_mw", features.wind_features, non_negative=True
+        "wind",
+        "wind_actual_mw",
+        "wind_forecast_mw",
+        features.wind_features,
+        non_negative=True,
+        capacity_column="wind_capacity_mw",
     ),
     "solar": ModelSpec(
-        "solar", "solar_actual_mw", "solar_forecast_mw", features.solar_features, non_negative=True
+        "solar",
+        "solar_actual_mw",
+        "solar_forecast_mw",
+        features.solar_features,
+        non_negative=True,
+        capacity_column="solar_capacity_mw",
     ),
     "load": ModelSpec(
         "load", "load_actual_mw", "load_forecast_mw", features.load_features, non_negative=True
@@ -96,6 +120,8 @@ class TrainedModel:
         matrix = self.spec.build_features(frame).reindex(columns=self.feature_names)
         values = self.booster.predict(matrix)
         series = pd.Series(values, index=frame.index, name=self.spec.forecast_column)
+        if self.spec.capacity_column is not None:  # model predicts a capacity factor -> scale to MW
+            series = series * _capacity_series(frame, self.spec.capacity_column)
         if self.spec.non_negative:
             series = series.clip(lower=0.0)
         return series
@@ -142,12 +168,103 @@ def save_params(name: str, params: dict[str, Any]) -> Path:
     return HYPERPARAMS_PATH
 
 
-def _target(spec: ModelSpec, frame: pd.DataFrame) -> pd.Series:
+def _capacity_series(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Installed capacity per row, forward-filled (it is a yearly step). Raises if never available."""
+    raw = (
+        pd.to_numeric(frame[column], errors="coerce")
+        if column in frame.columns
+        else pd.Series(np.nan, index=frame.index)
+    )
+    capacity = raw.ffill()
+    if not capacity.notna().any():
+        raise ValueError(
+            f"No '{column}' values - run `eex backfill entsoe` to fetch capacity first."
+        )
+    return capacity
+
+
+def capacity_for(spec: ModelSpec, frame: pd.DataFrame) -> pd.Series | None:
+    """The capacity series used to scale ``spec``'s target, or ``None`` when it is not capacity-scaled."""
+    if spec.capacity_column is None:
+        return None
+    return _capacity_series(frame, spec.capacity_column)
+
+
+def capacity_scaled(spec: ModelSpec, frame: pd.DataFrame) -> pd.Series:
+    """The target as a capacity factor for generation (else the raw value), **without** winsorising.
+
+    The tuner uses this and winsorises per fold (train-only) to avoid leakage; the final model uses
+    :func:`scaled_target`, which winsorises over all rows. Prediction reverses the capacity scaling, so a
+    capacity-scaled model still outputs MW.
+    """
     target = pd.to_numeric(frame[spec.target_column], errors="coerce")
+    capacity = capacity_for(spec, frame)
+    return target / capacity if capacity is not None else target
+
+
+def scaled_target(spec: ModelSpec, frame: pd.DataFrame) -> pd.Series:
+    """:func:`capacity_scaled` plus winsorising - the target the final model fits on all rows."""
+    target = capacity_scaled(spec, frame)
     if spec.clip_target_quantiles is not None:
         low, high = (target.quantile(q) for q in spec.clip_target_quantiles)
         target = target.clip(lower=low, upper=high)
     return target
+
+
+def _residual_diagnostics(residuals: np.ndarray[Any, Any]) -> dict[str, Any]:
+    """Durbin-Watson and lag 1-5 autocorrelation of residuals (autocorrelation left in residuals hints
+    at signal the model missed). Returns ``{}`` when there is too little to say."""
+    resid = np.asarray(residuals, dtype=float)
+    resid = resid[np.isfinite(resid)]
+    if len(resid) < 10:
+        return {}
+    centered = resid - resid.mean()
+    variance = float(np.sum(centered**2))
+    if variance <= 0:
+        return {}
+    durbin_watson = float(np.sum(np.diff(resid) ** 2) / np.sum(resid**2))
+    acf = [
+        round(float(np.sum(centered[lag:] * centered[:-lag]) / variance), 3) for lag in range(1, 6)
+    ]
+    return {"durbin_watson": round(durbin_watson, 3), "acf": acf}
+
+
+def _fit(
+    spec: ModelSpec, matrix: pd.DataFrame, target: pd.Series, params: dict[str, Any]
+) -> tuple[XGBRegressor, dict[str, Any]]:
+    """Fit with a chronological early-stopping holdout, then refit on all rows at the best iteration.
+
+    Returns the refit model and residual diagnostics from the (out-of-sample) validation holdout. Falls
+    back to a plain fit with no diagnostics when there are too few rows to hold any out.
+    """
+    if len(matrix) < _MIN_ROWS_FOR_EARLY_STOPPING:
+        booster = XGBRegressor(**params)
+        booster.fit(matrix, target)
+        return booster, {}
+
+    split = int(len(matrix) * (1.0 - _VAL_FRACTION))
+    early = XGBRegressor(**{**params, "early_stopping_rounds": _EARLY_STOPPING_ROUNDS})
+    early.fit(
+        matrix.iloc[:split],
+        target.iloc[:split],
+        eval_set=[(matrix.iloc[split:], target.iloc[split:])],
+        verbose=False,
+    )
+    best_iteration = early.best_iteration
+    n_estimators = (best_iteration + 1) if best_iteration is not None else params["n_estimators"]
+    diagnostics = _residual_diagnostics(
+        target.iloc[split:].to_numpy() - early.predict(matrix.iloc[split:])
+    )
+
+    final = XGBRegressor(**{**params, "n_estimators": n_estimators})
+    final.fit(matrix, target)
+    logger.info(
+        "Early stopping '%s': best iteration %s / %s",
+        spec.name,
+        best_iteration,
+        params["n_estimators"],
+    )
+    return final, diagnostics
 
 
 def train(
@@ -155,12 +272,11 @@ def train(
 ) -> TrainedModel:
     """Fit ``spec``'s model on the rows of ``frame`` where the target is known."""
     matrix = spec.build_features(frame)
-    target = _target(spec, frame)
+    target = scaled_target(spec, frame)
     mask = target.notna()
     if not mask.any():
         raise ValueError(f"No '{spec.target_column}' values to train the '{spec.name}' model on.")
-    booster = XGBRegressor(**(params or load_params(spec.name)))
-    booster.fit(matrix[mask], target[mask])
+    booster, diagnostics = _fit(spec, matrix[mask], target[mask], params or load_params(spec.name))
     logger.info(
         "Trained '%s' on %d rows | %d features: %s",
         spec.name,
@@ -168,4 +284,11 @@ def train(
         matrix.shape[1],
         ", ".join(matrix.columns),
     )
+    if diagnostics:
+        logger.info(
+            "Residual diagnostics '%s': Durbin-Watson %.2f, ACF(1-5) %s",
+            spec.name,
+            diagnostics["durbin_watson"],
+            diagnostics["acf"],
+        )
     return TrainedModel(spec, booster, list(matrix.columns))
