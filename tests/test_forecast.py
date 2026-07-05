@@ -54,7 +54,7 @@ def test_run_forecast_fills_fundamentals_then_price(
     )
     monkeypatch.setattr(forecast_ops, "FORECAST_DIR", tmp_path / "out")
 
-    result = run_forecast(str(db_path), horizon_days=3, history_days=30)
+    result = run_forecast(str(db_path), horizon_days=3, history_days=30, plot=True)
 
     assert not result.empty
     assert (pd.to_datetime(result["timestamp"], utc=True) >= now).all()
@@ -67,3 +67,5 @@ def test_run_forecast_fills_fundamentals_then_price(
         assert result[column].notna().all()
     assert (result["wind_forecast_mw"] >= 0).all()  # generation sub-models are non-negative
     assert (tmp_path / "out" / "forecast.csv").exists()
+    assert (tmp_path / "out" / "forecast.png").exists()  # price plot
+    assert (tmp_path / "out" / "fundamentals.png").exists()  # wind/solar/load plot

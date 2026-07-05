@@ -112,13 +112,15 @@ Then train the models and run the forecast:
 ```bash
 eex model tune --target price             # optional: Optuna walk-forward tuning (also wind/solar/load)
 eex model train                           # train all four models (wind, solar, load, price)
-eex forecast --plot                       # 14-day price forecast -> data/forecast/ (CSV + plot)
+eex forecast --plot                       # 14-day forecast -> data/forecast/ (CSV + price & fundamentals plots)
 ```
 
 `model tune` writes the best hyperparameters to `config/hyperparams.json`, which `model train` then
 uses (falling back to sensible defaults when a model has not been tuned). `forecast` fetches the
 Open-Meteo weather forecast, runs the generation sub-models to fill the fundamentals, then the price
-model, and writes the hourly forecast (add `--write-db` to also store it in the database).
+model, and writes `forecast.csv` with all four hourly series (price plus the wind / solar / load
+forecasts). `--plot` adds a price plot and a wind/solar/load fundamentals plot; `--write-db` also
+stores the forecast in the database.
 
 ## Development
 

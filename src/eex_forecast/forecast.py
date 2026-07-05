@@ -109,7 +109,14 @@ def run_forecast(
     logger.info("Wrote %d-hour forecast to %s", len(result), csv_path)
     if plot:
         plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
+        plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")
     return result
+
+
+def _numeric_column(frame: pd.DataFrame, name: str) -> pd.Series:
+    """A numeric copy of column ``name``, or an all-NaN series when it is absent."""
+    raw = frame[name] if name in frame.columns else pd.Series(np.nan, index=frame.index)
+    return pd.to_numeric(raw, errors="coerce")
 
 
 def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
@@ -119,21 +126,71 @@ def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    def column(name: str) -> pd.Series:
-        raw = frame[name] if name in frame.columns else pd.Series(np.nan, index=frame.index)
-        return pd.to_numeric(raw, errors="coerce")
-
-    actual = column("price_actual_eur_mwh")
-    forecast = column("price_forecast_eur_mwh")
     fig, ax = plt.subplots(figsize=(12.0, 5.0))
-    ax.plot(times, actual, color="0.45", linewidth=1.0, label="actual")
-    ax.plot(times, forecast, color="#4910bc", linewidth=1.3, label="forecast")
+    ax.plot(
+        times,
+        _numeric_column(frame, "price_actual_eur_mwh"),
+        color="0.45",
+        linewidth=1.0,
+        label="actual",
+    )
+    ax.plot(
+        times,
+        _numeric_column(frame, "price_forecast_eur_mwh"),
+        color="#4910bc",
+        linewidth=1.3,
+        label="forecast",
+    )
     ax.axvline(now, color="0.7", linestyle="--", linewidth=0.8)
     ax.set_xlabel("time (UTC)")
     ax.set_ylabel("EUR / MWh")
     ax.set_title(f"DE day-ahead price: {HORIZON_DAYS}-day forecast")
     ax.legend(loc="upper left")
     ax.grid(True, color="0.92")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    return path
+
+
+# (name, actual column, forecast column, y-axis label, forecast colour)
+_FUNDAMENTAL_PANELS = [
+    ("wind", "wind_actual_mw", "wind_forecast_mw", "wind (MW)", "#1f77b4"),
+    ("solar", "solar_actual_mw", "solar_forecast_mw", "solar (MW)", "#ff7f0e"),
+    ("load", "load_actual_mw", "load_forecast_mw", "load (MW)", "#d62728"),
+]
+
+
+def plot_fundamentals(
+    frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object
+) -> object:
+    """Plot the wind / solar / load sub-model forecasts against recent actuals, one panel each."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(len(_FUNDAMENTAL_PANELS), 1, figsize=(12.0, 9.0), sharex=True)
+    for ax, (_, actual_col, forecast_col, ylabel, color) in zip(
+        axes, _FUNDAMENTAL_PANELS, strict=True
+    ):
+        ax.plot(
+            times, _numeric_column(frame, actual_col), color="0.45", linewidth=1.0, label="actual"
+        )
+        ax.plot(
+            times,
+            _numeric_column(frame, forecast_col),
+            color=color,
+            linewidth=1.3,
+            label="forecast",
+        )
+        ax.axvline(now, color="0.7", linestyle="--", linewidth=0.8)
+        ax.set_ylabel(ylabel)
+        ax.grid(True, color="0.92")
+        ax.legend(loc="upper left", fontsize=8)
+    axes[0].set_title(f"DE generation & load: {HORIZON_DAYS}-day forecast")
+    axes[-1].set_xlabel("time (UTC)")
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(path, dpi=120)
