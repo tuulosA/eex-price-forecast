@@ -26,7 +26,14 @@ DateLike = str | date | datetime
 
 
 def _default_end() -> str:
-    return pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d")
+    """End of the fetch window: the day after tomorrow (a midnight boundary).
+
+    A plain ``today`` end reads as today 00:00, so it drops all of today's published generation/load and
+    never reaches tomorrow's day-ahead prices. Day-ahead auctions clear the next day (D+1) around midday,
+    so extending to D+2 midnight captures today's actuals *and* tomorrow's already-known prices; ENTSO-E
+    simply returns whatever exists inside the window (no D+2 prices are requested).
+    """
+    return (pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
 
 
 def _window_start(days: int) -> str:
