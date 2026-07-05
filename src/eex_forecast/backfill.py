@@ -26,7 +26,7 @@ DateLike = str | date | datetime
 
 
 def _default_end() -> str:
-    """End of the fetch window: the day after tomorrow (a midnight boundary).
+    """End of the ENTSO-E fetch window: the day after tomorrow (a midnight boundary).
 
     A plain ``today`` end reads as today 00:00, so it drops all of today's published generation/load and
     never reaches tomorrow's day-ahead prices. Day-ahead auctions clear the next day (D+1) around midday,
@@ -34,6 +34,16 @@ def _default_end() -> str:
     simply returns whatever exists inside the window (no D+2 prices are requested).
     """
     return (pd.Timestamp.now(tz="UTC").normalize() + pd.Timedelta(days=2)).strftime("%Y-%m-%d")
+
+
+def _weather_end() -> str:
+    """End of the weather-history window: today.
+
+    Unlike ENTSO-E, the Open-Meteo archive (ERA5) holds no future data and returns HTTP 400 on a future
+    ``end_date``, so weather history must not use the D+2 ENTSO-E end. (The archive lags a few days
+    anyway; the recent gap is filled by the forecast endpoint at prediction time.)
+    """
+    return pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d")
 
 
 def _window_start(days: int) -> str:
@@ -70,7 +80,7 @@ def backfill_weather(
 
     Requires that ``eex points rank`` has chosen points (``config/weather_points.json``).
     """
-    end = end or _default_end()
+    end = end or _weather_end()
     plan = [(role, point) for role, entries in load_points_config().items() for point in entries]
     if not plan:
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
