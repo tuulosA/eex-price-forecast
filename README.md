@@ -130,6 +130,13 @@ model, and writes `forecast.csv` with all four hourly series (price plus the win
 forecasts). `--plot` adds a price plot and a wind/solar/load fundamentals plot; `--write-db` also
 stores the forecast in the database.
 
+For the routine end-to-end run there is a single command that chains update -> (optional) retrain ->
+forecast:
+
+```bash
+eex run --plot                            # update recent data, then forecast (add --train to retrain first)
+```
+
 ## Development
 
 With the venv activated:

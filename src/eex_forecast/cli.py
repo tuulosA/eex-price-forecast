@@ -14,6 +14,7 @@ Command groups:
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
+- eex run: whole pipeline end to end (update -> optional retrain -> forecast).
 """
 
 from __future__ import annotations
@@ -329,6 +330,44 @@ def forecast_cmd(
     prices = result["price_forecast_eur_mwh"]
     typer.echo(
         f"Forecast {len(result)} hours: price EUR/MWh "
+        f"min={prices.min():.1f} mean={prices.mean():.1f} max={prices.max():.1f}"
+    )
+
+
+# -- run (whole pipeline) -------------------------------------------------------
+@app.command("run")
+def run_cmd(
+    train: Annotated[
+        bool, typer.Option(help="Retrain all models on the refreshed data before forecasting.")
+    ] = False,
+    plot: Annotated[bool, typer.Option(help="Also write the forecast plots.")] = False,
+    write_db: Annotated[
+        bool, typer.Option(help="Also upsert the forecast into the database.")
+    ] = False,
+    days: Annotated[
+        int, typer.Option(help="Rolling refresh window (days).")
+    ] = DEFAULT_REFRESH_DAYS,
+    horizon_days: Annotated[int, typer.Option(help="Forecast horizon in days.")] = HORIZON_DAYS,
+) -> None:
+    """Run the whole pipeline end to end: update recent data, optionally retrain, then forecast."""
+    db_path = str(get_settings().db_path)
+    backfill_ops.refresh_recent(db_path, days=days)
+
+    if train:
+        with connect(get_settings().db_path) as conn:
+            frame = read_frame(conn)
+        if frame.empty:
+            raise typer.BadParameter("No data in the database to train on.")
+        for name in ALL_MODELS:
+            model_ops.train(REGISTRY[name], frame).save()
+        typer.echo(f"Retrained {len(ALL_MODELS)} models.")
+
+    result = forecast_ops.run_forecast(
+        db_path, horizon_days=horizon_days, write_db=write_db, plot=plot
+    )
+    prices = result["price_forecast_eur_mwh"]
+    typer.echo(
+        f"Pipeline complete: {len(result)} hours forecast | price EUR/MWh "
         f"min={prices.min():.1f} mean={prices.mean():.1f} max={prices.max():.1f}"
     )
 
