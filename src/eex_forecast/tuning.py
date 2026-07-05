@@ -14,8 +14,10 @@ legitimately have), then sliced per fold by timestamp - no future row ever enter
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -24,6 +26,7 @@ import pandas as pd
 from optuna.samplers import TPESampler
 from xgboost import XGBRegressor
 
+from eex_forecast.config import TUNING_DIR
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ModelSpec
 
@@ -46,6 +49,8 @@ class TuneResult:
     best_value: float
     n_folds: int
     cutoffs: list[pd.Timestamp]
+    n_trials: int
+    horizon_hours: int
 
 
 def walk_forward_cutoffs(
@@ -162,12 +167,29 @@ def tune(
         min_train_days=min_train_days,
     )
     optuna.logging.set_verbosity(optuna.logging.WARNING)
+    logger.info(
+        "Tuning '%s': %d walk-forward cutoffs (%s .. %s), %d h horizon, %d trials",
+        spec.name,
+        len(cutoffs),
+        cutoffs[0].date(),
+        cutoffs[-1].date(),
+        horizon_hours,
+        n_trials,
+    )
 
     def objective(trial: optuna.Trial) -> float:
         return _score(spec, matrix, target, times, suggest_params(trial), cutoffs, horizon_hours)
 
+    def log_trial(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
+        value = "failed" if trial.value is None else f"{trial.value:.4f}"
+        try:
+            best = f"{study.best_value:.4f}"
+        except ValueError:
+            best = "n/a"
+        logger.info("  trial %d/%d: MAE %s (best %s)", trial.number + 1, n_trials, value, best)
+
     study = optuna.create_study(direction="minimize", sampler=TPESampler(seed=seed))
-    study.optimize(objective, n_trials=n_trials, gc_after_trial=True)
+    study.optimize(objective, n_trials=n_trials, gc_after_trial=True, callbacks=[log_trial])
     best_params = {**study.best_params, **FIXED_PARAMS}
     logger.info(
         "Tuned '%s': best mean MAE %.4f over %d folds, %d trials",
@@ -176,4 +198,29 @@ def tune(
         len(cutoffs),
         n_trials,
     )
-    return TuneResult(best_params, float(study.best_value), len(cutoffs), cutoffs)
+    return TuneResult(
+        best_params, float(study.best_value), len(cutoffs), cutoffs, n_trials, horizon_hours
+    )
+
+
+def save_tuning_report(name: str, result: TuneResult, *, reports_dir: Path = TUNING_DIR) -> Path:
+    """Write a tuning report - best params plus the exact walk-forward cutoffs and metadata - to JSON.
+
+    Separate from ``config/hyperparams.json`` (which holds only the params the trainer consumes) so the
+    provenance of a tuning run - which cutoffs, how many folds/trials, the score - is recorded and can
+    be inspected or reused later.
+    """
+    payload = {
+        "model": name,
+        "tuned_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "n_trials": result.n_trials,
+        "n_folds": result.n_folds,
+        "horizon_hours": result.horizon_hours,
+        "best_mae": round(result.best_value, 4),
+        "cutoffs": [cutoff.isoformat() for cutoff in result.cutoffs],
+        "params": result.params,
+    }
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / f"{name}_tuning.json"
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return path

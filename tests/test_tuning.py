@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 from tests.conftest import make_timeseries
 
 from eex_forecast.model import REGISTRY
-from eex_forecast.tuning import evaluate_params, tune, walk_forward_cutoffs
+from eex_forecast.tuning import (
+    TuneResult,
+    evaluate_params,
+    save_tuning_report,
+    tune,
+    walk_forward_cutoffs,
+)
 
 TINY = {
     "n_estimators": 15,
@@ -61,3 +70,21 @@ def test_tune_returns_complete_params() -> None:
     assert result.n_folds >= 1
     # The saved params are complete (search space + fixed), ready to construct an XGBRegressor.
     assert {"n_estimators", "max_depth", "objective", "tree_method"} <= set(result.params)
+
+
+def test_save_tuning_report_records_cutoffs_and_metadata(tmp_path: Path) -> None:
+    result = TuneResult(
+        params={"max_depth": 5, "objective": "reg:squarederror"},
+        best_value=16.99,
+        n_folds=3,
+        cutoffs=[pd.Timestamp("2026-01-01", tz="UTC"), pd.Timestamp("2026-02-01", tz="UTC")],
+        n_trials=40,
+        horizon_hours=336,
+    )
+    path = save_tuning_report("price", result, reports_dir=tmp_path)
+    payload = json.loads(path.read_text())
+    assert payload["model"] == "price"
+    assert payload["best_mae"] == 16.99
+    assert payload["n_trials"] == 40 and payload["horizon_hours"] == 336
+    assert payload["cutoffs"] == ["2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"]
+    assert payload["params"]["max_depth"] == 5

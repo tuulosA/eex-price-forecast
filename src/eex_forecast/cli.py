@@ -307,10 +307,11 @@ def model_tune(
         n_cutoffs=cutoffs,
         horizon_hours=horizon_hours,
     )
-    path = model_ops.save_params(target.value, result.params)
+    params_path = model_ops.save_params(target.value, result.params)
+    report_path = tuning.save_tuning_report(target.value, result)
     typer.echo(
         f"Tuned '{target.value}': mean MAE {result.best_value:.3f} over {result.n_folds} folds "
-        f"-> {path}"
+        f"({len(result.cutoffs)} cutoffs)\n  params -> {params_path}\n  report -> {report_path}"
     )
 
 
@@ -351,23 +352,32 @@ def run_cmd(
 ) -> None:
     """Run the whole pipeline end to end: update recent data, optionally retrain, then forecast."""
     db_path = str(get_settings().db_path)
-    backfill_ops.refresh_recent(db_path, days=days)
+    stages = "update -> train -> forecast" if train else "update -> forecast"
+    typer.echo(f"Pipeline ({stages})")
+
+    typer.echo(f"[update] refreshing the last {days} days of actuals and weather ...")
+    counts = backfill_ops.refresh_recent(db_path, days=days)
+    entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
+    typer.echo(f"[update] entsoe: {entsoe_summary} | weather columns: {len(counts['weather'])}")
 
     if train:
+        typer.echo("[train] retraining all models on the refreshed data ...")
         with connect(get_settings().db_path) as conn:
             frame = read_frame(conn)
         if frame.empty:
             raise typer.BadParameter("No data in the database to train on.")
         for name in ALL_MODELS:
-            model_ops.train(REGISTRY[name], frame).save()
-        typer.echo(f"Retrained {len(ALL_MODELS)} models.")
+            trained = model_ops.train(REGISTRY[name], frame)
+            trained.save()
+            typer.echo(f"[train] {name}: {len(trained.feature_names)} features")
 
+    typer.echo(f"[forecast] running the {horizon_days}-day forecast ...")
     result = forecast_ops.run_forecast(
         db_path, horizon_days=horizon_days, write_db=write_db, plot=plot
     )
     prices = result["price_forecast_eur_mwh"]
     typer.echo(
-        f"Pipeline complete: {len(result)} hours forecast | price EUR/MWh "
+        f"[done] {len(result)} hours forecast | price EUR/MWh "
         f"min={prices.min():.1f} mean={prices.mean():.1f} max={prices.max():.1f}"
     )
 

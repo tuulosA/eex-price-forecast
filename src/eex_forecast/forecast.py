@@ -95,7 +95,9 @@ def run_forecast(
         model = TrainedModel.load(spec)
         if spec.forecast_column not in frame.columns:
             frame[spec.forecast_column] = np.nan
-        frame.loc[future, spec.forecast_column] = model.predict(frame)[future]
+        predictions = model.predict(frame)[future]
+        frame.loc[future, spec.forecast_column] = predictions
+        logger.info("Forecast %s: %d hours (mean %.1f)", name, len(predictions), predictions.mean())
 
     result = frame.loc[future, _FORECAST_COLUMNS].reset_index(drop=True)
 

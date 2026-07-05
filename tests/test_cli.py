@@ -44,6 +44,8 @@ def test_run_train_flag_retrains_all_models_before_forecast(
     order: list[str] = []
 
     class _Stub:
+        feature_names = ["a", "b"]
+
         def save(self) -> None:
             order.append("save")
 
