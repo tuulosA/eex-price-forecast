@@ -43,14 +43,17 @@ FIXED_PARAMS: dict[str, Any] = {
 
 @dataclass(frozen=True, slots=True)
 class TuneResult:
-    """Outcome of a tuning run: the best (complete) params, its mean-MAE score, and the cutoffs used."""
+    """Outcome of a tuning run: the best params and score, the cutoffs, and the full JSON report.
+
+    ``report`` is the rich, serialisable record (config, features, the best trial's per-cutoff MAE/RMSE,
+    and an all-trials summary) written by :func:`save_tuning_report`.
+    """
 
     params: dict[str, Any]
     best_value: float
     n_folds: int
     cutoffs: list[pd.Timestamp]
-    n_trials: int
-    horizon_hours: int
+    report: dict[str, Any]
 
 
 def walk_forward_cutoffs(
@@ -89,7 +92,7 @@ def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> tuple[pd.DataFrame, pd.Ser
     return matrix, target, times
 
 
-def _score(
+def _fold_metrics(
     spec: ModelSpec,
     matrix: pd.DataFrame,
     target: pd.Series,
@@ -97,9 +100,12 @@ def _score(
     params: dict[str, Any],
     cutoffs: list[pd.Timestamp],
     horizon_hours: int,
-) -> float:
+) -> tuple[list[dict[str, Any]], float, float]:
+    """Per-cutoff MAE/RMSE for one param set, plus their means. Trains one model per cutoff."""
     horizon = pd.Timedelta(hours=horizon_hours)
-    errors: list[float] = []
+    folds: list[dict[str, Any]] = []
+    maes: list[float] = []
+    rmses: list[float] = []
     for cutoff in cutoffs:
         train = (times <= cutoff) & target.notna()
         test = (times > cutoff) & (times <= cutoff + horizon) & target.notna()
@@ -114,10 +120,35 @@ def _score(
         prediction = booster.predict(matrix[test])
         if spec.non_negative:
             prediction = np.clip(prediction, 0.0, None)
-        errors.append(float(np.mean(np.abs(target[test].to_numpy() - prediction))))
-    if not errors:
+        error = target[test].to_numpy() - prediction
+        mae = float(np.mean(np.abs(error)))
+        rmse = float(np.sqrt(np.mean(error**2)))
+        maes.append(mae)
+        rmses.append(rmse)
+        folds.append(
+            {
+                "cutoff": cutoff.isoformat(),
+                "test_rows": int(test.sum()),
+                "mae": round(mae, 4),
+                "rmse": round(rmse, 4),
+            }
+        )
+    if not folds:
         raise ValueError("No usable walk-forward folds (too little data around the cutoffs).")
-    return float(np.mean(errors))
+    return folds, float(np.mean(maes)), float(np.mean(rmses))
+
+
+def _score(
+    spec: ModelSpec,
+    matrix: pd.DataFrame,
+    target: pd.Series,
+    times: pd.Series,
+    params: dict[str, Any],
+    cutoffs: list[pd.Timestamp],
+    horizon_hours: int,
+) -> float:
+    _, mean_mae, _ = _fold_metrics(spec, matrix, target, times, params, cutoffs, horizon_hours)
+    return mean_mae
 
 
 def evaluate_params(
@@ -176,6 +207,9 @@ def tune(
         horizon_hours,
         n_trials,
     )
+    logger.info(
+        "Tuning '%s' on %d features: %s", spec.name, matrix.shape[1], ", ".join(matrix.columns)
+    )
 
     def objective(trial: optuna.Trial) -> float:
         return _score(spec, matrix, target, times, suggest_params(trial), cutoffs, horizon_hours)
@@ -198,28 +232,49 @@ def tune(
         len(cutoffs),
         n_trials,
     )
-    return TuneResult(
-        best_params, float(study.best_value), len(cutoffs), cutoffs, n_trials, horizon_hours
+    # Re-score the winner to record its per-cutoff breakdown, and summarise every trial.
+    folds, best_mae, best_rmse = _fold_metrics(
+        spec, matrix, target, times, best_params, cutoffs, horizon_hours
     )
+    all_trials = [
+        {
+            "trial": trial.number,
+            "mean_mae": round(trial.value, 4),
+            "params": {**trial.params, **FIXED_PARAMS},
+        }
+        for trial in study.trials
+        if trial.value is not None
+    ]
+    report: dict[str, Any] = {
+        "config": {
+            "n_trials": n_trials,
+            "n_cutoffs": len(cutoffs),
+            "min_train_days": min_train_days,
+            "horizon_hours": horizon_hours,
+            "seed": seed,
+        },
+        "features": list(matrix.columns),
+        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
+        "best_trial": {
+            "trial": study.best_trial.number,
+            "mean_mae": round(best_mae, 4),
+            "mean_rmse": round(best_rmse, 4),
+            "params": best_params,
+            "folds": folds,
+        },
+        "all_trials": all_trials,
+    }
+    return TuneResult(best_params, float(study.best_value), len(cutoffs), cutoffs, report)
 
 
 def save_tuning_report(name: str, result: TuneResult, *, reports_dir: Path = TUNING_DIR) -> Path:
-    """Write a tuning report - best params plus the exact walk-forward cutoffs and metadata - to JSON.
+    """Write the tuning report to ``<model>_tuning.json``.
 
-    Separate from ``config/hyperparams.json`` (which holds only the params the trainer consumes) so the
-    provenance of a tuning run - which cutoffs, how many folds/trials, the score - is recorded and can
-    be inspected or reused later.
+    Records the run's config, the exact walk-forward cutoffs, the best trial's per-cutoff MAE/RMSE, and a
+    summary of every trial - the full provenance of a tuning run. Separate from ``config/hyperparams.json``
+    (which holds only the params the trainer consumes) so this detail never reaches the model constructor.
     """
-    payload = {
-        "model": name,
-        "tuned_at": pd.Timestamp.now(tz="UTC").isoformat(),
-        "n_trials": result.n_trials,
-        "n_folds": result.n_folds,
-        "horizon_hours": result.horizon_hours,
-        "best_mae": round(result.best_value, 4),
-        "cutoffs": [cutoff.isoformat() for cutoff in result.cutoffs],
-        "params": result.params,
-    }
+    payload = {"model": name, "tuned_at": pd.Timestamp.now(tz="UTC").isoformat(), **result.report}
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{name}_tuning.json"
     path.write_text(json.dumps(payload, indent=2) + "\n")
