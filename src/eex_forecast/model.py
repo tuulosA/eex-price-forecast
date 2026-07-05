@@ -161,5 +161,11 @@ def train(
         raise ValueError(f"No '{spec.target_column}' values to train the '{spec.name}' model on.")
     booster = XGBRegressor(**(params or load_params(spec.name)))
     booster.fit(matrix[mask], target[mask])
-    logger.info("Trained '%s' on %d rows, %d features", spec.name, int(mask.sum()), matrix.shape[1])
+    logger.info(
+        "Trained '%s' on %d rows | %d features: %s",
+        spec.name,
+        int(mask.sum()),
+        matrix.shape[1],
+        ", ".join(matrix.columns),
+    )
     return TrainedModel(spec, booster, list(matrix.columns))

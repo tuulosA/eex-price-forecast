@@ -70,21 +70,48 @@ def test_tune_returns_complete_params() -> None:
     assert result.n_folds >= 1
     # The saved params are complete (search space + fixed), ready to construct an XGBRegressor.
     assert {"n_estimators", "max_depth", "objective", "tree_method"} <= set(result.params)
+    # The report captures the config, per-cutoff metrics for the best trial, and every trial.
+    assert set(result.report) >= {"config", "cutoffs", "features", "best_trial", "all_trials"}
+    best = result.report["best_trial"]
+    assert {"mae", "rmse", "cutoff", "test_rows"} <= set(best["folds"][0])
+    assert "mean_rmse" in best
+    assert len(result.report["all_trials"]) == 2
 
 
-def test_save_tuning_report_records_cutoffs_and_metadata(tmp_path: Path) -> None:
+def test_save_tuning_report_writes_full_report(tmp_path: Path) -> None:
+    report = {
+        "config": {
+            "n_trials": 40,
+            "n_cutoffs": 2,
+            "min_train_days": 120,
+            "horizon_hours": 336,
+            "seed": 42,
+        },
+        "features": ["hour", "price_lag_336h", "wind"],
+        "cutoffs": ["2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"],
+        "best_trial": {
+            "trial": 5,
+            "mean_mae": 16.99,
+            "mean_rmse": 22.1,
+            "params": {"max_depth": 5},
+            "folds": [
+                {"cutoff": "2026-01-01T00:00:00+00:00", "test_rows": 336, "mae": 15.0, "rmse": 20.0}
+            ],
+        },
+        "all_trials": [{"trial": 0, "mean_mae": 22.0, "params": {"max_depth": 3}}],
+    }
     result = TuneResult(
-        params={"max_depth": 5, "objective": "reg:squarederror"},
+        params={"max_depth": 5},
         best_value=16.99,
-        n_folds=3,
-        cutoffs=[pd.Timestamp("2026-01-01", tz="UTC"), pd.Timestamp("2026-02-01", tz="UTC")],
-        n_trials=40,
-        horizon_hours=336,
+        n_folds=2,
+        cutoffs=[pd.Timestamp("2026-01-01", tz="UTC")],
+        report=report,
     )
-    path = save_tuning_report("price", result, reports_dir=tmp_path)
-    payload = json.loads(path.read_text())
-    assert payload["model"] == "price"
-    assert payload["best_mae"] == 16.99
-    assert payload["n_trials"] == 40 and payload["horizon_hours"] == 336
+    payload = json.loads(save_tuning_report("price", result, reports_dir=tmp_path).read_text())
+    assert payload["model"] == "price" and "tuned_at" in payload
+    assert payload["config"]["n_trials"] == 40 and payload["config"]["min_train_days"] == 120
     assert payload["cutoffs"] == ["2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"]
-    assert payload["params"]["max_depth"] == 5
+    assert payload["features"] == ["hour", "price_lag_336h", "wind"]
+    assert payload["best_trial"]["mean_rmse"] == 22.1
+    assert payload["best_trial"]["folds"][0]["rmse"] == 20.0
+    assert len(payload["all_trials"]) == 1
