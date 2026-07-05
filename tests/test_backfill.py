@@ -2,12 +2,35 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
 import pytest
 
 from eex_forecast import backfill as backfill_ops
+
+
+def test_weather_backfill_defaults_to_today(monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
+    calls: dict[str, Any] = {}
+    point = SimpleNamespace(
+        lat=52.0,
+        lon=9.0,
+        variable="temperature_2m",
+        column="t_de01",
+    )
+
+    def fake_fetch_history(*args: object, **kwargs: object) -> pd.DataFrame:
+        calls["end"] = kwargs["end"]
+        return pd.DataFrame()
+
+    monkeypatch.setattr(backfill_ops, "_weather_end", lambda: "2026-07-05")
+    monkeypatch.setattr(backfill_ops, "load_points_config", lambda: {"temp": [point]})
+    monkeypatch.setattr(backfill_ops, "fetch_history", fake_fetch_history)
+
+    backfill_ops.backfill_weather(tmp_path / "weather.sqlite", start="2026-06-21")
+
+    assert calls["end"] == "2026-07-05"
 
 
 def test_refresh_recent_refetches_a_rolling_window(monkeypatch: pytest.MonkeyPatch) -> None:
