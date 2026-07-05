@@ -9,6 +9,7 @@ Command groups:
 - eex points map: plot candidate and selected points on a map of Germany.
 - eex backfill entsoe: backfill DE price + wind/solar/load actuals.
 - eex backfill weather: backfill weather history at the chosen points.
+- eex update: refresh the latest actuals + weather over a rolling recent window.
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
@@ -37,6 +38,7 @@ from eex_forecast.analysis.correlation import correlations_with
 from eex_forecast.config import (
     ANALYSIS_DIR,
     CANDIDATES_DIR,
+    DEFAULT_REFRESH_DAYS,
     HORIZON_DAYS,
     RANK_DIR,
     get_settings,
@@ -218,6 +220,22 @@ def backfill_weather(
     """Backfill weather history at the configured points."""
     counts = backfill_ops.backfill_weather(get_settings().db_path, start=start, end=end)
     typer.echo(f"Backfilled {len(counts)} weather columns (e.g. {next(iter(counts), '-')}).")
+
+
+# -- update ---------------------------------------------------------------------
+@app.command("update")
+def update_cmd(
+    days: Annotated[
+        int, typer.Option(help="Rolling window of days to re-fetch.")
+    ] = DEFAULT_REFRESH_DAYS,
+) -> None:
+    """Refresh the latest ENTSO-E actuals and weather history over a rolling recent window."""
+    counts = backfill_ops.refresh_recent(str(get_settings().db_path), days=days)
+    entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
+    typer.echo(
+        f"Refreshed last {days} days | entsoe: {entsoe_summary} | "
+        f"weather columns: {len(counts['weather'])}"
+    )
 
 
 # -- analyze --------------------------------------------------------------------

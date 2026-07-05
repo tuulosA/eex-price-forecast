@@ -96,6 +96,14 @@ eex points rank --target solar
 eex backfill weather --start 2023-01-01   # weather at the chosen points
 ```
 
+The `backfill` commands seed history from an explicit `--start`. For the routine refresh, `eex update`
+re-fetches just the last couple of weeks of actuals and weather in one step — enough to pick up
+newly-published and revised ENTSO-E actuals without re-pulling years of data:
+
+```bash
+eex update                                # refresh the trailing 14 days (--days to change the window)
+```
+
 Once the data is in place, two exploratory tools write to `data/analysis/`:
 
 ```bash

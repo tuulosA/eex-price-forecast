@@ -35,6 +35,9 @@ ENTSOE_ZONE = "DE_LU"  # entsoe-py area key for the German-Luxembourg bidding zo
 ENTSOE_ZONE_EIC = "10Y1001A1001A82H"
 MARKET_TIMEZONE = "Europe/Berlin"
 HORIZON_DAYS = 14
+# Rolling window (days) that `eex update` re-fetches each run. ENTSO-E publishes actuals with a lag and
+# revises them, so re-pulling the last couple of weeks keeps the database current without a full backfill.
+DEFAULT_REFRESH_DAYS = 14
 
 # Continental-DE sampling box (lat_min, lat_max, lon_min, lon_max), including the North Sea and
 # Baltic offshore wind regions. Used to keep candidate-point grid search tight and fast.

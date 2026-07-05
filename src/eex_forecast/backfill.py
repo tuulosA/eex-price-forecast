@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from eex_forecast.config import DEFAULT_REFRESH_DAYS
 from eex_forecast.db import connect, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.sources import entsoe
@@ -26,6 +27,10 @@ DateLike = str | date | datetime
 
 def _default_end() -> str:
     return pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d")
+
+
+def _window_start(days: int) -> str:
+    return (pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def backfill_entsoe(
@@ -83,3 +88,20 @@ def backfill_weather(
                 rows,
             )
     return counts
+
+
+def refresh_recent(
+    db_path: str | Path, *, days: int = DEFAULT_REFRESH_DAYS
+) -> dict[str, dict[str, int]]:
+    """Re-fetch the trailing ``days`` of ENTSO-E actuals and weather history (the routine update).
+
+    A rolling window rather than a full re-backfill: newly-published and revised actuals land within the
+    last couple of weeks, and the non-clobbering upsert means re-fetching them is cheap and lossless.
+    Returns the per-series row counts for each source.
+    """
+    start = _window_start(days)
+    logger.info("Refreshing the last %d days (from %s)", days, start)
+    return {
+        "entsoe": backfill_entsoe(db_path, start=start),
+        "weather": backfill_weather(db_path, start=start),
+    }
