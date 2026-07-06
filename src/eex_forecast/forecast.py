@@ -4,10 +4,16 @@ End to end for the next ``horizon_days``:
 
 1. fetch the Open-Meteo **weather forecast** at every configured point into the database's future rows;
 2. read a window of recent history (for price lags) plus those future rows;
-3. run the wind / solar / load **sub-models** to fill the fundamentals' forecast columns for the future;
+3. run the wind / solar / load **sub-models** to fill the fundamentals' forecast columns;
 4. run the **price model**, which consumes those forecast fundamentals alongside calendar, price lags,
    and weather aggregates;
-5. write the 14-day hourly forecast to CSV, optionally upsert it to the database, and optionally plot it.
+5. write the forecast over the **whole window** to CSV, optionally upsert it to the database, and
+   optionally plot it.
+
+The models predict the **entire read window**, not just the future: rows that already have an actual get
+an in-sample prediction that hugs it (giving a continuous forecast line), and the genuinely out-of-sample
+forecast is the tail where no actual price exists yet. Since ENTSO-E day-ahead prices are settled through
+D+1, that unseen tail begins at **D+2** - the first day the price model has truly not seen.
 
 The models must already be trained (``eex model train``); this module only loads and applies them.
 """
@@ -29,8 +35,10 @@ from eex_forecast.weather.point_search import load_points_config, point_columns
 
 logger = logging.getLogger(__name__)
 
-_FORECAST_COLUMNS = [
+PRICE_ACTUAL = "price_actual_eur_mwh"
+_RESULT_COLUMNS = [
     TIMESTAMP,
+    PRICE_ACTUAL,  # kept alongside the forecast so the output is a forecast-vs-actual record
     "price_forecast_eur_mwh",
     "wind_forecast_mw",
     "solar_forecast_mw",
@@ -89,17 +97,18 @@ def run_forecast(
     if not future.any():
         raise RuntimeError("No future rows to forecast - is the weather forecast present?")
 
-    # Sub-models fill the fundamentals' forecast columns for the future rows, which the price model reads.
+    # Predict the whole window. Sub-models run first so the price model can read the forecast fundamentals
+    # (its actual-or-forecast coalesce still prefers the measured value where a row already has one).
     for name in (*SUBMODELS, "price"):
         spec = REGISTRY[name]
-        model = TrainedModel.load(spec)
-        if spec.forecast_column not in frame.columns:
-            frame[spec.forecast_column] = np.nan
-        predictions = model.predict(frame)[future]
-        frame.loc[future, spec.forecast_column] = predictions
-        logger.info("Forecast %s: %d hours (mean %.1f)", name, len(predictions), predictions.mean())
+        frame[spec.forecast_column] = TrainedModel.load(spec).predict(frame)
+        logger.info(
+            "Forecast %s: horizon mean %.1f", name, frame.loc[future, spec.forecast_column].mean()
+        )
 
-    result = frame.loc[future, _FORECAST_COLUMNS].reset_index(drop=True)
+    result = frame[_RESULT_COLUMNS].reset_index(drop=True)
+    unseen = int(result[PRICE_ACTUAL].isna().sum())  # rows with no settled price yet (D+2 onward)
+    logger.info("Forecast: %d rows written (%d genuinely out-of-sample)", len(result), unseen)
 
     if write_db:
         with connect(db_path) as conn:
@@ -108,7 +117,7 @@ def run_forecast(
     FORECAST_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = FORECAST_DIR / "forecast.csv"
     result.to_csv(csv_path, index=False)
-    logger.info("Wrote %d-hour forecast to %s", len(result), csv_path)
+    logger.info("Wrote %d rows to %s", len(result), csv_path)
     if plot:
         plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
         plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")

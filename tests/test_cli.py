@@ -13,7 +13,13 @@ from eex_forecast import cli
 
 
 def _forecast_df() -> pd.DataFrame:
-    return pd.DataFrame({"price_forecast_eur_mwh": [10.0, 20.0, 30.0]})
+    # One settled row (in-sample) and two out-of-sample rows (no actual price), like the real output.
+    return pd.DataFrame(
+        {
+            "price_actual_eur_mwh": [50.0, float("nan"), float("nan")],
+            "price_forecast_eur_mwh": [10.0, 20.0, 30.0],
+        }
+    )
 
 
 def test_run_updates_then_forecasts_without_training(monkeypatch: pytest.MonkeyPatch) -> None:

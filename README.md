@@ -129,9 +129,15 @@ eex forecast --plot                       # 14-day forecast -> data/forecast/ (C
 `model tune` writes the best hyperparameters to `config/hyperparams.json`, which `model train` then
 uses (falling back to sensible defaults when a model has not been tuned). `forecast` fetches the
 Open-Meteo weather forecast, runs the generation sub-models to fill the fundamentals, then the price
-model, and writes `forecast.csv` with all four hourly series (price plus the wind / solar / load
-forecasts). `--plot` adds a price plot and a wind/solar/load fundamentals plot; `--write-db` also
-stores the forecast in the database.
+model, and writes `forecast.csv` with the actual price alongside all four forecast series. `--plot`
+adds a price plot and a wind/solar/load fundamentals plot; `--write-db` also stores the forecast in the
+database.
+
+The models predict the **whole read window**, not just the future: rows that already have an actual get
+an in-sample prediction that hugs it, so the plotted forecast is a continuous line overlapping the
+actuals for context and continuing past them as the true forecast. The genuinely out-of-sample part is
+the tail with no actual price yet — which, because ENTSO-E day-ahead prices are settled through D+1,
+begins at **D+2**. (The command summary reports stats over that out-of-sample tail only.)
 
 For the routine end-to-end run there is a single command that chains update -> (optional) retrain ->
 forecast:
