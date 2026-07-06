@@ -328,10 +328,10 @@ def forecast_cmd(
     result = forecast_ops.run_forecast(
         str(get_settings().db_path), horizon_days=horizon_days, write_db=write_db, plot=plot
     )
-    prices = result["price_forecast_eur_mwh"]
+    ahead = result[result["price_actual_eur_mwh"].isna()]["price_forecast_eur_mwh"]
     typer.echo(
-        f"Forecast {len(result)} hours: price EUR/MWh "
-        f"min={prices.min():.1f} mean={prices.mean():.1f} max={prices.max():.1f}"
+        f"Forecast: {len(result)} rows ({len(ahead)} out-of-sample) | price EUR/MWh "
+        f"min={ahead.min():.1f} mean={ahead.mean():.1f} max={ahead.max():.1f}"
     )
 
 
@@ -375,10 +375,10 @@ def run_cmd(
     result = forecast_ops.run_forecast(
         db_path, horizon_days=horizon_days, write_db=write_db, plot=plot
     )
-    prices = result["price_forecast_eur_mwh"]
+    ahead = result[result["price_actual_eur_mwh"].isna()]["price_forecast_eur_mwh"]
     typer.echo(
-        f"[done] {len(result)} hours forecast | price EUR/MWh "
-        f"min={prices.min():.1f} mean={prices.mean():.1f} max={prices.max():.1f}"
+        f"[done] {len(result)} rows ({len(ahead)} out-of-sample) | price EUR/MWh "
+        f"min={ahead.min():.1f} mean={ahead.mean():.1f} max={ahead.max():.1f}"
     )
 
 

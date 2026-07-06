@@ -57,15 +57,21 @@ def test_run_forecast_fills_fundamentals_then_price(
     result = run_forecast(str(db_path), horizon_days=3, history_days=30, plot=True)
 
     assert not result.empty
-    assert (pd.to_datetime(result["timestamp"], utc=True) >= now).all()
+    # The whole window is predicted (in-sample past + future), so it spans both sides of `now`.
+    result_times = pd.to_datetime(result["timestamp"], utc=True)
+    assert (result_times < now).any() and (result_times >= now).any()
     for column in (
         "price_forecast_eur_mwh",
         "wind_forecast_mw",
         "solar_forecast_mw",
         "load_forecast_mw",
     ):
-        assert result[column].notna().all()
+        assert result[column].notna().all()  # predicted across the whole window
     assert (result["wind_forecast_mw"] >= 0).all()  # generation sub-models are non-negative
+    # The genuinely out-of-sample rows are the ones with no actual price - all in the future.
+    unseen = result[result["price_actual_eur_mwh"].isna()]
+    assert not unseen.empty
+    assert (pd.to_datetime(unseen["timestamp"], utc=True) >= now).all()
     assert (tmp_path / "out" / "forecast.csv").exists()
     assert (tmp_path / "out" / "forecast.png").exists()  # price plot
     assert (tmp_path / "out" / "fundamentals.png").exists()  # wind/solar/load plot
