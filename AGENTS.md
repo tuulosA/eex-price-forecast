@@ -39,14 +39,16 @@ src/eex_forecast/
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # correlation matrix + candidate/ranked point maps
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
-  features.py          # pure feature blocks + per-model feature builders
+  features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
-  tuning.py            # Optuna walk-forward hyperparameter tuning
+  tuning.py            # Optuna walk-forward tuning; walk_forward_metrics (reused by the ablation tools)
+  ablation.py          # A/B weather-aggregation strategies per fundamental (eex analyze ablation <f>)
+  feature_drop.py      # generic full-vs-minus-selected feature A/B for any model (eex analyze drop)
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
 tests/                 # one test_*.py per module; external APIs mocked
 config/                # hyperparams.json (tuned params), weather_points.json (chosen points)
-data/                  # gitignored runtime artifacts: eex.db, models/, forecast/, tuning/, analysis/
+data/                  # gitignored runtime artifacts: eex.db, models/, forecast/, tuning/, ablation/, analysis/
 ```
 
 ## Invariants — do not break these

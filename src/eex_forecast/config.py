@@ -28,6 +28,7 @@ FORECAST_DIR = DATA_DIR / "forecast"  # written forecasts (CSV) and plots
 TUNING_DIR = (
     DATA_DIR / "tuning"
 )  # per-model tuning reports (cutoffs + metadata) from `eex model tune`
+ABLATION_DIR = DATA_DIR / "ablation"  # feature-ablation reports from `eex analyze ablation`
 
 # Tuned hyperparameters per model, written by `eex model tune` and read by `eex model train`.
 HYPERPARAMS_PATH = CONFIG_DIR / "hyperparams.json"
