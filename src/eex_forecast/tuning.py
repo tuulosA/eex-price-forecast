@@ -212,21 +212,17 @@ def tune(
         min_train_days=min_train_days,
     )
     optuna.logging.set_verbosity(optuna.logging.WARNING)
+    scope = f"[{spec.name}]"
     logger.info(
-        "Tuning '%s': %d walk-forward cutoffs (%s .. %s), %d h horizon, %d trials",
-        spec.name,
+        "%s tuning started: %d walk-forward cutoffs (%s .. %s), %d h horizon, %d trials",
+        scope,
         len(cutoffs),
         cutoffs[0].date(),
         cutoffs[-1].date(),
         horizon_hours,
         n_trials,
     )
-    logger.info(
-        "Tuning '%s' on %d features: %s",
-        spec.name,
-        data.matrix.shape[1],
-        ", ".join(data.matrix.columns),
-    )
+    logger.info("%s features: %s", scope, ", ".join(data.matrix.columns))
 
     def objective(trial: optuna.Trial) -> float:
         return _score(spec, data, suggest_params(trial), cutoffs, horizon_hours)
@@ -237,14 +233,16 @@ def tune(
             best = f"{study.best_value:.4f}"
         except ValueError:
             best = "n/a"
-        logger.info("  trial %d/%d: MAE %s (best %s)", trial.number + 1, n_trials, value, best)
+        logger.info(
+            "%s   trial %d/%d: MAE %s (best %s)", scope, trial.number + 1, n_trials, value, best
+        )
 
     study = optuna.create_study(direction="minimize", sampler=TPESampler(seed=seed))
     study.optimize(objective, n_trials=n_trials, gc_after_trial=True, callbacks=[log_trial])
     best_params = {**study.best_params, **FIXED_PARAMS}
     logger.info(
-        "Tuned '%s': best mean MAE %.4f over %d folds, %d trials",
-        spec.name,
+        "%s tuned: best mean MAE %.4f over %d folds, %d trials",
+        scope,
         study.best_value,
         len(cutoffs),
         n_trials,
