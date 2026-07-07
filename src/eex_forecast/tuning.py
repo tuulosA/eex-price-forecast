@@ -178,6 +178,25 @@ def evaluate_params(
     return _score(spec, _prepare(spec, frame), params, cutoffs, horizon_hours)
 
 
+def walk_forward_metrics(
+    spec: ModelSpec,
+    frame: pd.DataFrame,
+    params: dict[str, Any],
+    *,
+    cutoffs: list[pd.Timestamp],
+    horizon_hours: int,
+) -> dict[str, Any]:
+    """Full walk-forward result for one param set: mean MAE, mean RMSE, and the per-cutoff folds.
+
+    The richer sibling of :func:`evaluate_params`; the feature-ablation tool uses it to compare
+    strategies on the same footing the tuner scores hyperparameters on.
+    """
+    folds, mean_mae, mean_rmse = _fold_metrics(
+        spec, _prepare(spec, frame), params, cutoffs, horizon_hours
+    )
+    return {"mean_mae": mean_mae, "mean_rmse": mean_rmse, "folds": folds}
+
+
 def suggest_params(trial: optuna.Trial) -> dict[str, Any]:
     """Sample one XGBoost hyperparameter set (search space + the fixed params)."""
     return {

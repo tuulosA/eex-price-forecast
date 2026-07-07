@@ -11,6 +11,8 @@ Command groups:
 - eex backfill weather: backfill weather history at the chosen points.
 - eex update: refresh the latest actuals + weather over a rolling recent window.
 - eex analyze correlation: feature correlation matrix over the backfilled data.
+- eex analyze ablation wind|solar|load: compare a fundamental's weather-aggregation strategies.
+- eex analyze drop: A/B a model's full feature set vs the set with chosen features removed.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
@@ -25,10 +27,11 @@ from typing import Annotated
 
 import typer
 
+from eex_forecast import ablation, tuning
 from eex_forecast import backfill as backfill_ops
+from eex_forecast import feature_drop as feature_drop_ops
 from eex_forecast import forecast as forecast_ops
 from eex_forecast import model as model_ops
-from eex_forecast import tuning
 from eex_forecast.analysis import (
     aggregate_features,
     correlation_matrix,
@@ -45,6 +48,7 @@ from eex_forecast.config import (
     get_settings,
 )
 from eex_forecast.db import connect, init_db, read_frame, read_target_series
+from eex_forecast.features import WEATHER_AGG
 from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
@@ -67,6 +71,10 @@ backfill_app = typer.Typer(help="Backfill data into the database.", no_args_is_h
 analyze_app = typer.Typer(
     help="Exploratory analysis over the backfilled data.", no_args_is_help=True
 )
+ablation_app = typer.Typer(
+    help="A/B a fundamental's weather-aggregation strategies.", no_args_is_help=True
+)
+analyze_app.add_typer(ablation_app, name="ablation")
 model_app = typer.Typer(help="Train and tune the forecast models.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
@@ -262,6 +270,151 @@ def analyze_correlation(
     typer.echo(f"Correlation matrix -> {csv_path}, {png_path}")
     if top:
         typer.echo(f"  vs price: {top}")
+
+
+def _run_ablation(
+    fundamental: str,
+    strategies: str,
+    cutoffs: int,
+    horizon_hours: int,
+    regions: int,
+    capacity_scaling: bool,
+) -> None:
+    """Shared body for the ``analyze ablation <fundamental>`` subcommands."""
+    selected = tuple(name.strip() for name in strategies.split(",") if name.strip())
+    if not selected:
+        raise typer.BadParameter("Give at least one strategy.")
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    result = ablation.run_ablation(
+        frame,
+        fundamental,
+        strategies=selected,
+        n_cutoffs=cutoffs,
+        horizon_hours=horizon_hours,
+        n_regions=regions,
+        capacity_scaling=capacity_scaling,
+    )
+    path = ablation.save_ablation_report(result)
+    scaling_label = "capacity factor" if capacity_scaling else "raw MW"
+    typer.echo(
+        f"{fundamental} weather-aggregation ablation "
+        f"({len(result.cutoffs)} cutoffs, {scaling_label}):"
+    )
+    for variant in result.variants:
+        typer.echo(
+            f"  {variant['strategy']:<9} {variant['n_features']:>3} feat | "
+            f"MAE {variant['mean_mae']:.3f} | RMSE {variant['mean_rmse']:.3f}"
+        )
+    typer.echo(f"  best: {result.best_strategy} | report -> {path}")
+
+
+def _strategies_default(fundamental: str) -> str:
+    return ",".join(WEATHER_AGG[fundamental].strategies)
+
+
+_CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]
+_HorizonOpt = Annotated[int, typer.Option(help="Backtest horizon per cutoff (hours).")]
+_RegionsOpt = Annotated[int, typer.Option(help="Latitude bands for the 'regional' strategy.")]
+_CapacityOpt = Annotated[
+    bool, typer.Option(help="Learn a capacity factor (on) or raw MW (off). Both scored in MW.")
+]
+
+
+@ablation_app.command("wind")
+def ablation_wind(
+    strategies: Annotated[
+        str, typer.Option(help="Comma-separated strategies.")
+    ] = _strategies_default("wind"),
+    cutoffs: _CutoffsOpt = 6,
+    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
+    regions: _RegionsOpt = 3,
+    capacity_scaling: _CapacityOpt = True,
+) -> None:
+    """A/B wind's weather aggregation: mean / cube (mean(v^3)) / spread / stats / regional / raw."""
+    _run_ablation("wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling)
+
+
+@ablation_app.command("solar")
+def ablation_solar(
+    strategies: Annotated[
+        str, typer.Option(help="Comma-separated strategies.")
+    ] = _strategies_default("solar"),
+    cutoffs: _CutoffsOpt = 6,
+    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
+    regions: _RegionsOpt = 3,
+    capacity_scaling: _CapacityOpt = True,
+) -> None:
+    """A/B solar's irradiance aggregation: mean / spread / stats / regional / raw."""
+    _run_ablation("solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling)
+
+
+@ablation_app.command("load")
+def ablation_load(
+    strategies: Annotated[
+        str, typer.Option(help="Comma-separated strategies.")
+    ] = _strategies_default("load"),
+    cutoffs: _CutoffsOpt = 6,
+    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
+    regions: _RegionsOpt = 3,
+) -> None:
+    """A/B load's temperature aggregation: mean / spread / stats / regional / raw (no capacity)."""
+    _run_ablation("load", strategies, cutoffs, horizon_hours, regions, capacity_scaling=False)
+
+
+@analyze_app.command("drop")
+def analyze_drop(
+    target: Annotated[ModelName, typer.Option(help="Model whose features to drop (not 'all').")],
+    drop: Annotated[
+        str | None,
+        typer.Option(
+            help="Features to drop (1-based numbers/names, comma-separated). Omit to pick interactively."
+        ),
+    ] = None,
+    cutoffs: _CutoffsOpt = 6,
+    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
+) -> None:
+    """Compare a model's full feature set against the set with chosen features removed (walk-forward).
+
+    With no --drop, lists the features numbered and prompts for which to drop; pass --drop for a
+    non-interactive run. Works for any model - price lags/aggregates, or raw per-point sub-model columns.
+    """
+    if target is ModelName.all:
+        raise typer.BadParameter("Drop features from one model at a time (not 'all').")
+    spec = REGISTRY[target.value]
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    names = feature_drop_ops.feature_names(spec, frame)
+    if drop is None:
+        typer.echo(f"'{target.value}' has {len(names)} features:")
+        for index, name in enumerate(names, start=1):
+            typer.echo(f"  {index:3d}  {name}")
+        drop = typer.prompt("Features to drop (numbers/names, comma-separated)")
+    try:
+        dropped = feature_drop_ops.resolve_selection(drop.split(","), names)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    if not dropped:
+        raise typer.BadParameter("No features selected to drop.")
+
+    result = feature_drop_ops.run_feature_drop(
+        spec, frame, dropped, n_cutoffs=cutoffs, horizon_hours=horizon_hours
+    )
+    path = feature_drop_ops.save_drop_report(result)
+    typer.echo(f"Feature drop on '{target.value}' ({len(dropped)} dropped): {', '.join(dropped)}")
+    typer.echo(f"  full    MAE {result.full['mean_mae']:.3f} | RMSE {result.full['mean_rmse']:.3f}")
+    typer.echo(
+        f"  reduced MAE {result.reduced['mean_mae']:.3f} | RMSE {result.reduced['mean_rmse']:.3f} "
+        f"| MAE delta {result.mae_delta:+.3f}"
+    )
+    verdict = "helps (drop them)" if result.mae_delta < 0 else "hurts (keep them)"
+    typer.echo(f"  dropping {verdict} | report -> {path}")
 
 
 # -- model ----------------------------------------------------------------------

@@ -118,6 +118,50 @@ eex analyze correlation                   # feature correlation matrix (CSV + he
 sensibly; `analyze correlation` reduces the database to the fundamentals plus a national mean per
 weather role and shows how each driver correlates with the day-ahead price before any model is built.
 
+### Feature ablation
+
+Two tools measure how feature choices affect forecast skill. Both score candidates by the same
+walk-forward MAE/RMSE the tuner uses (hyperparameters and cutoffs held fixed) and write ranked reports to
+`data/ablation/`.
+
+**Weather aggregation (`analyze ablation <fundamental>`).** Each generation/load sub-model reduces its
+ranked per-point weather columns to a few features. *How* it reduces them is a modelling choice with real
+consequences — e.g. wind power is a convex (~v³) function of speed and capacity is concentrated in the
+north, so the plain national **mean** discards spatial information a richer aggregation could keep. There
+is a subcommand per fundamental:
+
+```bash
+eex analyze ablation wind                 # compare wind strategies -> data/ablation/wind_ablation.json
+eex analyze ablation solar                # solar (irradiance is near-linear, so mean often wins)
+eex analyze ablation load                 # load (temperature has strong spatial structure)
+eex analyze ablation wind --no-capacity-scaling      # learn raw MW instead of a capacity factor
+eex analyze ablation wind --strategies mean,raw --cutoffs 8   # pick strategies / more cutoffs
+```
+
+The strategies are `mean` (the current production feature), `spread` (adds the cross-point standard
+deviation), `stats` (cross-point summary statistics: mean + sum, std, min, max), `regional` (one mean per
+latitude band — `--regions` sets how many), `raw` (every per-point column, maximum information), and —
+for **wind** only — `cube` (adds `mean(v³)`, a proxy for the convex power curve). For the generation
+sub-models, `--capacity-scaling` / `--no-capacity-scaling` toggles
+learning a capacity factor versus raw MW; both modes are scored in MW, so a scaled and an unscaled run
+are directly comparable — run it twice to measure what the scaling itself buys (load has no capacity, so
+the flag is absent there).
+
+**Dropping features (`analyze drop`).** A generic A/B for *any* model: it compares the full feature set
+against the set with features you choose removed. Run without `--drop` and it lists the features numbered
+and prompts for which to drop; pass `--drop` for a non-interactive run. Handy for price (are the price
+lags earning their keep?) and, once a sub-model is switched to `raw` per-point columns, for pruning the
+weakest of those columns:
+
+```bash
+eex analyze drop --target price           # interactive: lists features, you type numbers/names to drop
+eex analyze drop --target price --drop price_lag_168h,price_lag_336h   # non-interactive
+```
+
+Two caveats apply to both tools: the score is the target model's own MAE (for a sub-model, not the
+downstream price impact), and because hyperparameters are held fixed a feature-rich variant may be
+under-served by them — **re-tune the winner** (`eex model tune --target <model>`) before adopting it.
+
 Then train the models and run the forecast:
 
 ```bash

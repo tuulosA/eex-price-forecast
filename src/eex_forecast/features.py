@@ -18,7 +18,8 @@ blocks above into the feature matrix for one model.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 
 import holidays
 import numpy as np
@@ -124,11 +125,147 @@ def fundamentals(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out, index=frame.index)
 
 
+# -- weather-aggregation strategies (for the fundamentals ablation) --------------
+# Each generation/load sub-model reduces the ranked per-point weather columns of its *primary* role to a
+# handful of features. *How* is a modelling choice with real consequences - e.g. wind power is a convex
+# (~v^3) function of speed and capacity is concentrated in the north, so the plain national mean discards
+# information a richer aggregation could keep. :func:`weather_strategy_block` builds the weather block
+# under a named strategy so the ablation tool (``eex analyze ablation``) can score the strategies against
+# each other. The default builders below use ``mean`` - the production feature set, kept byte-identical.
+WeatherBuilder = Callable[[pd.DataFrame], pd.DataFrame]
+
+KNOWN_STRATEGIES: tuple[str, ...] = ("mean", "cube", "spread", "stats", "regional", "raw")
+
+
+@dataclass(frozen=True, slots=True)
+class WeatherAgg:
+    """How a sub-model aggregates its weather points: the role a strategy varies + the roles kept as-is.
+
+    ``primary`` is the weather role (a key of :data:`WEATHER_AGGREGATES`) whose per-point columns the
+    strategy reshapes; ``auxiliary`` roles are always a plain mean (raw under the ``raw`` strategy).
+    ``strategies`` is the default menu for this fundamental (``cube`` only makes physical sense for wind).
+    """
+
+    fundamental: str
+    primary: str
+    auxiliary: tuple[str, ...] = ()
+    strategies: tuple[str, ...] = ("mean", "spread", "stats", "regional", "raw")
+
+
+WEATHER_AGG: dict[str, WeatherAgg] = {
+    "wind": WeatherAgg("wind", "wind_speed", ("temp_wind",), KNOWN_STRATEGIES),
+    "solar": WeatherAgg("solar", "irr_solar", ()),
+    "load": WeatherAgg("load", "temp_load", ("irr_load",)),
+}
+
+
+def _prefixed_numeric(frame: pd.DataFrame, prefix: str) -> pd.DataFrame:
+    """The frame's columns starting with ``prefix`` (sorted), coerced to numeric; empty if none match."""
+    columns = sorted(c for c in frame.columns if c.startswith(prefix))
+    if not columns:
+        return pd.DataFrame(index=frame.index)
+    numeric: pd.DataFrame = frame[columns].apply(pd.to_numeric, errors="coerce")
+    return numeric
+
+
+def _latitude_bands(
+    columns: list[str], coords: dict[str, tuple[float, float]], n_regions: int
+) -> list[list[str]]:
+    """Split ``columns`` into up to ``n_regions`` contiguous latitude bands (south first)."""
+    located = [c for c in columns if c in coords]
+    if not located:
+        return [columns] if columns else []
+    ordered = sorted(located, key=lambda c: coords[c][0])
+    bands = [list(band) for band in np.array_split(ordered, min(n_regions, len(ordered)))]
+    unlocated = [c for c in columns if c not in coords]
+    if unlocated:
+        bands[-1].extend(unlocated)  # no coordinate -> group with the northern-most band
+    return [band for band in bands if band]
+
+
+def _primary_block(
+    primary: pd.DataFrame,
+    name: str,
+    strategy: str,
+    coords: dict[str, tuple[float, float]],
+    n_regions: int,
+) -> pd.DataFrame:
+    """Reshape a role's per-point columns into features under ``strategy`` (``name`` prefixes them)."""
+    if primary.shape[1] == 0:
+        return pd.DataFrame(index=primary.index)
+    mean_block = pd.DataFrame({name: primary.mean(axis=1)}, index=primary.index)
+    if strategy == "mean":
+        return mean_block
+    if strategy == "cube":
+        # mean(v^3) keeps the spatial spread that mean(v)^3 throws away (Jensen); a proxy for wind power.
+        return mean_block.assign(**{f"{name}_cube": (primary**3).mean(axis=1)})
+    if strategy == "spread":
+        if primary.shape[1] < 2:
+            return mean_block
+        return mean_block.assign(**{f"{name}_std": primary.std(axis=1)})
+    if strategy == "stats":
+        # Cross-point summary statistics: mean + sum, std, min, max over the role's points. (``sum`` is
+        # ``mean`` x point-count, so it is redundant for trees at a fixed point count - kept for parity.)
+        return mean_block.assign(
+            **{
+                f"{name}_sum": primary.sum(axis=1),
+                f"{name}_std": primary.std(axis=1),
+                f"{name}_min": primary.min(axis=1),
+                f"{name}_max": primary.max(axis=1),
+            }
+        )
+    if strategy == "regional":
+        bands = _latitude_bands(list(primary.columns), coords, n_regions)
+        return pd.DataFrame(
+            {f"{name}_r{i}": primary[cols].mean(axis=1) for i, cols in enumerate(bands, start=1)},
+            index=primary.index,
+        )
+    if strategy == "raw":
+        return primary
+    raise ValueError(f"Unknown strategy '{strategy}'. Known: {', '.join(KNOWN_STRATEGIES)}.")
+
+
+def weather_strategy_block(
+    frame: pd.DataFrame,
+    agg: WeatherAgg,
+    strategy: str = "mean",
+    *,
+    coords: dict[str, tuple[float, float]] | None = None,
+    n_regions: int = 3,
+) -> pd.DataFrame:
+    """The weather feature block for ``agg``'s fundamental under ``strategy``.
+
+    The primary role's points are reshaped by the strategy; auxiliary roles are a plain mean, except
+    under ``raw`` where every auxiliary point column is fed in too. ``coords`` (column -> ``(lat, lon)``)
+    is only needed by ``regional``; with none it degrades to a single mean.
+    """
+    primary = _prefixed_numeric(frame, WEATHER_AGGREGATES[agg.primary])
+    primary_block = _primary_block(primary, agg.primary, strategy, coords or {}, n_regions)
+    if strategy == "raw":
+        aux_frames = [_prefixed_numeric(frame, WEATHER_AGGREGATES[role]) for role in agg.auxiliary]
+    else:
+        aux_frames = [weather_means(frame, [role]) for role in agg.auxiliary]
+    return pd.concat([primary_block, *aux_frames], axis=1)
+
+
+def fundamental_features_from(weather_builder: WeatherBuilder) -> WeatherBuilder:
+    """A sub-model feature builder = calendar + the given weather block (to A/B aggregation strategies)."""
+
+    def builder(frame: pd.DataFrame) -> pd.DataFrame:
+        return pd.concat([calendar_features(frame[TIMESTAMP]), weather_builder(frame)], axis=1)
+
+    return builder
+
+
 # -- per-model feature builders -------------------------------------------------
 def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Wind generation drivers: calendar + wind speed and air-density temperature at the wind points."""
+    """Wind generation drivers: calendar + wind speed and air-density temperature at the wind points.
+
+    Uses the ``mean`` aggregation strategy - the production default. :func:`weather_strategy_block` builds
+    the variants the ablation tool compares.
+    """
     return pd.concat(
-        [calendar_features(frame[TIMESTAMP]), weather_means(frame, ["wind_speed", "temp_wind"])],
+        [calendar_features(frame[TIMESTAMP]), weather_strategy_block(frame, WEATHER_AGG["wind"])],
         axis=1,
     )
 
@@ -136,14 +273,15 @@ def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Solar generation drivers: calendar (hour / season carry the diurnal cycle) + irradiance."""
     return pd.concat(
-        [calendar_features(frame[TIMESTAMP]), weather_means(frame, ["irr_solar"])], axis=1
+        [calendar_features(frame[TIMESTAMP]), weather_strategy_block(frame, WEATHER_AGG["solar"])],
+        axis=1,
     )
 
 
 def load_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Load drivers: calendar (weekday / holiday / hour) + temperature and irradiance at load points."""
     return pd.concat(
-        [calendar_features(frame[TIMESTAMP]), weather_means(frame, ["temp_load", "irr_load"])],
+        [calendar_features(frame[TIMESTAMP]), weather_strategy_block(frame, WEATHER_AGG["load"])],
         axis=1,
     )
 
