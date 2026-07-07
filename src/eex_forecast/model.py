@@ -9,7 +9,8 @@ and target-specific switches (non-negativity for generation/load, spike clipping
 capacity, so the model generalises as the fleet grows).
 
 Fitting uses **early stopping** on a chronological holdout, then refits on all rows at the chosen
-iteration count, and logs **residual diagnostics** (Durbin-Watson, ACF). Hyperparameters come from
+iteration count. Training logs a step-by-step record per model - features, params, best iteration,
+holdout **MAE/RMSE/R2**, and **residual diagnostics** (Durbin-Watson, ACF). Hyperparameters come from
 ``config/hyperparams.json`` when present (written by ``eex model tune``) and fall back to
 :data:`DEFAULT_PARAMS`. Models persist as native XGBoost JSON plus a small sidecar recording the exact
 training feature order, so prediction always reindexes to the columns the model was fit on.
@@ -229,20 +230,41 @@ def _residual_diagnostics(residuals: np.ndarray[Any, Any]) -> dict[str, Any]:
     return {"durbin_watson": round(durbin_watson, 3), "acf": acf}
 
 
+def _validation_metrics(
+    y_true: np.ndarray[Any, Any], y_pred: np.ndarray[Any, Any]
+) -> dict[str, float]:
+    """MAE, RMSE, and R2 on the (out-of-sample) validation holdout, in the target's natural units."""
+    error = np.asarray(y_true, dtype=float) - np.asarray(y_pred, dtype=float)
+    ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
+    r2 = 1.0 - float(np.sum(error**2)) / ss_tot if ss_tot > 0 else float("nan")
+    return {
+        "mae": round(float(np.mean(np.abs(error))), 3),
+        "rmse": round(float(np.sqrt(np.mean(error**2))), 3),
+        "r2": round(r2, 4),
+    }
+
+
 def _fit(
-    spec: ModelSpec, matrix: pd.DataFrame, target: pd.Series, params: dict[str, Any]
-) -> tuple[XGBRegressor, dict[str, Any]]:
+    spec: ModelSpec,
+    matrix: pd.DataFrame,
+    target: pd.Series,
+    params: dict[str, Any],
+    capacity: pd.Series | None = None,
+) -> tuple[XGBRegressor, dict[str, Any], dict[str, float]]:
     """Fit with a chronological early-stopping holdout, then refit on all rows at the best iteration.
 
-    Returns the refit model and residual diagnostics from the (out-of-sample) validation holdout. Falls
-    back to a plain fit with no diagnostics when there are too few rows to hold any out.
+    Returns the refit model plus, from the (out-of-sample) validation holdout, residual diagnostics and
+    MAE/RMSE/R2 in natural units (capacity scaling reversed). Falls back to a plain fit with no
+    holdout - hence no diagnostics/metrics - when there are too few rows.
     """
+    scope = f"[{spec.name}]"
     if len(matrix) < _MIN_ROWS_FOR_EARLY_STOPPING:
         booster = XGBRegressor(**params)
         booster.fit(matrix, target)
-        return booster, {}
+        return booster, {}, {}
 
     split = int(len(matrix) * (1.0 - _VAL_FRACTION))
+    logger.info("%s early stopping on a %d-row chronological holdout", scope, len(matrix) - split)
     early = XGBRegressor(**{**params, "early_stopping_rounds": _EARLY_STOPPING_ROUNDS})
     early.fit(
         matrix.iloc[:split],
@@ -252,43 +274,59 @@ def _fit(
     )
     best_iteration = early.best_iteration
     n_estimators = (best_iteration + 1) if best_iteration is not None else params["n_estimators"]
-    diagnostics = _residual_diagnostics(
-        target.iloc[split:].to_numpy() - early.predict(matrix.iloc[split:])
-    )
+    logger.info("%s best iteration %s / %s", scope, best_iteration, params["n_estimators"])
+
+    # Score the holdout in natural units (reverse the capacity scaling for wind/solar).
+    y_val = target.iloc[split:].to_numpy()
+    pred_val = early.predict(matrix.iloc[split:])
+    if capacity is not None:
+        cap = capacity.iloc[split:].to_numpy()
+        y_val, pred_val = y_val * cap, pred_val * cap
+    diagnostics = _residual_diagnostics(y_val - pred_val)
+    metrics = _validation_metrics(y_val, pred_val)
 
     final = XGBRegressor(**{**params, "n_estimators": n_estimators})
     final.fit(matrix, target)
-    logger.info(
-        "Early stopping '%s': best iteration %s / %s",
-        spec.name,
-        best_iteration,
-        params["n_estimators"],
-    )
-    return final, diagnostics
+    return final, diagnostics, metrics
 
 
 def train(
     spec: ModelSpec, frame: pd.DataFrame, *, params: dict[str, Any] | None = None
 ) -> TrainedModel:
-    """Fit ``spec``'s model on the rows of ``frame`` where the target is known."""
+    """Fit ``spec``'s model on the rows of ``frame`` where the target is known, logging each step."""
+    params = params or load_params(spec.name)
     matrix = spec.build_features(frame)
     target = scaled_target(spec, frame)
     mask = target.notna()
     if not mask.any():
         raise ValueError(f"No '{spec.target_column}' values to train the '{spec.name}' model on.")
-    booster, diagnostics = _fit(spec, matrix[mask], target[mask], params or load_params(spec.name))
+
+    scope = f"[{spec.name}]"
     logger.info(
-        "Trained '%s' on %d rows | %d features: %s",
-        spec.name,
-        int(mask.sum()),
-        matrix.shape[1],
-        ", ".join(matrix.columns),
+        "%s training started: %d rows, %d features", scope, int(mask.sum()), matrix.shape[1]
     )
+    logger.info("%s features: %s", scope, ", ".join(matrix.columns))
+    logger.info("%s params: %s", scope, ", ".join(f"{k}={v}" for k, v in params.items()))
+
+    capacity = capacity_for(spec, frame)
+    booster, diagnostics, metrics = _fit(
+        spec, matrix[mask], target[mask], params, capacity[mask] if capacity is not None else None
+    )
+
+    if metrics:
+        logger.info(
+            "%s validation | MAE %.3f | RMSE %.3f | R2 %.3f",
+            scope,
+            metrics["mae"],
+            metrics["rmse"],
+            metrics["r2"],
+        )
     if diagnostics:
         logger.info(
-            "Residual diagnostics '%s': Durbin-Watson %.2f, ACF(1-5) %s",
-            spec.name,
+            "%s residuals | Durbin-Watson %.2f | ACF(1-5) %s",
+            scope,
             diagnostics["durbin_watson"],
             diagnostics["acf"],
         )
+    logger.info("%s trained", scope)
     return TrainedModel(spec, booster, list(matrix.columns))
