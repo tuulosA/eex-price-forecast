@@ -544,5 +544,133 @@
       "pearson": 0.92,
       "best_lag_hours": 0
     }
+  ],
+  "neighbour_wind": [
+    {
+      "column": "ws_dk01",
+      "lat": 54.955,
+      "lon": 9.4803,
+      "variable": "wind_speed_100m",
+      "candidate_id": "dk_zones_039",
+      "pearson": -0.3307,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_dk02",
+      "lat": 55.152,
+      "lon": 7.749,
+      "variable": "wind_speed_100m",
+      "candidate_id": "dk_zones_040",
+      "pearson": -0.3262,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_nl01",
+      "lat": 53.1125,
+      "lon": 7.0124,
+      "variable": "wind_speed_100m",
+      "candidate_id": "nl_zones_139",
+      "pearson": -0.345,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_nl02",
+      "lat": 52.6152,
+      "lon": 4.8137,
+      "variable": "wind_speed_100m",
+      "candidate_id": "nl_zones_084",
+      "pearson": -0.3425,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_pl01",
+      "lat": 52.8837,
+      "lon": 14.2152,
+      "variable": "wind_speed_100m",
+      "candidate_id": "pl_zones_018",
+      "pearson": -0.2994,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_pl02",
+      "lat": 52.3774,
+      "lon": 14.6306,
+      "variable": "wind_speed_100m",
+      "candidate_id": "pl_zones_086",
+      "pearson": -0.2819,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_fr01",
+      "lat": 50.2412,
+      "lon": 4.1951,
+      "variable": "wind_speed_100m",
+      "candidate_id": "fr_zones_148",
+      "pearson": -0.2817,
+      "best_lag_hours": 3
+    },
+    {
+      "column": "ws_fr02",
+      "lat": 50.2412,
+      "lon": 3.4878,
+      "variable": "wind_speed_100m",
+      "candidate_id": "fr_zones_028",
+      "pearson": -0.2747,
+      "best_lag_hours": 3
+    },
+    {
+      "column": "ws_ch01",
+      "lat": 46.8774,
+      "lon": 10.2396,
+      "variable": "wind_speed_100m",
+      "candidate_id": "ch_zones_143",
+      "pearson": -0.2309,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_ch02",
+      "lat": 46.5043,
+      "lon": 7.1799,
+      "variable": "wind_speed_100m",
+      "candidate_id": "ch_zones_088",
+      "pearson": -0.2301,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_cz01",
+      "lat": 50.0559,
+      "lon": 12.7253,
+      "variable": "wind_speed_100m",
+      "candidate_id": "cz_zones_130",
+      "pearson": -0.2934,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_cz02",
+      "lat": 49.0536,
+      "lon": 13.7173,
+      "variable": "wind_speed_100m",
+      "candidate_id": "cz_zones_123",
+      "pearson": -0.2572,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_at01",
+      "lat": 47.0111,
+      "lon": 10.2691,
+      "variable": "wind_speed_100m",
+      "candidate_id": "at_zones_123",
+      "pearson": -0.2631,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_at02",
+      "lat": 47.3762,
+      "lon": 12.3366,
+      "variable": "wind_speed_100m",
+      "candidate_id": "at_zones_063",
+      "pearson": -0.2414,
+      "best_lag_hours": 0
+    }
   ]
 }

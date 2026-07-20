@@ -47,6 +47,35 @@ DEFAULT_REFRESH_DAYS = 14
 # Baltic offshore wind regions. Used to keep candidate-point grid search tight and fast.
 DE_BBOX = (47.0, 56.0, 5.5, 15.5)
 
+# -- Neighbour wind -------------------------------------------------------------
+# DE's price is coupled to its neighbours through the interconnectors: abundant wind in a neighbouring
+# bidding zone depresses that zone's price and, via imports, DE's. We rank each neighbour's own wind
+# candidate points against DE price and keep the two best - a cross-border wind proxy for the price model.
+# The set mirrors the wind-relevant DE neighbours (offshore North Sea/Baltic + onshore) used upstream.
+WIND_NEIGHBOURS: tuple[str, ...] = ("DK", "NL", "PL", "FR", "CH", "CZ", "AT")
+NEIGHBOUR_POINTS_PER_COUNTRY = 2
+NEIGHBOUR_MIN_DISTANCE_KM = 50.0  # keep the two chosen points per neighbour spatially distinct
+
+# Property values that identify each country across the GISCO (ISO2/ISO3) and EEZ (name) GeoJSON schemes.
+# Any feature property value equal (case-insensitively) to one of these marks the feature as that country.
+COUNTRY_IDENTIFIERS: dict[str, frozenset[str]] = {
+    "DE": frozenset({"DE", "DEU", "GERMANY"}),
+    "DK": frozenset({"DK", "DNK", "DENMARK"}),
+    "NL": frozenset({"NL", "NLD", "NETHERLANDS"}),
+    "PL": frozenset({"PL", "POL", "POLAND"}),
+    "FR": frozenset({"FR", "FRA", "FRANCE"}),
+    "CH": frozenset({"CH", "CHE", "SWITZERLAND"}),
+    "CZ": frozenset({"CZ", "CZE", "CZECHIA", "CZECH REPUBLIC"}),
+    "AT": frozenset({"AT", "AUT", "AUSTRIA"}),
+}
+
+# Continental box for neighbour candidate sampling (lat_min, lat_max, lon_min, lon_max). Per-country
+# geometry is clipped to each country's ring extent within this box. Bounds are deliberately tight to the
+# DE-relevant wind band: lat_max 58.5 drops the Faroese North-Atlantic EEZ (tagged SOVEREIGN1=Denmark),
+# lat_min 43 drops Corsica/the Mediterranean, and the longitudes drop the French Atlantic far west while
+# keeping every neighbour's mainland and its North Sea / Baltic offshore.
+EUROPE_BBOX = (43.0, 58.5, -5.0, 24.0)
+
 # The chosen weather points, written by the point-search step and read by the weather backfill.
 WEATHER_POINTS_PATH = CONFIG_DIR / "weather_points.json"
 
