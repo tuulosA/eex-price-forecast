@@ -39,7 +39,7 @@ from eex_forecast.analysis import (
     plot_points_map,
     save_heatmap,
 )
-from eex_forecast.analysis.correlation import correlations_with
+from eex_forecast.analysis.correlation import correlations_with, order_by_target
 from eex_forecast.config import (
     ANALYSIS_DIR,
     CANDIDATES_DIR,
@@ -383,7 +383,8 @@ def analyze_correlation(
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
-    corr = correlation_matrix(aggregate_features(frame))
+    # Order most-to-least correlated with price, so the heatmap reads strongest driver first.
+    corr = order_by_target(correlation_matrix(aggregate_features(frame)), "price")
     ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = ANALYSIS_DIR / "correlation.csv"
     corr.round(4).to_csv(csv_path)

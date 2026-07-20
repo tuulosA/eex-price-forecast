@@ -89,6 +89,18 @@ def correlations_with(corr: pd.DataFrame, target: str) -> pd.Series:
     return series.reindex(series.abs().sort_values(ascending=False).index)
 
 
+def order_by_target(corr: pd.DataFrame, target: str = "price") -> pd.DataFrame:
+    """Reorder the matrix so ``target`` is first, then the rest by descending ``|corr with target|``.
+
+    Gives a heatmap read top-to-bottom from the strongest price driver to the weakest, rather than the
+    fixed fundamentals-then-weather grouping. Returns ``corr`` unchanged if ``target`` is absent.
+    """
+    if target not in corr.columns:
+        return corr
+    order = [target, *correlations_with(corr, target).index]
+    return corr.loc[order, order]
+
+
 def save_heatmap(
     corr: pd.DataFrame, path: Path, *, title: str = "Feature correlation (Pearson)"
 ) -> Path:
