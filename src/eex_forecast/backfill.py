@@ -17,7 +17,7 @@ import pandas as pd
 from eex_forecast.config import DEFAULT_REFRESH_DAYS
 from eex_forecast.db import connect, upsert
 from eex_forecast.db.schema import create_schema
-from eex_forecast.sources import entsoe, nuclear
+from eex_forecast.sources import entsoe, ntc, nuclear
 from eex_forecast.weather.openmeteo import fetch_history
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
@@ -91,6 +91,21 @@ def backfill_nuclear(
     return rows
 
 
+def backfill_ntc(db_path: str | Path, *, start: DateLike, end: DateLike | None = None) -> int:
+    """Backfill per-border month-ahead transfer capacity (``ntc_imp_<b>`` / ``ntc_exp_<b>``).
+
+    Month-ahead NTC is published ahead, so the default end reaches D+2 and the forecast step extends it to
+    the full horizon. Returns the number of rows written.
+    """
+    end = end or _default_end()
+    frame = ntc.fetch_ntc(start, end)
+    with connect(db_path) as conn:
+        create_schema(conn)
+        rows = upsert(conn, frame)
+    logger.info("Backfilled NTC: %d rows", rows)
+    return rows
+
+
 def backfill_weather(
     db_path: str | Path,
     *,
@@ -157,4 +172,5 @@ def refresh_recent(
         "entsoe": backfill_entsoe(db_path, start=start),
         "weather": backfill_weather(db_path, start=start),
         "nuclear": {"nuclear_available_mw": backfill_nuclear(db_path, start=start)},
+        "ntc": {"rows": backfill_ntc(db_path, start=start)},
     }

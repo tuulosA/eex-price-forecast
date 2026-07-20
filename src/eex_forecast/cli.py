@@ -10,7 +10,8 @@ Command groups:
 - eex backfill entsoe: backfill DE price + wind/solar/load actuals.
 - eex backfill weather: backfill weather history at the chosen points.
 - eex backfill nuclear: backfill cross-border nuclear availability (FR).
-- eex update: refresh the latest actuals + weather + nuclear over a rolling recent window.
+- eex backfill ntc: backfill per-border month-ahead transfer capacity (NTC).
+- eex update: refresh the latest actuals + weather + nuclear + NTC over a rolling recent window.
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
@@ -365,6 +366,16 @@ def backfill_nuclear(
     typer.echo(f"Backfilled nuclear: {rows} rows -> nuclear_available_mw")
 
 
+@backfill_app.command("ntc")
+def backfill_ntc(
+    start: Annotated[str, typer.Option(help="Start date, e.g. 2023-01-01.")],
+    end: Annotated[str | None, typer.Option(help="End date (default: D+2).")] = None,
+) -> None:
+    """Backfill per-border month-ahead transfer capacity into ntc_imp_<b> / ntc_exp_<b>."""
+    rows = backfill_ops.backfill_ntc(get_settings().db_path, start=start, end=end)
+    typer.echo(f"Backfilled NTC: {rows} rows -> ntc_imp_<b> / ntc_exp_<b>")
+
+
 # -- update ---------------------------------------------------------------------
 @app.command("update")
 def update_cmd(
@@ -376,9 +387,11 @@ def update_cmd(
     counts = backfill_ops.refresh_recent(str(get_settings().db_path), days=days)
     entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
     nuclear_rows = next(iter(counts.get("nuclear", {}).values()), 0)
+    ntc_rows = next(iter(counts.get("ntc", {}).values()), 0)
     typer.echo(
         f"Refreshed last {days} days | entsoe: {entsoe_summary} | "
-        f"weather columns: {len(counts['weather'])} | nuclear: {nuclear_rows} rows"
+        f"weather columns: {len(counts['weather'])} | nuclear: {nuclear_rows} rows | "
+        f"ntc: {ntc_rows} rows"
     )
 
 

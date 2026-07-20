@@ -19,7 +19,7 @@ from typing import Literal
 import pandas as pd
 
 from eex_forecast.config import NUCLEAR_COLUMN
-from eex_forecast.features import neighbour_wind_block
+from eex_forecast.features import neighbour_wind_block, ntc_features
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,9 @@ def aggregate_features(frame: pd.DataFrame) -> pd.DataFrame:
             numeric = frame[columns].apply(pd.to_numeric, errors="coerce")
             features[name] = numeric.mean(axis=1)
     aggregated = pd.DataFrame(features)
+    ntc = ntc_features(frame)  # ntc_imp_total / ntc_exp_total, or empty if no NTC columns present
+    if not ntc.empty:
+        aggregated = pd.concat([aggregated, ntc], axis=1)
     neighbours = neighbour_wind_block(frame, "country_mean")  # nbr_wind_<cc>, or empty if none present
     if not neighbours.empty:
         aggregated = pd.concat([aggregated, neighbours], axis=1)

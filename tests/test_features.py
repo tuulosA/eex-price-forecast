@@ -14,6 +14,7 @@ from eex_forecast.features import (
     fundamentals,
     load_features,
     neighbour_wind_block,
+    ntc_features,
     nuclear_feature,
     price_features,
     price_features_with_neighbours,
@@ -227,6 +228,30 @@ def test_price_features_includes_nuclear_when_present() -> None:
     frame = _frame_with_neighbours()
     frame["nuclear_available_mw"] = [50000.0, 51000.0, 52000.0, 53000.0, 54000.0, 55000.0]
     assert "nuclear_available_mw" in price_features(frame).columns
+
+
+def test_ntc_features_sum_totals_and_absent() -> None:
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2025-01-01", periods=2, freq="h", tz="UTC"),
+            "ntc_imp_fr": [2000.0, 2100.0],
+            "ntc_imp_nl": [1000.0, 1000.0],
+            "ntc_exp_fr": [1500.0, 1500.0],
+        }
+    )
+    block = ntc_features(frame)
+    assert block["ntc_imp_total"].tolist() == [3000.0, 3100.0]  # fr + nl
+    assert block["ntc_exp_total"].tolist() == [1500.0, 1500.0]
+    # No NTC columns -> empty block.
+    assert ntc_features(pd.DataFrame({"timestamp": frame["timestamp"]})).shape[1] == 0
+
+
+def test_price_features_includes_ntc_totals_when_present() -> None:
+    frame = _frame_with_neighbours()
+    frame["ntc_imp_fr"] = [2000.0] * 6
+    frame["ntc_exp_fr"] = [1500.0] * 6
+    columns = price_features(frame).columns
+    assert "ntc_imp_total" in columns and "ntc_exp_total" in columns
 
 
 def test_price_features_adopts_country_mean_neighbours() -> None:

@@ -26,7 +26,12 @@ import holidays
 import numpy as np
 import pandas as pd
 
-from eex_forecast.config import AREA_CODE, NUCLEAR_COLUMN
+from eex_forecast.config import (
+    AREA_CODE,
+    NTC_EXPORT_PREFIX,
+    NTC_IMPORT_PREFIX,
+    NUCLEAR_COLUMN,
+)
 
 TIMESTAMP = "timestamp"
 PRICE_ACTUAL = "price_actual_eur_mwh"
@@ -331,9 +336,30 @@ def nuclear_feature(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def ntc_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """Total cross-border transfer capacity: ``ntc_imp_total`` / ``ntc_exp_total`` summed over the borders.
+
+    The per-border ``ntc_imp_<b>`` / ``ntc_exp_<b>`` columns (stored by the NTC backfill) are collapsed to
+    one import + one export total - the aggregate "how coupled is DE to its neighbours right now" signal,
+    keeping the price model low-dimensional. Empty when no NTC columns are present.
+    """
+    imports = sorted(c for c in frame.columns if c.startswith(NTC_IMPORT_PREFIX))
+    exports = sorted(c for c in frame.columns if c.startswith(NTC_EXPORT_PREFIX))
+    out: dict[str, pd.Series] = {}
+    if imports:
+        out["ntc_imp_total"] = frame[imports].apply(pd.to_numeric, errors="coerce").sum(
+            axis=1, min_count=1
+        )
+    if exports:
+        out["ntc_exp_total"] = frame[exports].apply(pd.to_numeric, errors="coerce").sum(
+            axis=1, min_count=1
+        )
+    return pd.DataFrame(out, index=frame.index)
+
+
 def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
-    """Price drivers excluding the cross-border block: calendar + price lags + weather means + fundamentals
-    + nuclear availability."""
+    """Price drivers excluding the cross-border wind block: calendar + price lags + weather means +
+    fundamentals + nuclear availability + transfer-capacity totals."""
     return pd.concat(
         [
             calendar_features(frame[TIMESTAMP]),
@@ -341,6 +367,7 @@ def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
             weather_means(frame),
             fundamentals(frame),
             nuclear_feature(frame),
+            ntc_features(frame),
         ],
         axis=1,
     )
