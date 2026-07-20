@@ -166,7 +166,7 @@ def points_build(
 @points_app.command("rank")
 def points_rank(
     target: Annotated[Target, typer.Option(help="Role to rank: wind / temp / solar.")],
-    year: Annotated[int, typer.Option(help="Year of actuals/weather to rank against.")] = 2024,
+    year: Annotated[int, typer.Option(help="Year of actuals/weather to rank against.")] = 2025,
     count: Annotated[int, typer.Option(help="How many top points to keep.")] = 20,
 ) -> None:
     """Rank candidates against the matching actual and write the chosen points to config."""
@@ -253,7 +253,7 @@ def neighbours_build(
 
 @neighbours_app.command("rank")
 def neighbours_rank(
-    year: Annotated[int, typer.Option(help="Year of DE price + weather to rank against.")] = 2024,
+    year: Annotated[int, typer.Option(help="Year of DE price + weather to rank against.")] = 2025,
     count: Annotated[
         int, typer.Option(help="Points to keep per neighbour.")
     ] = NEIGHBOUR_POINTS_PER_COUNTRY,
