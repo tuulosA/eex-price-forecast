@@ -34,10 +34,10 @@ def test_prepare_request_uses_customer_api_with_key(monkeypatch: pytest.MonkeyPa
 
 
 @responses.activate
-def test_fetch_history_calls_archive_and_parses() -> None:
+def test_fetch_history_calls_historical_forecast_ecmwf_and_parses() -> None:
     responses.add(
         responses.GET,
-        openmeteo.ARCHIVE_URL,
+        openmeteo.HISTORICAL_FORECAST_URL,
         json={
             "hourly": {
                 "time": ["2025-01-01T00:00", "2025-01-01T01:00", "2025-01-01T02:00"],
@@ -50,4 +50,6 @@ def test_fetch_history_calls_archive_and_parses() -> None:
     )
     assert frame["wind_speed_100m"].tolist() == [8.1, 8.4, 7.9]
     assert len(responses.calls) == 1
-    assert "archive-api.open-meteo.com" in responses.calls[0].request.url
+    request_url = responses.calls[0].request.url
+    assert "historical-forecast-api.open-meteo.com" in request_url
+    assert "ecmwf_ifs" in request_url  # single consistent model, matching the live forecast
