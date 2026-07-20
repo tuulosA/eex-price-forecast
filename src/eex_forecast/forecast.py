@@ -30,6 +30,7 @@ from eex_forecast.db import connect, read_frame, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
+from eex_forecast.sources import nuclear
 from eex_forecast.weather.openmeteo import fetch_forecast
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
@@ -69,6 +70,25 @@ def fetch_forecast_weather(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
     return counts
 
 
+def fetch_forecast_nuclear(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int:
+    """Fetch cross-border nuclear availability across the horizon into the database's future rows.
+
+    Nuclear outages publish ahead, so this fills real ``nuclear_available_mw`` for the forecast horizon
+    (unlike the weather forecast, which is a genuine prediction). A no-op if no nuclear zone returns data.
+    """
+    now = pd.Timestamp.now(tz="UTC").floor("h")
+    frame = nuclear.fetch_nuclear_available(
+        now - pd.Timedelta(days=2), now + pd.Timedelta(days=horizon_days)
+    )
+    if frame.empty:
+        return 0
+    with connect(db_path) as conn:
+        create_schema(conn)
+        rows = upsert(conn, frame)
+    logger.info("Fetched forecast nuclear into %d future rows", rows)
+    return rows
+
+
 def run_forecast(
     db_path: str,
     *,
@@ -79,6 +99,7 @@ def run_forecast(
 ) -> pd.DataFrame:
     """Produce the 14-day hourly price forecast and write it to CSV (and optionally the DB / a plot)."""
     fetch_forecast_weather(db_path, horizon_days=horizon_days)
+    fetch_forecast_nuclear(db_path, horizon_days=horizon_days)
 
     now = pd.Timestamp.now(tz="UTC").floor("h")
     with connect(db_path) as conn:

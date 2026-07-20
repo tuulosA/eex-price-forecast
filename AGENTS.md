@@ -32,6 +32,7 @@ src/eex_forecast/
     schema.py          # `timeseries` table; separate actual/forecast columns; ensure_columns adds weather cols
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
   sources/entsoe.py    # DE price + wind/solar/load actuals + installed capacity (entsoe-py)
+  sources/nuclear.py   # cross-border nuclear availability = capacity - A80/B14 outages (known-ahead)
   weather/
     geometry.py        # download land + EEZ GeoJSON (GISCO / Marine Regions)
     candidates.py      # candidate points (pure-Python point-in-ring; no shapely)

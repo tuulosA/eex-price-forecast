@@ -9,7 +9,8 @@ Command groups:
 - eex points map: plot candidate and selected points on a map of Germany.
 - eex backfill entsoe: backfill DE price + wind/solar/load actuals.
 - eex backfill weather: backfill weather history at the chosen points.
-- eex update: refresh the latest actuals + weather over a rolling recent window.
+- eex backfill nuclear: backfill cross-border nuclear availability (FR).
+- eex update: refresh the latest actuals + weather + nuclear over a rolling recent window.
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
@@ -354,6 +355,16 @@ def backfill_weather(
     typer.echo(f"Backfilled {len(counts)} weather columns (e.g. {next(iter(counts), '-')}).")
 
 
+@backfill_app.command("nuclear")
+def backfill_nuclear(
+    start: Annotated[str, typer.Option(help="Start date, e.g. 2023-01-01.")],
+    end: Annotated[str | None, typer.Option(help="End date (default: D+2).")] = None,
+) -> None:
+    """Backfill cross-border nuclear availability (FR by default) into nuclear_available_mw."""
+    rows = backfill_ops.backfill_nuclear(get_settings().db_path, start=start, end=end)
+    typer.echo(f"Backfilled nuclear: {rows} rows -> nuclear_available_mw")
+
+
 # -- update ---------------------------------------------------------------------
 @app.command("update")
 def update_cmd(
@@ -364,9 +375,10 @@ def update_cmd(
     """Refresh the latest ENTSO-E actuals and weather history over a rolling recent window."""
     counts = backfill_ops.refresh_recent(str(get_settings().db_path), days=days)
     entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
+    nuclear_rows = next(iter(counts.get("nuclear", {}).values()), 0)
     typer.echo(
         f"Refreshed last {days} days | entsoe: {entsoe_summary} | "
-        f"weather columns: {len(counts['weather'])}"
+        f"weather columns: {len(counts['weather'])} | nuclear: {nuclear_rows} rows"
     )
 
 
