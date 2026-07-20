@@ -11,7 +11,11 @@ from tests.conftest import make_timeseries
 
 from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
-from eex_forecast.forecast import run_forecast
+from eex_forecast.forecast import (
+    _last_complete_market_day_cut,
+    _weather_coverage_end,
+    run_forecast,
+)
 from eex_forecast.model import ALL_MODELS, REGISTRY, train
 
 TINY = {
@@ -77,3 +81,22 @@ def test_run_forecast_fills_fundamentals_then_price(
     assert (tmp_path / "out" / "forecast.png").exists()  # price plot
     assert (tmp_path / "out" / "fundamentals.png").exists()  # wind/solar/load plot
     assert (tmp_path / "out" / "drivers.png").exists()  # per-driver-group dashboard
+
+
+def test_last_complete_market_day_cut_drops_partial_day() -> None:
+    # Europe/Berlin summer = UTC+2. The Aug 2 market day is [Aug 1 22:00, Aug 2 22:00) UTC.
+    # Coverage to the last hour (21:00 UTC = 23:00 CEST) keeps Aug 2; the cut is the next midnight.
+    full = pd.Timestamp("2026-08-02 21:00", tz="UTC")
+    assert _last_complete_market_day_cut(full) == pd.Timestamp("2026-08-02 22:00", tz="UTC")
+    # Coverage only to mid-day drops the partial Aug 2 whole; the cut is the start of Aug 2.
+    partial = pd.Timestamp("2026-08-02 12:00", tz="UTC")
+    assert _last_complete_market_day_cut(partial) == pd.Timestamp("2026-08-01 22:00", tz="UTC")
+    assert _last_complete_market_day_cut(None) is None
+
+
+def test_weather_coverage_end_finds_last_real_hour() -> None:
+    now = pd.Timestamp("2026-08-01 00:00", tz="UTC")
+    times = pd.date_range(now, periods=6, freq="h", tz="UTC")
+    frame = pd.DataFrame({"timestamp": times, "ws_de01": [1.0, 2, 3, np.nan, np.nan, np.nan]})
+    # Weather runs out after the third hour; coverage_end is that last present hour.
+    assert _weather_coverage_end(frame, pd.Series(times), now) == times[2]

@@ -25,7 +25,12 @@ import logging
 import numpy as np
 import pandas as pd
 
-from eex_forecast.config import DEFAULT_REFRESH_DAYS, FORECAST_DIR, HORIZON_DAYS
+from eex_forecast.config import (
+    DEFAULT_REFRESH_DAYS,
+    FORECAST_DIR,
+    HORIZON_DAYS,
+    MARKET_TIMEZONE,
+)
 from eex_forecast.db import connect, read_frame, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.features import (
@@ -54,18 +59,25 @@ _RESULT_COLUMNS = [
 ]
 
 
+# Open-Meteo caps the forecast at 16 days. "forecast_days" counts calendar days from today 00:00 local, so
+# a mid-day run needs a day or two of buffer to actually cover now + horizon_days; without it the last
+# hours of the frame get no weather (NaN) and the sub-models emit garbage there.
+_OPEN_METEO_MAX_FORECAST_DAYS = 16
+
+
 def fetch_forecast_weather(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> dict[str, int]:
     """Fetch the Open-Meteo forecast at every configured point into the database's future rows."""
     plan = [(role, point) for role, entries in load_points_config().items() for point in entries]
     if not plan:
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
+    forecast_days = min(horizon_days + 2, _OPEN_METEO_MAX_FORECAST_DAYS)
     counts: dict[str, int] = {}
     with connect(db_path) as conn:
         create_schema(conn)
         for role, point in plan:
             columns = point_columns(role, point)
             forecast = fetch_forecast(
-                point.lat, point.lon, variables=list(columns), forecast_days=horizon_days
+                point.lat, point.lon, variables=list(columns), forecast_days=forecast_days
             )
             if forecast.empty:
                 continue
@@ -128,6 +140,39 @@ def fetch_forecast_inputs(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> 
     fetch_forecast_ntc(db_path, horizon_days=horizon_days)
 
 
+# Domestic weather column prefixes; a future row missing any of these has no genuine weather forecast.
+_DOMESTIC_WEATHER_PREFIXES = ("ws_de", "t_ws_de", "t_de", "ghi_de", "ghi_t_de")
+
+
+def _weather_coverage_end(
+    frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp
+) -> pd.Timestamp | None:
+    """Last future hour whose domestic weather is genuinely present (not the NaN forecast tail)."""
+    weather = [c for c in frame.columns if c.startswith(_DOMESTIC_WEATHER_PREFIXES)]
+    if not weather:
+        return None
+    present = frame[weather].notna().all(axis=1)
+    covered = times[(times >= now) & present.to_numpy()]
+    return covered.max() if len(covered) else None
+
+
+def _last_complete_market_day_cut(coverage_end: pd.Timestamp | None) -> pd.Timestamp | None:
+    """Exclusive UTC cut at the end of the last fully-covered market (Europe/Berlin) day.
+
+    A day-ahead forecast day missing any of its 24 hours is worthless, so a partial final day is dropped
+    whole; a day whose coverage reaches its last hour is kept. Ported from nordpool-predict's
+    ``last_complete_market_day_end_exclusive_utc``.
+    """
+    if coverage_end is None:
+        return None
+    market_ts = coverage_end.tz_convert(MARKET_TIMEZONE)
+    day_start = market_ts.normalize()
+    next_midnight = day_start + pd.Timedelta(days=1)
+    last_hour = next_midnight - pd.Timedelta(hours=1)
+    cut_market = next_midnight if market_ts >= last_hour else day_start
+    return cut_market.tz_convert("UTC")
+
+
 def run_forecast(
     db_path: str,
     *,
@@ -170,6 +215,18 @@ def run_forecast(
         logger.info(
             "Forecast %s: horizon mean %.1f", name, frame.loc[future, spec.forecast_column].mean()
         )
+
+    # Drop any ragged tail the weather forecast did not reach: trim to the last complete market day with
+    # genuine (non-NaN) weather, so the forecast never shows garbage where the sub-models had no inputs.
+    cut = _last_complete_market_day_cut(_weather_coverage_end(frame, times, now))
+    if cut is not None:
+        keep = (times < cut).to_numpy()
+        dropped = int((~keep & (times >= now).to_numpy()).sum())
+        if dropped:
+            logger.info("Trimmed %d uncovered tail hours (weather forecast short of the horizon)", dropped)
+        frame = frame[keep].reset_index(drop=True)
+        times = pd.to_datetime(frame[TIMESTAMP], utc=True)
+        future = times >= now
 
     result = frame[_RESULT_COLUMNS].reset_index(drop=True)
     unseen = int(result[PRICE_ACTUAL].isna().sum())  # rows with no settled price yet (D+2 onward)

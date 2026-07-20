@@ -468,6 +468,12 @@ def _strategies_default(fundamental: str) -> str:
 # market regime rather than years-old history (mirrors nordpool-predict's --cutoff-start default).
 DEFAULT_CUTOFF_START = "2025-01-01"
 
+# Tuning backtest horizon. Defaults to the **day-ahead** 24 h (not the full 14-day frame): the settled,
+# most-predictable, most-valuable part of the forecast. Tuning on the full horizon averages in the
+# near-unpredictable far tail and pulls the hyperparameters toward smooth, conservative settings that
+# under-serve D+1. Matches nordpool-predict's --horizon-hours default of 24. Widen it to tune the curve.
+DAY_AHEAD_HORIZON_HOURS = 24
+
 _CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]
 _HorizonOpt = Annotated[int, typer.Option(help="Backtest horizon per cutoff (hours).")]
 _CutoffStartOpt = Annotated[
@@ -640,8 +646,9 @@ def model_tune(
     target: Annotated[ModelName, typer.Option(help="Model to tune (not 'all').")],
     trials: Annotated[int, typer.Option(help="Optuna trials.")] = 40,
     cutoffs: Annotated[int, typer.Option(help="Walk-forward cutoffs.")] = 8,
-    horizon_hours: Annotated[int, typer.Option(help="Backtest horizon per cutoff.")] = HORIZON_DAYS
-    * 24,
+    horizon_hours: Annotated[
+        int, typer.Option(help="Backtest horizon per cutoff (24 = day-ahead).")
+    ] = DAY_AHEAD_HORIZON_HOURS,
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json."""

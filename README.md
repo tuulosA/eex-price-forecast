@@ -321,9 +321,9 @@ rewarded for generalising *forward in time*, not for fitting one split. Tune one
 per model, preserving the others.
 
 ```bash
-eex model tune --target wind              # defaults: 40 trials, 8 cutoffs, 14-day (336 h) horizon, cutoffs from 2025-01-01
+eex model tune --target wind              # defaults: 40 trials, 8 cutoffs, 24 h (day-ahead) horizon, cutoffs from 2025-01-01
 eex model tune --target price --trials 12 # a quicker first pass
-eex model tune --target load --cutoffs 6 --horizon-hours 72       # fewer / shorter backtests
+eex model tune --target price --horizon-hours 336  # optimise the whole 14-day curve instead of just D+1
 eex model tune --target wind --cutoff-start 2023-06-01            # widen the backtest window further back
 ```
 
@@ -331,9 +331,12 @@ The backtest cutoffs start at **`--cutoff-start` (default `2025-01-01`)**, so tu
 market regime rather than years-old history that no longer reflects the fleet or price dynamics — set an
 earlier date to widen the window. Each run is an **independent, seeded** study — reproducible, but not
 resumed: a later `--trials 40` run starts over rather than continuing a `--trials 12` one (being seeded,
-its first 12 trials reproduce what you already saw, then it explores further). The horizon defaults to the
-**full 14-day** forecast, so tuning optimises the whole curve the model produces, not just D+1 — shorten
-`--horizon-hours` to weight the near term. **Re-tune after any feature change**: a new feature set
+its first 12 trials reproduce what you already saw, then it explores further). The horizon defaults to
+**24 h — the day-ahead product** (matching the upstream nordpool-predict tuner): the settled,
+most-predictable, most-valuable part of the forecast. Tuning on the full 14-day frame instead averages in
+the near-unpredictable far tail and pulls the hyperparameters toward smooth, conservative settings that
+under-serve D+1 — pass `--horizon-hours 336` if you deliberately want to optimise the whole curve. **Re-tune
+after any feature change**: a new feature set
 (switching a sub-model to `raw`, adding the neighbour-wind block) leaves the old params stale. `eex model
 train` then reads whatever is in `config/hyperparams.json`, falling back to sensible built-in defaults for
 any model not yet tuned.
