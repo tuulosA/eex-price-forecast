@@ -8,6 +8,7 @@ from pathlib import Path
 from eex_forecast.config import COUNTRY_IDENTIFIERS, EUROPE_BBOX
 from eex_forecast.weather.candidates import (
     build_candidates,
+    country_rings_multi,
     haversine_km,
     point_in_ring,
     read_candidates,
@@ -94,6 +95,37 @@ def test_build_candidates_for_neighbour_country(tmp_path: Path) -> None:
     assert all(c.point_id.startswith("dk_zones_") for c in candidates)
     # Every chosen point sits inside the Danish box, never the German one.
     assert all(55.0 <= c.lat <= 57.0 and 8.0 <= c.lon <= 11.0 for c in candidates)
+
+
+def test_country_rings_multi_collects_several_countries_in_one_parse(tmp_path: Path) -> None:
+    features = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"CNTR_ID": "DE"},
+                "geometry": {"type": "Polygon", "coordinates": [[[8, 49], [12, 49], [12, 53], [8, 53], [8, 49]]]},
+            },
+            {
+                "type": "Feature",
+                "properties": {"CNTR_ID": "DK"},
+                "geometry": {"type": "Polygon", "coordinates": [[[8, 55], [11, 55], [11, 57], [8, 57], [8, 55]]]},
+            },
+            {
+                "type": "Feature",
+                "properties": {"CNTR_ID": "FR"},  # not requested -> excluded
+                "geometry": {"type": "Polygon", "coordinates": [[[2, 46], [6, 46], [6, 49], [2, 49], [2, 46]]]},
+            },
+        ],
+    }
+    path = tmp_path / "multi.geojson"
+    path.write_text(json.dumps(features), encoding="utf-8")
+    rings = country_rings_multi(path, [COUNTRY_IDENTIFIERS["DE"], COUNTRY_IDENTIFIERS["DK"]])
+    assert len(rings) == 2  # DE + DK, not FR
+    # A vertex from each requested country is present; none from France.
+    all_vertices = {vertex for ring in rings for vertex in ring}
+    assert (8.0, 49.0) in all_vertices and (8.0, 55.0) in all_vertices
+    assert (2.0, 46.0) not in all_vertices
 
 
 def test_build_candidates_from_top_level_list_geojson(tmp_path: Path) -> None:

@@ -17,7 +17,7 @@ import csv
 import json
 import logging
 import math
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -155,6 +155,24 @@ def country_rings(geojson_path: Path, identifiers: frozenset[str]) -> list[Ring]
 def germany_rings(geojson_path: Path) -> list[Ring]:
     """Load every polygon ring belonging to Germany from a GeoJSON file."""
     return country_rings(geojson_path, _DE_IDENTIFIERS)
+
+
+def country_rings_multi(
+    geojson_path: Path, identifier_sets: Sequence[frozenset[str]]
+) -> list[Ring]:
+    """Load rings for several countries in a single parse of ``geojson_path`` (flattened, deduped by none).
+
+    ``germany_rings`` / :func:`country_rings` re-read the whole file per country; when many countries are
+    needed at once (e.g. drawing every neighbour on one map) this parses the (large) file just once and
+    returns every ring belonging to any of the ``identifier_sets``.
+    """
+    data = json.loads(Path(geojson_path).read_text(encoding="utf-8"))
+    return [
+        ring
+        for feature in _iter_features(data)
+        if any(_feature_matches(feature, identifiers) for identifiers in identifier_sets)
+        for ring in _iter_polygon_rings(feature.get("geometry") or {})
+    ]
 
 
 # -- grid sampling --------------------------------------------------------------

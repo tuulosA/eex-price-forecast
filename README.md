@@ -89,38 +89,72 @@ Open `.env.local` and set your `ENTSO_E_API_KEY` (from the ENTSO-E Transparency 
 ### 2. Run the workflow
 
 With the venv activated, the `eex` command is on your PATH (the commands below are identical on every
-shell):
+shell).
+
+**Day to day, the whole pipeline is one command:**
+
+```bash
+eex run --plot                            # refresh recent data, then write a fresh 14-day forecast
+```
+
+`eex run` re-fetches the trailing couple of weeks of actuals + weather and forecasts in one step (add
+`--train` to retrain first). Its two halves are also available alone: `eex update` (just the data
+refresh) and `eex forecast --plot` (just the forecast). That is the routine loop — but it needs a
+database and trained models first, which is the one-time setup below.
+
+**First-time setup.** Building everything from an empty state is an ordered sequence — each step's inputs
+come from the ones before it:
 
 ```bash
 eex db init                               # create the SQLite database
-eex geo download                          # one-time geometry download
-eex points build --mode zones             # wind candidates (land + sea)
-eex points build --mode land              # temperature / solar candidates (land only)
-eex backfill entsoe --start 2023-01-01    # DE price + wind/solar/load actuals
-eex points rank --target wind             # choose the best points (writes config)
+eex geo download                          # one-time geometry download (land + land+sea GeoJSON)
+
+eex points build --mode zones             # German wind candidates (land + sea)
+eex points build --mode land              # German temperature / solar candidates (land only)
+eex backfill entsoe --start 2023-01-01    # DE price + wind/solar/load actuals + installed capacity
+eex points rank --target wind             # choose the best German points vs each actual (writes config)
 eex points rank --target temp
 eex points rank --target solar
-eex backfill weather --start 2023-01-01   # weather at the chosen points
+
+eex points neighbours build               # cross-border wind candidates + ranking (see below)
+eex points neighbours rank --year 2024
+
+eex backfill weather --start 2023-01-01   # weather history at every chosen point (German + neighbour)
+
+eex model tune --target price             # optional but recommended; also wind / solar / load (see below)
+eex model train                           # train all four models (wind, solar, load, price)
+eex forecast --plot                       # first 14-day forecast -> data/forecast/
 ```
 
-The `backfill` commands seed history from an explicit `--start`. For the routine refresh, `eex update`
-re-fetches just the last couple of weeks of actuals and weather in one step — enough to pick up
-newly-published and revised ENTSO-E actuals without re-pulling years of data:
+After that, the `eex run` loop above is all you need. (`backfill` seeds history from an explicit
+`--start`; `eex update` then keeps it current by re-fetching just the trailing ~14 days — `--days` to
+change the window — which is enough to pick up newly-published and revised ENTSO-E actuals.)
+
+**Inspect the search and the data** at any point after the backfills — these write to `data/analysis/`:
 
 ```bash
-eex update                                # refresh the trailing 14 days (--days to change the window)
+eex points map                            # German candidates + ranked points -> candidate_map.png
+eex points neighbours map                 # neighbour candidates + selection -> candidate_map_neighbours.png
+eex analyze correlation                   # feature <-> price correlation matrix -> correlation.csv + .png
 ```
 
-Once the data is in place, two exploratory tools write to `data/analysis/`:
+`points map` / `points neighbours map` are a sanity check that the search reached offshore for wind and
+spread the chosen points sensibly. `analyze correlation` reduces the database to the fundamentals plus a
+national mean per weather role **and the per-country neighbour wind means**, showing how each driver
+correlates with the day-ahead price — a quick way to see, e.g., that Dutch and Danish wind track the
+German price about as strongly as German wind does.
 
-```bash
-eex points map                            # candidates + ranked points on a map of Germany (PNG)
-eex analyze correlation                   # feature correlation matrix (CSV + heatmap PNG)
-```
+**About the forecast.** `forecast` fetches the Open-Meteo weather forecast, runs the generation
+sub-models to fill the fundamentals, then the price model, and writes `forecast.csv` with the actual
+price alongside all four forecast series (`--plot` adds price + fundamentals plots; `--write-db` also
+stores it in the database). It predicts the **whole read window**, not just the future: rows that already
+have an actual get an in-sample prediction that hugs it, so the plotted line overlaps the actuals for
+context and continues past them as the true forecast. The genuinely out-of-sample part is the tail with
+no actual price yet — which, because ENTSO-E day-ahead prices are settled through D+1, begins at **D+2**.
+(The command summary reports stats over that out-of-sample tail only.)
 
-`points map` is a sanity check that the search reached offshore for wind and spread the chosen points
-sensibly; `analyze correlation` reduces the database to the fundamentals plus a national mean per
-weather role and shows how each driver correlates with the day-ahead price before any model is built.
+The three steps that deserve more detail — cross-border neighbour wind, the feature-aggregation choices,
+and hyperparameter tuning — are covered next.
 
 ### Cross-border neighbour wind
 
@@ -139,6 +173,7 @@ points per country** (kept ≥ 50 km apart, so they are not near-duplicates) are
 ```bash
 eex points neighbours build               # land+sea wind candidates inside each neighbour (one CSV per country)
 eex points neighbours rank --year 2024    # rank each neighbour's candidates vs DE price -> chosen points in config
+eex points neighbours map                 # plot the candidates + selection -> data/analysis/candidate_map_neighbours.png
 ```
 
 `rank` reads the German day-ahead price already in the database, so run it **after** `backfill entsoe`.
@@ -238,33 +273,9 @@ resumed: a later `--trials 40` run starts over rather than continuing a `--trial
 its first 12 trials reproduce what you already saw, then it explores further). The horizon defaults to the
 **full 14-day** forecast, so tuning optimises the whole curve the model produces, not just D+1 — shorten
 `--horizon-hours` to weight the near term. **Re-tune after any feature change**: a new feature set
-(switching a sub-model to `raw`, adding the neighbour-wind block) leaves the old params stale.
-
-Then train the models and run the forecast:
-
-```bash
-eex model train                           # train all four models (wind, solar, load, price)
-eex forecast --plot                       # 14-day forecast -> data/forecast/ (CSV + price & fundamentals plots)
-```
-
-`model train` reads the tuned params from `config/hyperparams.json` (falling back to sensible built-in
-defaults for any model not yet tuned). `forecast` fetches the Open-Meteo weather forecast, runs the
-generation sub-models to fill the fundamentals, then the price model, and writes `forecast.csv` with the
-actual price alongside all four forecast series. `--plot` adds a price plot and a wind/solar/load
-fundamentals plot; `--write-db` also stores the forecast in the database.
-
-The models predict the **whole read window**, not just the future: rows that already have an actual get
-an in-sample prediction that hugs it, so the plotted forecast is a continuous line overlapping the
-actuals for context and continuing past them as the true forecast. The genuinely out-of-sample part is
-the tail with no actual price yet — which, because ENTSO-E day-ahead prices are settled through D+1,
-begins at **D+2**. (The command summary reports stats over that out-of-sample tail only.)
-
-For the routine end-to-end run there is a single command that chains update -> (optional) retrain ->
-forecast:
-
-```bash
-eex run --plot                            # update recent data, then forecast (add --train to retrain first)
-```
+(switching a sub-model to `raw`, adding the neighbour-wind block) leaves the old params stale. `eex model
+train` then reads whatever is in `config/hyperparams.json`, falling back to sensible built-in defaults for
+any model not yet tuned.
 
 ## Development
 
