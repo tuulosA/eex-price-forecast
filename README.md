@@ -21,7 +21,7 @@ points that best explain German generation, and forecast price out to a 14-day h
    the chosen points.
 3. **Multi-stage price forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and
    load from the weather; the **price model** then forecasts the day-ahead price from those fundamentals
-   plus calendar, price lags, weather aggregates, cross-border neighbour wind, and French nuclear availability. Wind and solar are learned as a fraction of
+   plus calendar, price lags, weather aggregates, and cross-border drivers (neighbour wind, French nuclear availability, and interconnector transfer capacity). Wind and solar are learned as a fraction of
    **installed capacity** (fetched from ENTSO-E) so the models stay calibrated as the fleet grows;
    fitting uses **early stopping** with residual **diagnostics** (Durbin-Watson, ACF). Hyperparameters
    are tuned by **Optuna walk-forward** backtesting, and the pipeline writes a 14-day hourly forecast to
@@ -38,6 +38,7 @@ src/eex_forecast/
   db/                  # SQLite schema (separate actual/forecast columns) + upsert/query
   sources/entsoe.py    # DE price + wind/solar generation + load actuals + installed capacity (entsoe-py)
   sources/nuclear.py   # cross-border nuclear availability (installed capacity - A80/B14 outages)
+  sources/ntc.py       # per-border month-ahead transfer capacity (NTC), import + export
   weather/
     geometry.py        # download GISCO land + Marine-Regions EEZ GeoJSON
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
@@ -122,6 +123,7 @@ eex points neighbours rank --year 2025
 
 eex backfill weather --start 2023-01-01   # weather history at every chosen point (German + neighbour)
 eex backfill nuclear --start 2023-01-01   # cross-border (French) nuclear availability (see below)
+eex backfill ntc --start 2023-01-01       # per-border transfer capacity / NTC (see below)
 
 eex model tune --target price             # optional but recommended; also wind / solar / load (see below)
 eex model train                           # train all four models (wind, solar, load, price)
@@ -227,6 +229,30 @@ genuinely-known future driver. The forecast step (`eex forecast`) refetches it o
 automatically, and it enters the price model as a single `nuclear_available_mw` feature. Measure its worth
 with the feature-ablation tool: `eex analyze ablation --target price --drop nuclear_available_mw`.
 
+### Cross-border transfer capacity (NTC)
+
+The interconnectors cap how much power can actually flow between Germany and each neighbour, so they set
+**how tightly the zones couple**: ample capacity pulls prices together (cheap neighbour power floods in, or
+DE exports its surplus), while a reduced border — a line on maintenance or outage — lets a zone decouple
+and its price run away. So the drivers above (neighbour wind, French nuclear) only reach the German price
+*to the extent the wires can carry them* — NTC is the valve.
+
+`eex backfill ntc` fetches **month-ahead forecasted NTC** [11.1] for each of DE's borders (AT, BE, CZ,
+DK1, DK2, FR, NL, NO2, SE4) in both directions via entsoe-py, and stores per-border columns
+`ntc_imp_<b>` (capacity into DE) and `ntc_exp_<b>` (capacity out of DE):
+
+```bash
+eex backfill ntc --start 2023-01-01       # per-border month-ahead NTC, import + export
+```
+
+Like nuclear outages, **month-ahead capacities publish ahead**, so this too is real across the forecast
+horizon (refetched automatically by `eex forecast`). The price model reads the two **totals**
+(`ntc_imp_total`, `ntc_exp_total`, summed over the borders in the feature builder) — the low-dimensional
+"how coupled is DE right now" signal, keeping the per-border detail in the database for analysis. Measure
+its worth with `eex analyze ablation --target price --drop ntc_imp_total,ntc_exp_total`. (Simplification vs
+the upstream nordpool-predict implementation: month-ahead only, no week-ahead refinement, and totals rather
+than every per-border column fed to the model.)
+
 ### Feature aggregation and ablation
 
 Two tools measure how feature choices affect forecast skill by the same walk-forward MAE/RMSE the tuner
@@ -327,10 +353,12 @@ Planned, to be implemented:
 - **Separate onshore/offshore wind** — experiment with splitting the combined wind series into its
   onshore and offshore components, which have distinct weather points, capacity factors, and behaviour,
   rather than summing them into one target.
-- **Interconnector NTC / transmission** — the last of the cross-border drivers: the net transfer
-  capacity on DE's borders, which caps how much cheap (or expensive) neighbouring power can actually flow
-  and thus how tightly the zones couple. (The [neighbour-wind](#cross-border-neighbour-wind) and
-  [nuclear](#cross-border-nuclear-availability) drivers are already in.)
+- **Per-border NTC / week-ahead refinement** — the transfer-capacity driver currently feeds the price
+  model only the import/export *totals* and uses month-ahead capacities; feeding the per-border columns
+  and blending in week-ahead revisions (both already stored / straightforward) may sharpen it.
+
+All three cross-border drivers set out originally — [neighbour wind](#cross-border-neighbour-wind),
+[French nuclear](#cross-border-nuclear-availability), and [transfer capacity](#cross-border-transfer-capacity-ntc) — are now in.
 
 ## Data sources
 

@@ -51,6 +51,26 @@ DEFAULT_REFRESH_DAYS = 14
 NUCLEAR_ZONES: tuple[str, ...] = ("FR",)
 NUCLEAR_COLUMN = "nuclear_available_mw"
 
+# Cross-border transfer capacity (NTC). The interconnectors cap how much power can flow between DE and each
+# neighbour, so they set how tightly the zones couple: ample NTC pulls prices together, a reduced border
+# (maintenance/outage) lets a zone decouple and spike. We fetch month-ahead forecasted NTC [11.1] per
+# border in both directions - which, like nuclear outages, is published ahead and so covers the forecast
+# horizon. Borders (label -> entsoe-py zone) are DE's month-ahead-publishing neighbours. Per-border columns
+# ntc_imp_<b> (into DE) / ntc_exp_<b> (out of DE) are stored; the price model reads the summed totals.
+NTC_BORDERS: dict[str, str] = {
+    "at": "AT",
+    "be": "BE",
+    "cz": "CZ",
+    "dk1": "DK_1",
+    "dk2": "DK_2",
+    "fr": "FR",
+    "nl": "NL",
+    "no2": "NO_2",
+    "se4": "SE_4",
+}
+NTC_IMPORT_PREFIX = "ntc_imp_"  # capacity INTO DE from the neighbour
+NTC_EXPORT_PREFIX = "ntc_exp_"  # capacity OUT of DE to the neighbour
+
 # Continental-DE sampling box (lat_min, lat_max, lon_min, lon_max), including the North Sea and
 # Baltic offshore wind regions. Used to keep candidate-point grid search tight and fast.
 DE_BBOX = (47.0, 56.0, 5.5, 15.5)
