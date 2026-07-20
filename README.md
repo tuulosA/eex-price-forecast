@@ -132,7 +132,9 @@ eex forecast --plot                       # first 14-day forecast -> data/foreca
 
 After that, the `eex run` loop above is all you need. (`backfill` seeds history from an explicit
 `--start`; `eex update` then keeps it current by re-fetching just the trailing ~14 days — `--days` to
-change the window — which is enough to pick up newly-published and revised ENTSO-E actuals.)
+change the window — which is enough to pick up newly-published and revised ENTSO-E actuals and weather.
+The known-ahead nuclear/NTC series are single series covering history *and* horizon, so the forecast step
+fetches them once over both windows rather than `update` re-fetching them.)
 
 **Inspect the search and the data** at any point after the backfills — these write to `data/analysis/`:
 
@@ -149,10 +151,15 @@ wind means**, showing how each driver
 correlates with the day-ahead price — a quick way to see, e.g., that Dutch and Danish wind track the
 German price about as strongly as German wind does.
 
-**About the forecast.** `forecast` fetches the Open-Meteo weather forecast, runs the generation
-sub-models to fill the fundamentals, then the price model, and writes `forecast.csv` with the actual
-price alongside all four forecast series (`--plot` adds price + fundamentals plots; `--write-db` also
-stores it in the database). It predicts the **whole read window**, not just the future: rows that already
+**About the forecast.** `forecast` fetches the Open-Meteo weather forecast (and the known-ahead
+nuclear/NTC series over the recent+horizon window), runs the generation sub-models to fill the
+fundamentals, then the price model, and writes `forecast.csv` with the actual price alongside all four
+forecast series. `--plot` writes three PNGs to `data/forecast/`: `forecast.png`
+(price actual vs forecast), `fundamentals.png` (the wind/solar/load sub-model forecasts), and
+`drivers.png` — a dashboard with a panel per price-model driver group (wind speed, irradiance,
+temperature, neighbour wind, nuclear availability, transfer capacity) over the window, weekends/holidays
+shaded and split at *now*, so the inputs behind a forecast can be eyeballed at a glance (`--write-db` also
+stores the forecast in the database). It predicts the **whole read window**, not just the future: rows that already
 have an actual get an in-sample prediction that hugs it, so the plotted line overlaps the actuals for
 context and continues past them as the true forecast. The genuinely out-of-sample part is the tail with
 no actual price yet — which, because ENTSO-E day-ahead prices are settled through D+1, begins at **D+2**.

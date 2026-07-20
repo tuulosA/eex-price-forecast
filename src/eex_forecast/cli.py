@@ -11,14 +11,14 @@ Command groups:
 - eex backfill weather: backfill weather history at the chosen points.
 - eex backfill nuclear: backfill cross-border nuclear availability (FR).
 - eex backfill ntc: backfill per-border month-ahead transfer capacity (NTC).
-- eex update: refresh the latest actuals + weather + nuclear + NTC over a rolling recent window.
+- eex update: refresh recent ENTSO-E actuals + weather history (nuclear/NTC are fetched by the forecast step).
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
-- eex run: whole pipeline end to end (update -> optional retrain -> forecast).
+- eex run: whole pipeline end to end (fetch all inputs -> optional retrain -> pure predict).
 """
 
 from __future__ import annotations
@@ -386,12 +386,9 @@ def update_cmd(
     """Refresh the latest ENTSO-E actuals and weather history over a rolling recent window."""
     counts = backfill_ops.refresh_recent(str(get_settings().db_path), days=days)
     entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
-    nuclear_rows = next(iter(counts.get("nuclear", {}).values()), 0)
-    ntc_rows = next(iter(counts.get("ntc", {}).values()), 0)
     typer.echo(
         f"Refreshed last {days} days | entsoe: {entsoe_summary} | "
-        f"weather columns: {len(counts['weather'])} | nuclear: {nuclear_rows} rows | "
-        f"ntc: {ntc_rows} rows"
+        f"weather columns: {len(counts['weather'])}"
     )
 
 
@@ -707,15 +704,18 @@ def run_cmd(
     ] = DEFAULT_REFRESH_DAYS,
     horizon_days: Annotated[int, typer.Option(help="Forecast horizon in days.")] = HORIZON_DAYS,
 ) -> None:
-    """Run the whole pipeline end to end: update recent data, optionally retrain, then forecast."""
+    """Run the whole pipeline end to end: fetch all inputs, optionally retrain, then forecast."""
     db_path = str(get_settings().db_path)
-    stages = "update -> train -> forecast" if train else "update -> forecast"
+    stages = "fetch -> train -> forecast" if train else "fetch -> forecast"
     typer.echo(f"Pipeline ({stages})")
 
-    typer.echo(f"[update] refreshing the last {days} days of actuals and weather ...")
+    # Fetch everything up front: recent actuals + weather history, then the forward-looking horizon inputs
+    # (weather forecast + known-ahead nuclear/NTC). After this the database is complete through the horizon.
+    typer.echo(f"[fetch] refreshing the last {days} days of actuals + weather, then horizon inputs ...")
     counts = backfill_ops.refresh_recent(db_path, days=days)
     entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
-    typer.echo(f"[update] entsoe: {entsoe_summary} | weather columns: {len(counts['weather'])}")
+    typer.echo(f"[fetch] entsoe: {entsoe_summary} | weather columns: {len(counts['weather'])}")
+    forecast_ops.fetch_forecast_inputs(db_path, horizon_days=horizon_days)
 
     if train:
         typer.echo("[train] retraining all models on the refreshed data ...")
@@ -728,9 +728,9 @@ def run_cmd(
             trained.save()
             typer.echo(f"[train] {name}: {len(trained.feature_names)} features")
 
-    typer.echo(f"[forecast] running the {horizon_days}-day forecast ...")
+    typer.echo(f"[forecast] predicting the {horizon_days}-day forecast ...")
     result = forecast_ops.run_forecast(
-        db_path, horizon_days=horizon_days, write_db=write_db, plot=plot
+        db_path, horizon_days=horizon_days, write_db=write_db, plot=plot, fetch_inputs=False
     )
     ahead = result[result["price_actual_eur_mwh"].isna()]["price_forecast_eur_mwh"]
     typer.echo(
