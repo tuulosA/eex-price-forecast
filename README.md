@@ -21,7 +21,7 @@ points that best explain German generation, and forecast price out to a 14-day h
    the chosen points.
 3. **Multi-stage price forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and
    load from the weather; the **price model** then forecasts the day-ahead price from those fundamentals
-   plus calendar, price lags, and weather aggregates. Wind and solar are learned as a fraction of
+   plus calendar, price lags, weather aggregates, and cross-border neighbour wind. Wind and solar are learned as a fraction of
    **installed capacity** (fetched from ENTSO-E) so the models stay calibrated as the fleet grows;
    fitting uses **early stopping** with residual **diagnostics** (Durbin-Watson, ACF). Hyperparameters
    are tuned by **Optuna walk-forward** backtesting, and the pipeline writes a 14-day hourly forecast to
@@ -151,38 +151,54 @@ chosen points into `config/weather_points.json` under a `neighbour_wind` role, w
 fetched, since these are a bare price proxy rather than an input to a generation sub-model).
 
 The next `eex backfill weather` picks them up automatically — every point in the config is fetched, so
-the neighbour columns flow into the database alongside the German ones with no extra step. In the price
-model each neighbour contributes a single **per-country mean** wind feature (`nbr_wind_dk`,
-`nbr_wind_nl`, …), keeping each border's distinct coupling while staying low-dimensional.
+the neighbour columns flow into the database alongside the German ones with no extra step (or fetch just
+these with `eex backfill weather --role neighbour_wind`). In the price model each neighbour contributes a
+single **per-country mean** wind feature (`nbr_wind_dk`, `nbr_wind_nl`, …), keeping each border's
+distinct coupling while staying low-dimensional. This aggregation was chosen empirically by
+`eex analyze ablation neighbour` (below): adding neighbour wind cut price walk-forward MAE by **~1.4
+EUR/MWh (~7.5%)**, and the per-country mean beat both a single global index and the raw per-point columns
+(with only two points per country, `raw` just adds noise).
 
 ### Feature ablation
 
-Two tools measure how feature choices affect forecast skill. Both score candidates by the same
+Three tools measure how feature choices affect forecast skill. All score candidates by the same
 walk-forward MAE/RMSE the tuner uses (hyperparameters and cutoffs held fixed) and write ranked reports to
 `data/ablation/`.
 
 **Weather aggregation (`analyze ablation <fundamental>`).** Each generation/load sub-model reduces its
 ranked per-point weather columns to a few features. *How* it reduces them is a modelling choice with real
 consequences — e.g. wind power is a convex (~v³) function of speed and capacity is concentrated in the
-north, so the plain national **mean** discards spatial information a richer aggregation could keep. There
-is a subcommand per fundamental:
+north, so the plain national **mean** discards spatial information a richer aggregation keeps. This study
+found **`raw`** (every per-point column) best for all three, decisively for wind (~25% MAE over the mean)
+and marginally for solar/load — so **all three sub-models now default to `raw`**. There is a subcommand
+per fundamental:
 
 ```bash
 eex analyze ablation wind                 # compare wind strategies -> data/ablation/wind_ablation.json
-eex analyze ablation solar                # solar (irradiance is near-linear, so mean often wins)
-eex analyze ablation load                 # load (temperature has strong spatial structure)
+eex analyze ablation solar                # solar (irradiance is near-uniform, so raw's gain is marginal)
+eex analyze ablation load                 # load (temperature has spatial structure)
 eex analyze ablation wind --no-capacity-scaling      # learn raw MW instead of a capacity factor
 eex analyze ablation wind --strategies mean,raw --cutoffs 8   # pick strategies / more cutoffs
 ```
 
-The strategies are `mean` (the current production feature), `spread` (adds the cross-point standard
-deviation), `stats` (cross-point summary statistics: mean + sum, std, min, max), `regional` (one mean per
-latitude band — `--regions` sets how many), `raw` (every per-point column, maximum information), and —
-for **wind** only — `cube` (adds `mean(v³)`, a proxy for the convex power curve). For the generation
-sub-models, `--capacity-scaling` / `--no-capacity-scaling` toggles
+The strategies are `mean` (national mean), `spread` (adds the cross-point standard deviation), `stats`
+(cross-point summary statistics: mean + sum, std, min, max), `regional` (one mean per latitude band —
+`--regions` sets how many), `raw` (every per-point column, maximum information — **the adopted production
+feature for all three sub-models**), and — for **wind** only — `cube` (adds `mean(v³)`, a proxy for the
+convex power curve). For the generation sub-models, `--capacity-scaling` / `--no-capacity-scaling` toggles
 learning a capacity factor versus raw MW; both modes are scored in MW, so a scaled and an unscaled run
 are directly comparable — run it twice to measure what the scaling itself buys (load has no capacity, so
 the flag is absent there).
+
+**Neighbour wind (`analyze ablation neighbour`).** Unlike the sub-model studies above (which score a
+fundamental's own MW skill), this scores the **price** model — how the cross-border neighbour-wind points
+should enter it — including a `none` baseline so the ranking answers whether neighbour wind helps price
+MAE *at all* (it does: ~1.4 EUR/MWh). Strategies: `none`, `global_mean` (one index), `country_mean` (the
+adopted default), `country_cube` (`mean(v³)` per neighbour), `raw` (every point).
+
+```bash
+eex analyze ablation neighbour            # price MAE by neighbour aggregation -> data/ablation/neighbour_ablation.json
+```
 
 **Dropping features (`analyze drop`).** A generic A/B for *any* model: it compares the full feature set
 against the set with features you choose removed. Run without `--drop` and it lists the features numbered
@@ -199,20 +215,43 @@ Two caveats apply to both tools: the score is the target model's own MAE (for a 
 downstream price impact), and because hyperparameters are held fixed a feature-rich variant may be
 under-served by them — **re-tune the winner** (`eex model tune --target <model>`) before adopting it.
 
+### Hyperparameter tuning
+
+`eex model tune` runs an **Optuna** (TPE) search over the XGBoost hyperparameters, scoring each trial by
+**walk-forward backtesting**: it steps a set of cutoffs through history and, at each, trains on the past
+and measures MAE over the next `--horizon-hours`, then averages across cutoffs — so parameters are
+rewarded for generalising *forward in time*, not for fitting one split. Tune one model at a time
+(`--target wind|solar|load|price`, not `all`); the best params are merged into `config/hyperparams.json`
+per model, preserving the others.
+
+```bash
+eex model tune --target wind              # defaults: 40 trials, 8 cutoffs, 14-day (336 h) horizon, cutoffs from 2025-01-01
+eex model tune --target price --trials 12 # a quicker first pass
+eex model tune --target load --cutoffs 6 --horizon-hours 72       # fewer / shorter backtests
+eex model tune --target wind --cutoff-start 2023-06-01            # widen the backtest window further back
+```
+
+The backtest cutoffs start at **`--cutoff-start` (default `2025-01-01`)**, so tuning weights the recent
+market regime rather than years-old history that no longer reflects the fleet or price dynamics — set an
+earlier date to widen the window. Each run is an **independent, seeded** study — reproducible, but not
+resumed: a later `--trials 40` run starts over rather than continuing a `--trials 12` one (being seeded,
+its first 12 trials reproduce what you already saw, then it explores further). The horizon defaults to the
+**full 14-day** forecast, so tuning optimises the whole curve the model produces, not just D+1 — shorten
+`--horizon-hours` to weight the near term. **Re-tune after any feature change**: a new feature set
+(switching a sub-model to `raw`, adding the neighbour-wind block) leaves the old params stale.
+
 Then train the models and run the forecast:
 
 ```bash
-eex model tune --target price             # optional: Optuna walk-forward tuning (also wind/solar/load)
 eex model train                           # train all four models (wind, solar, load, price)
 eex forecast --plot                       # 14-day forecast -> data/forecast/ (CSV + price & fundamentals plots)
 ```
 
-`model tune` writes the best hyperparameters to `config/hyperparams.json`, which `model train` then
-uses (falling back to sensible defaults when a model has not been tuned). `forecast` fetches the
-Open-Meteo weather forecast, runs the generation sub-models to fill the fundamentals, then the price
-model, and writes `forecast.csv` with the actual price alongside all four forecast series. `--plot`
-adds a price plot and a wind/solar/load fundamentals plot; `--write-db` also stores the forecast in the
-database.
+`model train` reads the tuned params from `config/hyperparams.json` (falling back to sensible built-in
+defaults for any model not yet tuned). `forecast` fetches the Open-Meteo weather forecast, runs the
+generation sub-models to fill the fundamentals, then the price model, and writes `forecast.csv` with the
+actual price alongside all four forecast series. `--plot` adds a price plot and a wind/solar/load
+fundamentals plot; `--write-db` also stores the forecast in the database.
 
 The models predict the **whole read window**, not just the future: rows that already have an actual get
 an in-sample prediction that hugs it, so the plotted forecast is a continuous line overlapping the

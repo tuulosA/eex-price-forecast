@@ -8,6 +8,7 @@ per-point weather columns compose into the same rows without clobbering one anot
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import date, datetime
 from pathlib import Path
 
@@ -74,14 +75,30 @@ def backfill_entsoe(
 
 
 def backfill_weather(
-    db_path: str | Path, *, start: DateLike, end: DateLike | None = None
+    db_path: str | Path,
+    *,
+    start: DateLike,
+    end: DateLike | None = None,
+    roles: Sequence[str] | None = None,
 ) -> dict[str, int]:
     """Backfill hourly weather **history** at every configured point into its database column.
 
-    Requires that ``eex points rank`` has chosen points (``config/weather_points.json``).
+    Requires that ``eex points rank`` has chosen points (``config/weather_points.json``). ``roles``
+    restricts the fetch to the named point-search roles (e.g. ``["neighbour_wind"]`` to add just the
+    cross-border points without re-pulling every German point); ``None`` fetches all configured roles.
     """
     end = end or _weather_end()
-    plan = [(role, point) for role, entries in load_points_config().items() for point in entries]
+    config = load_points_config()
+    if roles is not None:
+        wanted = set(roles)
+        unknown = wanted - set(config)
+        if unknown:
+            raise ValueError(
+                f"Unknown weather role(s): {', '.join(sorted(unknown))}. "
+                f"Configured: {', '.join(sorted(config)) or '(none)'}."
+            )
+        config = {role: entries for role, entries in config.items() if role in wanted}
+    plan = [(role, point) for role, entries in config.items() for point in entries]
     if not plan:
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
 

@@ -56,27 +56,37 @@ class TuneResult:
     report: dict[str, Any]
 
 
+def _to_utc(value: pd.Timestamp | str) -> pd.Timestamp:
+    ts = pd.Timestamp(value)
+    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+
 def walk_forward_cutoffs(
     timestamps: pd.Series,
     *,
     horizon_hours: int,
     n_cutoffs: int,
     min_train_days: int = 120,
+    cutoff_start: pd.Timestamp | str | None = None,
 ) -> list[pd.Timestamp]:
     """Evenly-spaced backtest cutoffs across the valid tail of ``timestamps`` (oldest first).
 
     The first cutoff leaves at least ``min_train_days`` of history to train on; the last leaves a full
-    ``horizon_hours`` of actuals to score against.
+    ``horizon_hours`` of actuals to score against. ``cutoff_start`` raises the earliest cutoff to (at
+    least) that date, so tuning weights the recent market regime rather than years-old history.
     """
     times = pd.to_datetime(timestamps, utc=True).dropna().sort_values()
     if times.empty:
         raise ValueError("No timestamps to build cutoffs from.")
     start = times.min() + pd.Timedelta(days=min_train_days)
+    if cutoff_start is not None:
+        start = max(start, _to_utc(cutoff_start))
     end = times.max() - pd.Timedelta(hours=horizon_hours)
     if end <= start:
         raise ValueError(
-            "Not enough data for walk-forward tuning: need more than "
-            f"{min_train_days} days plus a {horizon_hours} h horizon."
+            "Not enough data for walk-forward tuning: need history after "
+            f"{start.date()} plus a {horizon_hours} h horizon "
+            f"(min_train_days={min_train_days}, cutoff_start={cutoff_start})."
         )
     if n_cutoffs <= 1:
         return [end.floor("h")]
@@ -220,6 +230,7 @@ def tune(
     n_cutoffs: int,
     horizon_hours: int,
     min_train_days: int = 120,
+    cutoff_start: pd.Timestamp | str | None = None,
     seed: int = 42,
 ) -> TuneResult:
     """Run Optuna walk-forward tuning for ``spec`` and return the best complete hyperparameters."""
@@ -229,6 +240,7 @@ def tune(
         horizon_hours=horizon_hours,
         n_cutoffs=n_cutoffs,
         min_train_days=min_train_days,
+        cutoff_start=cutoff_start,
     )
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     scope = f"[{spec.name}]"

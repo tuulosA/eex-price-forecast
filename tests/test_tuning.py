@@ -46,6 +46,22 @@ def test_walk_forward_cutoffs_insufficient_data_raises() -> None:
         walk_forward_cutoffs(pd.Series(index), horizon_hours=48, n_cutoffs=4, min_train_days=300)
 
 
+def test_walk_forward_cutoffs_respects_cutoff_start() -> None:
+    # Two years of data; a cutoff_start floor keeps every cutoff in the recent regime, ignoring history
+    # older than the floor even though min_train_days alone would allow much earlier cutoffs.
+    index = pd.date_range("2024-01-01", periods=24 * 400, freq="h", tz="UTC")
+    floor = pd.Timestamp("2025-01-01", tz="UTC")
+    cutoffs = walk_forward_cutoffs(
+        pd.Series(index), horizon_hours=48, n_cutoffs=4, min_train_days=30, cutoff_start="2025-01-01"
+    )
+    assert len(cutoffs) == 4
+    assert cutoffs[0] >= floor  # nothing older than the recency floor
+    # A string and an explicit UTC Timestamp behave identically.
+    assert cutoffs == walk_forward_cutoffs(
+        pd.Series(index), horizon_hours=48, n_cutoffs=4, min_train_days=30, cutoff_start=floor
+    )
+
+
 def test_evaluate_params_returns_finite_mae(timeseries_frame: pd.DataFrame) -> None:
     cutoffs = walk_forward_cutoffs(
         timeseries_frame["timestamp"], horizon_hours=48, n_cutoffs=3, min_train_days=30

@@ -169,3 +169,54 @@ def test_load_coords_reads_config(tmp_path: Path) -> None:
         )
     )
     assert load_coords("wind", config) == {"ws_de01": (54.0, 8.0)}
+
+
+def _frame_with_neighbours(periods: int = 24 * 120) -> pd.DataFrame:
+    """make_timeseries plus two neighbour wind columns whose wind pushes price down."""
+    frame = make_timeseries(periods=periods)
+    rng = np.random.default_rng(3)
+    n = len(frame)
+    dk = 6 + 3 * np.sin(2 * np.pi * np.arange(n) / 96) + rng.normal(0, 1, n)
+    nl = 6 + 3 * np.cos(2 * np.pi * np.arange(n) / 84) + rng.normal(0, 1, n)
+    frame["ws_dk01"] = dk
+    frame["ws_dk02"] = dk + rng.normal(0, 0.5, n)
+    frame["ws_nl01"] = nl
+    frame["ws_nl02"] = nl + rng.normal(0, 0.5, n)
+    frame["price_actual_eur_mwh"] = frame["price_actual_eur_mwh"] - 0.4 * dk - 0.4 * nl
+    return frame
+
+
+def test_run_neighbour_ablation_ranks_strategies_incl_baseline() -> None:
+    from eex_forecast.ablation import run_neighbour_ablation
+
+    frame = _frame_with_neighbours()
+    result = run_neighbour_ablation(
+        frame,
+        strategies=("none", "country_mean", "raw"),
+        params=TINY,
+        n_cutoffs=2,
+        horizon_hours=48,
+        min_train_days=30,
+    )
+    strategies = {v["strategy"] for v in result.variants}
+    assert strategies == {"none", "country_mean", "raw"}
+    # 'none' reproduces the plain price feature set; the neighbour variants add columns.
+    by_name = {v["strategy"]: v for v in result.variants}
+    assert by_name["country_mean"]["n_features"] == by_name["none"]["n_features"] + 2
+    assert by_name["raw"]["n_features"] == by_name["none"]["n_features"] + 4
+    assert all(v["mean_mae"] > 0 for v in result.variants)
+
+
+def test_save_neighbour_ablation_report(tmp_path: Path) -> None:
+    from eex_forecast.ablation import run_neighbour_ablation, save_neighbour_ablation_report
+
+    frame = _frame_with_neighbours()
+    result = run_neighbour_ablation(
+        frame, strategies=("none", "country_mean"), params=TINY, n_cutoffs=2,
+        horizon_hours=48, min_train_days=30,
+    )
+    path = save_neighbour_ablation_report(result, reports_dir=tmp_path)
+    payload = json.loads(path.read_text())
+    assert path.name == "neighbour_ablation.json"
+    assert payload["model"] == "price" and payload["ablated"] == "neighbour-wind aggregation"
+    assert payload["best_strategy"] in {"none", "country_mean"}
