@@ -44,6 +44,13 @@ HORIZON_DAYS = 14
 # revises them, so re-pulling the last couple of weeks keeps the database current without a full backfill.
 DEFAULT_REFRESH_DAYS = 14
 
+# Cross-border nuclear availability. Germany closed its own reactors in April 2023, so nuclear reaches the
+# German price only through imports - chiefly from France. We sum the available nuclear capacity (installed
+# minus outages) of these zones into one column; because planned outages publish years ahead, it is known
+# across the forecast horizon. Extensible to BE/CZ; entsoe-py zone keys.
+NUCLEAR_ZONES: tuple[str, ...] = ("FR",)
+NUCLEAR_COLUMN = "nuclear_available_mw"
+
 # Continental-DE sampling box (lat_min, lat_max, lon_min, lon_max), including the North Sea and
 # Baltic offshore wind regions. Used to keep candidate-point grid search tight and fast.
 DE_BBOX = (47.0, 56.0, 5.5, 15.5)

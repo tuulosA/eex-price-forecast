@@ -18,6 +18,7 @@ from typing import Literal
 
 import pandas as pd
 
+from eex_forecast.config import NUCLEAR_COLUMN
 from eex_forecast.features import neighbour_wind_block
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ FUNDAMENTAL_COLUMNS: dict[str, str] = {
     "wind_gen": "wind_actual_mw",
     "solar_gen": "solar_actual_mw",
     "load": "load_actual_mw",
+    "nuclear": NUCLEAR_COLUMN,  # cross-border nuclear availability
 }
 
 # Weather: friendly feature name -> the column prefix whose points are averaged into a national mean.

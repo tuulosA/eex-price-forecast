@@ -14,6 +14,7 @@ from eex_forecast.features import (
     fundamentals,
     load_features,
     neighbour_wind_block,
+    nuclear_feature,
     price_features,
     price_features_with_neighbours,
     price_lags,
@@ -210,6 +211,22 @@ def test_neighbour_block_empty_when_no_neighbours(timeseries_frame: pd.DataFrame
     # timeseries_frame has only home (ws_de*) points -> every non-'none' strategy yields no columns.
     for strategy in NEIGHBOUR_STRATEGIES:
         assert neighbour_wind_block(timeseries_frame, strategy).shape[1] == 0
+
+
+def test_nuclear_feature_present_and_absent() -> None:
+    index = pd.date_range("2025-01-01", periods=3, freq="h", tz="UTC")
+    with_nuclear = pd.DataFrame({"timestamp": index, "nuclear_available_mw": [50000.0, 51000.0, 52000.0]})
+    block = nuclear_feature(with_nuclear)
+    assert list(block.columns) == ["nuclear_available_mw"]
+    assert block["nuclear_available_mw"].tolist() == [50000.0, 51000.0, 52000.0]
+    # Absent column -> empty block (so price_features degrades cleanly on an old DB).
+    assert nuclear_feature(pd.DataFrame({"timestamp": index})).shape == (3, 0)
+
+
+def test_price_features_includes_nuclear_when_present() -> None:
+    frame = _frame_with_neighbours()
+    frame["nuclear_available_mw"] = [50000.0, 51000.0, 52000.0, 53000.0, 54000.0, 55000.0]
+    assert "nuclear_available_mw" in price_features(frame).columns
 
 
 def test_price_features_adopts_country_mean_neighbours() -> None:

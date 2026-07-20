@@ -17,7 +17,7 @@ import pandas as pd
 from eex_forecast.config import DEFAULT_REFRESH_DAYS
 from eex_forecast.db import connect, upsert
 from eex_forecast.db.schema import create_schema
-from eex_forecast.sources import entsoe
+from eex_forecast.sources import entsoe, nuclear
 from eex_forecast.weather.openmeteo import fetch_history
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
@@ -72,6 +72,23 @@ def backfill_entsoe(
             counts[name] = upsert(conn, frame)
             logger.info("Backfilled %s: %d rows", name, counts[name])
     return counts
+
+
+def backfill_nuclear(
+    db_path: str | Path, *, start: DateLike, end: DateLike | None = None
+) -> int:
+    """Backfill cross-border nuclear availability (``nuclear_available_mw``) over ``[start, end]``.
+
+    Outages publish ahead, so the default end reaches D+2; the forecast step extends it to the full
+    horizon. Returns the number of rows written.
+    """
+    end = end or _default_end()
+    frame = nuclear.fetch_nuclear_available(start, end)
+    with connect(db_path) as conn:
+        create_schema(conn)
+        rows = upsert(conn, frame)
+    logger.info("Backfilled nuclear: %d rows", rows)
+    return rows
 
 
 def backfill_weather(
@@ -139,4 +156,5 @@ def refresh_recent(
     return {
         "entsoe": backfill_entsoe(db_path, start=start),
         "weather": backfill_weather(db_path, start=start),
+        "nuclear": {"nuclear_available_mw": backfill_nuclear(db_path, start=start)},
     }

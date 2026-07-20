@@ -21,7 +21,7 @@ points that best explain German generation, and forecast price out to a 14-day h
    the chosen points.
 3. **Multi-stage price forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and
    load from the weather; the **price model** then forecasts the day-ahead price from those fundamentals
-   plus calendar, price lags, weather aggregates, and cross-border neighbour wind. Wind and solar are learned as a fraction of
+   plus calendar, price lags, weather aggregates, cross-border neighbour wind, and French nuclear availability. Wind and solar are learned as a fraction of
    **installed capacity** (fetched from ENTSO-E) so the models stay calibrated as the fleet grows;
    fitting uses **early stopping** with residual **diagnostics** (Durbin-Watson, ACF). Hyperparameters
    are tuned by **Optuna walk-forward** backtesting, and the pipeline writes a 14-day hourly forecast to
@@ -37,6 +37,7 @@ src/eex_forecast/
   config.py            # typed settings (env), paths, DE constants, 14-day horizon
   db/                  # SQLite schema (separate actual/forecast columns) + upsert/query
   sources/entsoe.py    # DE price + wind/solar generation + load actuals + installed capacity (entsoe-py)
+  sources/nuclear.py   # cross-border nuclear availability (installed capacity - A80/B14 outages)
   weather/
     geometry.py        # download GISCO land + Marine-Regions EEZ GeoJSON
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
@@ -120,6 +121,7 @@ eex points neighbours build                 # cross-border wind candidates + ran
 eex points neighbours rank --year 2025
 
 eex backfill weather --start 2023-01-01   # weather history at every chosen point (German + neighbour)
+eex backfill nuclear --start 2023-01-01   # cross-border (French) nuclear availability (see below)
 
 eex model tune --target price             # optional but recommended; also wind / solar / load (see below)
 eex model train                           # train all four models (wind, solar, load, price)
@@ -139,8 +141,9 @@ eex analyze correlation                   # feature <-> price correlation matrix
 ```
 
 `points map` / `points neighbours map` are a sanity check that the search reached offshore for wind and
-spread the chosen points sensibly. `analyze correlation` reduces the database to the fundamentals plus a
-national mean per weather role **and the per-country neighbour wind means**, showing how each driver
+spread the chosen points sensibly. `analyze correlation` reduces the database to the fundamentals
+(including nuclear availability) plus a national mean per weather role **and the per-country neighbour
+wind means**, showing how each driver
 correlates with the day-ahead price — a quick way to see, e.g., that Dutch and Danish wind track the
 German price about as strongly as German wind does.
 
@@ -193,6 +196,36 @@ distinct coupling while staying low-dimensional. This aggregation was chosen emp
 `eex analyze aggregation neighbour` (below): adding neighbour wind cut price walk-forward MAE by **~1.4
 EUR/MWh (~7.5%)**, and the per-country mean beat both a single global index and the raw per-point columns
 (with only two points per country, `raw` just adds noise).
+
+### Cross-border nuclear availability
+
+Germany closed its own reactors in **April 2023**, so nuclear reaches the German price only through
+imports — chiefly from **France**, whose ~61 GW fleet is Europe's largest and whose outages swing the
+Central-Western European supply balance. When French reactors are down, power flows toward France and the
+German price firms; when the fleet is fully available, cheap baseload spills across the border.
+
+`eex backfill nuclear` derives the **available** nuclear capacity per zone and sums it into one column,
+`nuclear_available_mw`:
+
+```
+nuclear_available_mw = installed_nuclear_capacity − Σ(unavailable from outages)
+```
+
+Unavailability comes from ENTSO-E *Unavailability of Generation Units* (documentType A80, psrType B14 =
+nuclear), fetched via entsoe-py: each outage carries the unit's installed capacity and an
+available-capacity step profile, so per unit `unavailable = nominal − available`, summed over the zone.
+Installed capacity is the A68 yearly figure, forward-filled. The set of zones is configurable
+(`NUCLEAR_ZONES`, France today; extensible to BE/CZ).
+
+```bash
+eex backfill nuclear --start 2023-01-01   # history; --end reaches D+2 by default
+```
+
+The key property: **planned outages publish years ahead**, so unlike the weather forecast this column
+carries *real* availability across the whole 14-day horizon rather than a prediction — a rare
+genuinely-known future driver. The forecast step (`eex forecast`) refetches it over the horizon
+automatically, and it enters the price model as a single `nuclear_available_mw` feature. Measure its worth
+with the feature-ablation tool: `eex analyze ablation --target price --drop nuclear_available_mw`.
 
 ### Feature aggregation and ablation
 
@@ -294,9 +327,10 @@ Planned, to be implemented:
 - **Separate onshore/offshore wind** — experiment with splitting the combined wind series into its
   onshore and offshore components, which have distinct weather points, capacity factors, and behaviour,
   rather than summing them into one target.
-- **More cross-border drivers** — building on the [neighbour-wind](#cross-border-neighbour-wind)
-  proxy: **French nuclear availability** (Germany's own fleet closed in 2023, so nuclear matters to the
-  German price only through French imports) and interconnector **NTC / transmission** capacity.
+- **Interconnector NTC / transmission** — the last of the cross-border drivers: the net transfer
+  capacity on DE's borders, which caps how much cheap (or expensive) neighbouring power can actually flow
+  and thus how tightly the zones couple. (The [neighbour-wind](#cross-border-neighbour-wind) and
+  [nuclear](#cross-border-nuclear-availability) drivers are already in.)
 
 ## Data sources
 

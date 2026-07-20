@@ -26,7 +26,7 @@ import holidays
 import numpy as np
 import pandas as pd
 
-from eex_forecast.config import AREA_CODE
+from eex_forecast.config import AREA_CODE, NUCLEAR_COLUMN
 
 TIMESTAMP = "timestamp"
 PRICE_ACTUAL = "price_actual_eur_mwh"
@@ -318,14 +318,29 @@ def load_features(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def nuclear_feature(frame: pd.DataFrame) -> pd.DataFrame:
+    """Cross-border nuclear availability (``nuclear_available_mw``), or empty when the column is absent.
+
+    A single known-ahead column (outages publish ahead), so it is not actual/forecast split; it enters the
+    price model directly. Empty on an old DB with no nuclear backfill, so `price_features` degrades cleanly.
+    """
+    if NUCLEAR_COLUMN not in frame.columns:
+        return pd.DataFrame(index=frame.index)
+    return pd.DataFrame(
+        {NUCLEAR_COLUMN: pd.to_numeric(frame[NUCLEAR_COLUMN], errors="coerce")}, index=frame.index
+    )
+
+
 def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
-    """Price drivers excluding the cross-border block: calendar + price lags + weather means + fundamentals."""
+    """Price drivers excluding the cross-border block: calendar + price lags + weather means + fundamentals
+    + nuclear availability."""
     return pd.concat(
         [
             calendar_features(frame[TIMESTAMP]),
             price_lags(frame),
             weather_means(frame),
             fundamentals(frame),
+            nuclear_feature(frame),
         ],
         axis=1,
     )
