@@ -54,6 +54,23 @@ def test_aggregate_features_means_and_prefix_exclusivity() -> None:
     # Absent fundamentals are simply omitted.
     assert "solar_gen" not in features.columns
     assert "load" not in features.columns
+    # No neighbour columns in this frame -> no nbr_wind_* features.
+    assert not any(c.startswith("nbr_wind_") for c in features.columns)
+
+
+def test_aggregate_features_includes_neighbour_wind() -> None:
+    frame = _frame()
+    frame["ws_dk01"] = [4.0, 4.0, 4.0, 4.0]
+    frame["ws_dk02"] = [6.0, 6.0, 6.0, 6.0]  # dk mean = 5
+    frame["ws_nl01"] = [2.0, 2.0, 2.0, 2.0]
+    features = aggregate_features(frame)
+    assert "nbr_wind_dk" in features.columns and "nbr_wind_nl" in features.columns
+    assert features["nbr_wind_dk"].tolist() == [5.0, 5.0, 5.0, 5.0]
+    # Neighbour columns are ordered after the known fundamentals/weather in the matrix.
+    corr = correlation_matrix(features)
+    cols = list(corr.columns)
+    assert cols[0] == "price"
+    assert cols.index("nbr_wind_dk") > cols.index("wind_speed")
 
 
 def test_correlation_matrix_is_price_first() -> None:

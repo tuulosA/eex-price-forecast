@@ -23,8 +23,12 @@ _ROLE_STYLE: dict[str, tuple[str, str, str]] = {
     "wind": ("^", "#1f77b4", "wind (land+sea)"),
     "temp": ("s", "#d62728", "temp / load"),
     "solar": ("o", "#ff7f0e", "solar"),
+    "neighbour_wind": ("^", "#2ca02c", "neighbour wind"),
 }
 _DE_MID_LAT = 51.5  # for an equirectangular aspect ratio
+
+# (lat_min, lat_max, lon_min, lon_max) view bounds.
+Bounds = tuple[float, float, float, float]
 
 
 def _draw_rings(ax: object, rings: Sequence[Ring], *, color: str, linewidth: float) -> None:
@@ -42,8 +46,13 @@ def plot_points_map(
     path: Path,
     *,
     title: str = "Germany weather points: candidates and ranked selection",
+    bounds: Bounds | None = None,
 ) -> Path:
-    """Draw the boundaries, candidate cloud, and selected points, and save a PNG to ``path``."""
+    """Draw the boundaries, candidate cloud, and selected points, and save a PNG to ``path``.
+
+    ``bounds`` (lat_min, lat_max, lon_min, lon_max) clips the view; without it the axes auto-scale to the
+    drawn artists. Clipping matters when rings extend far beyond the points (e.g. a country's distant EEZ).
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -79,6 +88,11 @@ def plot_points_map(
             label=f"{label} ({len(points)})",
             zorder=3,
         )
+
+    if bounds is not None:
+        lat_min, lat_max, lon_min, lon_max = bounds
+        ax.set_xlim(lon_min, lon_max)
+        ax.set_ylim(lat_min, lat_max)
 
     ax.set_aspect(1.0 / math.cos(math.radians(_DE_MID_LAT)))
     ax.set_xlabel("longitude")

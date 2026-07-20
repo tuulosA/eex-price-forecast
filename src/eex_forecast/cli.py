@@ -284,6 +284,50 @@ def neighbours_rank(
     typer.echo(f"Saved {len(selected_all)} neighbour-wind points -> {config_path}")
 
 
+@neighbours_app.command("map")
+def neighbours_map() -> None:
+    """Plot neighbour wind candidates and the ranked selection on a map (writes a PNG)."""
+    candidates = [
+        candidate
+        for country in WIND_NEIGHBOURS
+        if _neighbour_candidate_csv(country).exists()
+        for candidate in candidate_ops.read_candidates(_neighbour_candidate_csv(country))
+    ]
+    if not candidates:
+        raise typer.BadParameter(
+            "No neighbour candidate CSVs found. Run `eex points neighbours build` first."
+        )
+    identifier_sets = [COUNTRY_IDENTIFIERS[country] for country in WIND_NEIGHBOURS]
+    land_rings = (
+        candidate_ops.country_rings_multi(geometry.LAND_PATH, identifier_sets)
+        if geometry.LAND_PATH.exists()
+        else []
+    )
+    zones_rings = (
+        candidate_ops.country_rings_multi(geometry.ZONES_PATH, identifier_sets)
+        if geometry.ZONES_PATH.exists()
+        else []
+    )
+    chosen = {NEIGHBOUR_WIND_ROLE: load_points_config().get(NEIGHBOUR_WIND_ROLE, [])}
+    lats = [c.lat for c in candidates]
+    lons = [c.lon for c in candidates]
+    pad = 1.0  # clip the view to the candidate extent so far-flung EEZ rings stay off-map
+    bounds = (min(lats) - pad, max(lats) + pad, min(lons) - pad, max(lons) + pad)
+    out_path = plot_points_map(
+        land_rings,
+        zones_rings,
+        candidates,
+        chosen,
+        ANALYSIS_DIR / "candidate_map_neighbours.png",
+        title="DE neighbour wind points: candidates and ranked selection",
+        bounds=bounds,
+    )
+    typer.echo(
+        f"Mapped {len(candidates)} neighbour candidates and "
+        f"{len(chosen[NEIGHBOUR_WIND_ROLE])} selected points -> {out_path}"
+    )
+
+
 # -- backfill -------------------------------------------------------------------
 @backfill_app.command("entsoe")
 def backfill_entsoe(

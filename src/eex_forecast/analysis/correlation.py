@@ -18,6 +18,8 @@ from typing import Literal
 
 import pandas as pd
 
+from eex_forecast.features import neighbour_wind_block
+
 logger = logging.getLogger(__name__)
 
 # Fundamentals: friendly feature name -> database column.
@@ -43,10 +45,12 @@ FEATURE_ORDER: list[str] = [*FUNDAMENTAL_COLUMNS, *WEATHER_PREFIXES]
 
 
 def aggregate_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Reduce a raw timeseries frame to named features: fundamentals + per-role weather means.
+    """Reduce a raw timeseries frame to named features: fundamentals + per-role weather means + neighbour
+    wind.
 
-    Columns sharing a weather-role prefix are averaged into one national mean. Only features actually
-    present in ``frame`` are included; rows (the timestamp index) are preserved.
+    Columns sharing a weather-role prefix are averaged into one national mean; the cross-border neighbour
+    wind points are reduced to one per-country mean each (``nbr_wind_<cc>``), exactly as the price model
+    consumes them. Only features actually present in ``frame`` are included; the timestamp index is kept.
     """
     features: dict[str, pd.Series] = {}
     for name, column in FUNDAMENTAL_COLUMNS.items():
@@ -57,15 +61,24 @@ def aggregate_features(frame: pd.DataFrame) -> pd.DataFrame:
         if columns:
             numeric = frame[columns].apply(pd.to_numeric, errors="coerce")
             features[name] = numeric.mean(axis=1)
-    return pd.DataFrame(features)
+    aggregated = pd.DataFrame(features)
+    neighbours = neighbour_wind_block(frame, "country_mean")  # nbr_wind_<cc>, or empty if none present
+    if not neighbours.empty:
+        aggregated = pd.concat([aggregated, neighbours], axis=1)
+    return aggregated
 
 
 def correlation_matrix(
     features: pd.DataFrame, *, method: Literal["pearson", "kendall", "spearman"] = "pearson"
 ) -> pd.DataFrame:
-    """Correlation matrix over the feature columns (pairwise-complete observations), price-first."""
+    """Correlation matrix over the feature columns (pairwise-complete observations), price-first.
+
+    Known fundamentals/weather come first in :data:`FEATURE_ORDER`; any extra columns (the dynamic
+    ``nbr_wind_<cc>`` neighbour features) follow in their existing order.
+    """
     ordered = [name for name in FEATURE_ORDER if name in features.columns]
-    return features[ordered].corr(method=method)
+    extra = [name for name in features.columns if name not in FEATURE_ORDER]
+    return features[ordered + extra].corr(method=method)
 
 
 def correlations_with(corr: pd.DataFrame, target: str) -> pd.Series:
