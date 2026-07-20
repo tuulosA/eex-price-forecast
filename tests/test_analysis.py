@@ -13,7 +13,7 @@ from eex_forecast.analysis import (
     plot_points_map,
     save_heatmap,
 )
-from eex_forecast.analysis.correlation import correlations_with
+from eex_forecast.analysis.correlation import correlations_with, order_by_target
 from eex_forecast.weather.candidates import Candidate
 from eex_forecast.weather.point_search import SelectedPoint
 
@@ -101,6 +101,23 @@ def test_correlations_with_drops_target_and_sorts_by_magnitude() -> None:
     assert "price" not in versus_price.index
     assert versus_price.index[0] == "wind_gen"  # |r| = 1.0 is the strongest
     assert correlations_with(corr, "missing").empty
+
+
+def test_order_by_target_ranks_by_absolute_correlation() -> None:
+    features = pd.DataFrame(
+        {
+            "price": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "strong": [5.0, 4.0, 3.0, 2.0, 1.0],  # |r| = 1.0 (negative)
+            "weak": [1.0, 1.0, 2.0, 1.0, 5.0],  # weaker |r|
+        }
+    )
+    ordered = order_by_target(correlation_matrix(features), "price")
+    # Price first, then most-to-least correlated with price on both axes.
+    assert list(ordered.columns) == ["price", "strong", "weak"]
+    assert list(ordered.index) == ["price", "strong", "weak"]
+    # Absent target -> matrix returned unchanged.
+    corr = correlation_matrix(features)
+    assert order_by_target(corr, "missing").equals(corr)
 
 
 def test_save_heatmap_writes_png(tmp_path: Path) -> None:
