@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -42,9 +43,13 @@ from eex_forecast.analysis.correlation import correlations_with
 from eex_forecast.config import (
     ANALYSIS_DIR,
     CANDIDATES_DIR,
+    COUNTRY_IDENTIFIERS,
     DEFAULT_REFRESH_DAYS,
+    EUROPE_BBOX,
     HORIZON_DAYS,
+    NEIGHBOUR_POINTS_PER_COUNTRY,
     RANK_DIR,
+    WIND_NEIGHBOURS,
     get_settings,
 )
 from eex_forecast.db import connect, init_db, read_frame, read_target_series
@@ -53,11 +58,17 @@ from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
 from eex_forecast.weather.point_search import (
+    NEIGHBOUR_WIND_ROLE,
+    PRICE_TARGET_COLUMN,
     ROLES,
+    SelectedPoint,
     load_points_config,
     rank_candidates,
+    rank_neighbour_candidates,
     save_points,
+    select_neighbour_points,
     select_points,
+    write_neighbour_rank_csv,
     write_rank_csv,
 )
 
@@ -67,6 +78,10 @@ geo_app = typer.Typer(help="Geometry inputs.", no_args_is_help=True)
 points_app = typer.Typer(
     help="Weather-point candidate generation and ranking.", no_args_is_help=True
 )
+neighbours_app = typer.Typer(
+    help="Neighbour wind points, ranked against DE price.", no_args_is_help=True
+)
+points_app.add_typer(neighbours_app, name="neighbours")
 backfill_app = typer.Typer(help="Backfill data into the database.", no_args_is_help=True)
 analyze_app = typer.Typer(
     help="Exploratory analysis over the backfilled data.", no_args_is_help=True
@@ -208,6 +223,65 @@ def points_map() -> None:
     )
     chosen = sum(len(points) for points in selected.values())
     typer.echo(f"Mapped {len(candidates)} candidates and {chosen} selected points -> {out_path}")
+
+
+# -- points neighbours ----------------------------------------------------------
+def _neighbour_candidate_csv(country: str) -> Path:
+    return CANDIDATES_DIR / f"candidates_neighbour_{country.lower()}.csv"
+
+
+@neighbours_app.command("build")
+def neighbours_build(
+    points: Annotated[int, typer.Option(help="Candidate points per neighbour.")] = 150,
+) -> None:
+    """Generate land+sea wind candidates inside each DE neighbour and write a CSV per country."""
+    if not geometry.ZONES_PATH.exists():
+        raise typer.BadParameter("Missing zones geometry. Run `eex geo download` first.")
+    for country in WIND_NEIGHBOURS:
+        built = candidate_ops.build_candidates(
+            geometry.ZONES_PATH,
+            mode="zones",
+            points=points,
+            bbox=EUROPE_BBOX,
+            country=country,
+            identifiers=COUNTRY_IDENTIFIERS[country],
+        )
+        out_path = _neighbour_candidate_csv(country)
+        candidate_ops.write_candidates(out_path, built)
+        typer.echo(f"{country}: built {len(built)} candidates -> {out_path.name}")
+
+
+@neighbours_app.command("rank")
+def neighbours_rank(
+    year: Annotated[int, typer.Option(help="Year of DE price + weather to rank against.")] = 2024,
+    count: Annotated[
+        int, typer.Option(help="Points to keep per neighbour.")
+    ] = NEIGHBOUR_POINTS_PER_COUNTRY,
+) -> None:
+    """Rank each neighbour's wind candidates against DE price and write the chosen points to config."""
+    start, end = f"{year}-01-01", f"{year}-12-31"
+    with connect(get_settings().db_path) as conn:
+        price = read_target_series(conn, PRICE_TARGET_COLUMN, start=start, end=end)
+    if price.empty:
+        raise typer.BadParameter(
+            f"No {PRICE_TARGET_COLUMN} for {year}. Run `eex backfill entsoe` first."
+        )
+
+    selected_all: list[SelectedPoint] = []
+    for country in WIND_NEIGHBOURS:
+        candidate_csv = _neighbour_candidate_csv(country)
+        if not candidate_csv.exists():
+            raise typer.BadParameter(f"Missing {candidate_csv}. Run `eex points neighbours build`.")
+        candidates = candidate_ops.read_candidates(candidate_csv)
+        scores = rank_neighbour_candidates(candidates, price, country, start=start, end=end)
+        write_neighbour_rank_csv(scores, RANK_DIR / f"neighbour_{country.lower()}_rank.csv")
+        chosen = select_neighbour_points(scores, count=count)
+        selected_all.extend(chosen)
+        best = ", ".join(f"{p.column}(r={p.pearson:+.2f})" for p in chosen)
+        typer.echo(f"{country}: {len(chosen)} points -> {best or '(none)'}")
+
+    config_path = save_points(NEIGHBOUR_WIND_ROLE, selected_all)
+    typer.echo(f"Saved {len(selected_all)} neighbour-wind points -> {config_path}")
 
 
 # -- backfill -------------------------------------------------------------------

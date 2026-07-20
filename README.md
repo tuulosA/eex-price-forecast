@@ -4,14 +4,18 @@ Short-term electricity **price forecasting for the German day-ahead market** (th
 DE-LU bidding zone). Fetch the fundamentals (wind, solar, load) and the weather that drives them, find the weather grid
 points that best explain German generation, and forecast price out to a 14-day horizon.
 
-> The data foundation — weather-point search and the ENTSO-E / Open-Meteo backfills — is implemented.
-> The forecasting model, hyperparameter tuning, and forecast pipeline to be done
+> The full chain is implemented: weather-point search (including cross-border neighbour wind), the
+> ENTSO-E / Open-Meteo backfills, the four-model forecast, Optuna walk-forward tuning, and the 14-day
+> forecast pipeline. See [To be done](#to-be-done) for the remaining refinements.
 
 ## What it does
 
 1. **Weather-point search.** Generates candidate coordinates across Germany — including offshore
    North Sea / Baltic points for wind, and a separate land-only set for temperature and solar — then
-   ranks them by lagged correlation against actual German wind / load / solar, and keeps the best.
+   ranks them by lagged correlation against actual German wind / load / solar, and keeps the best. The
+   wind search also reaches **across the border**: for each interconnected neighbour it ranks that
+   country's wind points against **German price** and keeps the two best, a cross-border wind proxy for
+   the price model (see [Cross-border neighbour wind](#cross-border-neighbour-wind)).
 2. **Data backfill into SQLite.** Pulls DE day-ahead prices and wind / solar / load actuals from
    ENTSO-E, and hourly weather (100 m wind, 2 m temperature, shortwave radiation) from Open-Meteo at
    the chosen points.
@@ -37,7 +41,7 @@ src/eex_forecast/
     geometry.py        # download GISCO land + Marine-Regions EEZ GeoJSON
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
     openmeteo.py       # Open-Meteo client (archive history + forecast)
-    point_search.py    # rank candidates by best lagged Pearson vs a target series
+    point_search.py    # rank candidates by best lagged Pearson vs a target (German actuals; DE price for neighbours)
   analysis/            # correlation matrix + candidate/ranked point map
   backfill.py          # orchestrate ENTSO-E + weather backfills
   features.py          # calendar, price lags, weather aggregates, per-model feature builders
@@ -117,6 +121,39 @@ eex analyze correlation                   # feature correlation matrix (CSV + he
 `points map` is a sanity check that the search reached offshore for wind and spread the chosen points
 sensibly; `analyze correlation` reduces the database to the fundamentals plus a national mean per
 weather role and shows how each driver correlates with the day-ahead price before any model is built.
+
+### Cross-border neighbour wind
+
+Germany does not price in isolation. It sits at the centre of the Central-Western European grid, and
+its neighbours' interconnectors carry cheap power in whenever a neighbour is long: abundant wind in a
+neighbouring bidding zone depresses **that** zone's price and, through imports, Germany's. A model that
+only sees German weather misses this — so the wind search is extended across the border.
+
+For each wind-relevant neighbour — **DK, NL, PL, FR, CH, CZ, AT** — the same machinery builds land+sea
+candidate points inside that country, then ranks them **against German price** (not against any German
+generation series) over wind speed and its cube (wind power scales with ~v³, so the cube is often the
+stronger price predictor) at short lags. The coupling is negative — more neighbour wind means a cheaper
+Germany — so candidates are ranked by correlation *magnitude*, and the **two most spatially-distinct
+points per country** (kept ≥ 50 km apart, so they are not near-duplicates) are chosen:
+
+```bash
+eex points neighbours build               # land+sea wind candidates inside each neighbour (one CSV per country)
+eex points neighbours rank --year 2024    # rank each neighbour's candidates vs DE price -> chosen points in config
+```
+
+`rank` reads the German day-ahead price already in the database, so run it **after** `backfill entsoe`.
+Candidate points are sampled from a continental bounding box that is clipped to each country's own
+territory, deliberately excluding far-flung EEZ waters (e.g. the Faroese North Atlantic, which the source
+maritime data still attributes to Denmark) so the two chosen points sit in the wind regions that actually
+couple to Germany. The step writes a per-country ranking to `data/rank/neighbour_<cc>_rank.csv` and the
+chosen points into `config/weather_points.json` under a `neighbour_wind` role, with stable columns
+`ws_dk01`, `ws_nl01`, … (wind speed only — unlike the German wind points, no auxiliary temperature is
+fetched, since these are a bare price proxy rather than an input to a generation sub-model).
+
+The next `eex backfill weather` picks them up automatically — every point in the config is fetched, so
+the neighbour columns flow into the database alongside the German ones with no extra step. In the price
+model each neighbour contributes a single **per-country mean** wind feature (`nbr_wind_dk`,
+`nbr_wind_nl`, …), keeping each border's distinct coupling while staying low-dimensional.
 
 ### Feature ablation
 
@@ -207,13 +244,14 @@ needed to run the tests.
 
 Planned, to be implemented:
 
-- **A/B feature-ablation tool** — measure each feature group's marginal contribution to forecast skill.
 - **Recency sample weighting** — weight recent rows more heavily when fitting, so the models track the
   latest market regime rather than treating three years of history equally.
 - **Separate onshore/offshore wind** — experiment with splitting the combined wind series into its
   onshore and offshore components, which have distinct weather points, capacity factors, and behaviour,
   rather than summing them into one target.
-- **Additional drivers** — nuclear availability and cross-border (NTC / neighbour-wind) features.
+- **More cross-border drivers** — building on the [neighbour-wind](#cross-border-neighbour-wind)
+  proxy: **French nuclear availability** (Germany's own fleet closed in 2023, so nuclear matters to the
+  German price only through French imports) and interconnector **NTC / transmission** capacity.
 
 ## Data sources
 

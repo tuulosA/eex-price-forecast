@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from eex_forecast.config import DE_BBOX
+from eex_forecast.config import COUNTRY_IDENTIFIERS, DE_BBOX
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ LatLon = tuple[float, float]
 BBox = tuple[float, float, float, float]  # (lat_min, lat_max, lon_min, lon_max)
 
 # Property values that identify Germany across the GISCO (ISO2/ISO3) and EEZ naming schemes.
-_DE_IDENTIFIERS = frozenset({"DE", "DEU", "GERMANY"})
+_DE_IDENTIFIERS = COUNTRY_IDENTIFIERS["DE"]
 _MAX_GRID_STEPS = 400
 
 
@@ -112,10 +112,14 @@ def _iter_features(data: Any) -> Iterator[dict[str, Any]]:
         yield from (f for f in data if isinstance(f, dict))
 
 
-def _feature_is_germany(feature: dict[str, Any]) -> bool:
+def _feature_matches(feature: dict[str, Any], identifiers: frozenset[str]) -> bool:
     properties = feature.get("properties") or {}
     values = {str(v).strip().upper() for v in properties.values() if v is not None}
-    return bool(values & _DE_IDENTIFIERS)
+    return bool(values & identifiers)
+
+
+def _feature_is_germany(feature: dict[str, Any]) -> bool:
+    return _feature_matches(feature, _DE_IDENTIFIERS)
 
 
 def _iter_polygon_rings(geometry: dict[str, Any]) -> Iterator[Ring]:
@@ -134,18 +138,23 @@ def _iter_polygon_rings(geometry: dict[str, Any]) -> Iterator[Ring]:
                 yield vertices
 
 
-def germany_rings(geojson_path: Path) -> list[Ring]:
-    """Load every polygon ring belonging to Germany from a GeoJSON file."""
+def country_rings(geojson_path: Path, identifiers: frozenset[str]) -> list[Ring]:
+    """Load every polygon ring belonging to the identified country from a GeoJSON file."""
     data = json.loads(Path(geojson_path).read_text(encoding="utf-8"))
     rings = [
         ring
         for feature in _iter_features(data)
-        if _feature_is_germany(feature)
+        if _feature_matches(feature, identifiers)
         for ring in _iter_polygon_rings(feature.get("geometry") or {})
     ]
     if not rings:
-        raise ValueError(f"No German polygons found in {geojson_path}.")
+        raise ValueError(f"No polygons for {sorted(identifiers)} found in {geojson_path}.")
     return rings
+
+
+def germany_rings(geojson_path: Path) -> list[Ring]:
+    """Load every polygon ring belonging to Germany from a GeoJSON file."""
+    return country_rings(geojson_path, _DE_IDENTIFIERS)
 
 
 # -- grid sampling --------------------------------------------------------------
@@ -190,24 +199,39 @@ def _sample_pool(rings: list[Ring], bbox: BBox, target_pool: int) -> list[LatLon
         rows += 1
         cols += 1
     if not pool:
-        raise ValueError("Could not sample any candidate points inside the German polygons.")
+        raise ValueError("Could not sample any candidate points inside the country polygons.")
     return pool
 
 
 # -- public API -----------------------------------------------------------------
 def build_candidates(
-    geojson_path: Path, *, mode: Mode, points: int = 150, bbox: BBox = DE_BBOX
+    geojson_path: Path,
+    *,
+    mode: Mode,
+    points: int = 150,
+    bbox: BBox = DE_BBOX,
+    country: str = "DE",
+    identifiers: frozenset[str] | None = None,
 ) -> list[Candidate]:
-    """Build ``points`` well-spread candidate coordinates inside Germany for the given geometry mode."""
-    rings = germany_rings(geojson_path)
+    """Build ``points`` well-spread candidate coordinates inside ``country`` for the given geometry mode.
+
+    Defaults to Germany. For a neighbour, pass its ``country`` code and ``identifiers`` (and a wide
+    ``bbox`` such as ``EUROPE_BBOX``); the bbox is clipped to the country's own ring extent, so a
+    generous box is fine and far-flung EEZ territories fall outside the sampled points.
+    """
+    identifiers = identifiers or COUNTRY_IDENTIFIERS.get(country.upper(), _DE_IDENTIFIERS)
+    rings = country_rings(geojson_path, identifiers)
     bbox = _clip_bbox(rings, bbox)
     pool = _sample_pool(rings, bbox, target_pool=max(points * 5, points + 50))
     chosen = select_spread_points(pool, points)
+    prefix = country.lower()
     candidates = [
-        Candidate(point_id=f"de_{mode}_{i:03d}", lat=round(lat, 4), lon=round(lon, 4), source=mode)
+        Candidate(
+            point_id=f"{prefix}_{mode}_{i:03d}", lat=round(lat, 4), lon=round(lon, 4), source=mode
+        )
         for i, (lat, lon) in enumerate(chosen, start=1)
     ]
-    logger.info("Built %d %s candidates (pool of %d)", len(candidates), mode, len(pool))
+    logger.info("Built %d %s %s candidates (pool of %d)", len(candidates), country, mode, len(pool))
     return candidates
 
 

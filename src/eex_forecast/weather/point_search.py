@@ -26,8 +26,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from eex_forecast.config import WEATHER_POINTS_PATH
-from eex_forecast.weather.candidates import Candidate, Mode
+from eex_forecast.config import (
+    NEIGHBOUR_MIN_DISTANCE_KM,
+    NEIGHBOUR_POINTS_PER_COUNTRY,
+    WEATHER_POINTS_PATH,
+)
+from eex_forecast.weather.candidates import Candidate, Mode, haversine_km
 from eex_forecast.weather.openmeteo import (
     SHORTWAVE_RADIATION,
     TEMPERATURE_2M,
@@ -204,6 +208,155 @@ def select_points(scores: Sequence[PointScore], *, role: Role, count: int) -> li
         )
         for rank, score in enumerate(scores[:count], start=1)
     ]
+
+
+# -- neighbour wind (ranked against DE price) ------------------------------------
+# A neighbour's wind lowers its own zone price and, through the interconnector, DE's - so a neighbour's
+# best wind points are the ones whose wind most (negatively) correlates with *DE price*, not with any
+# generation series. We rank each neighbour's candidates against DE price over wind-speed and its cube
+# (wind power ~ v^3, so the cube is often the stronger price predictor) at small lags, then keep the two
+# most spatially-distinct points. Chosen points share the "neighbour_wind" role and are named ``ws_<cc>NN``.
+NEIGHBOUR_WIND_ROLE = "neighbour_wind"
+PRICE_TARGET_COLUMN = "price_actual_eur_mwh"  # DE day-ahead price: the neighbour-wind ranking target
+_WIND_TRANSFORMS: tuple[str, ...] = ("ws", "ws3")
+
+
+@dataclass(frozen=True, slots=True)
+class NeighbourScore:
+    """A neighbour candidate's best correlation against DE price."""
+
+    candidate: Candidate
+    country: str
+    best_lag_hours: int
+    best_transform: str
+    pearson: float
+    samples: int
+
+    @property
+    def abs_pearson(self) -> float:
+        return abs(self.pearson)
+
+
+def _transform(series: pd.Series, transform: str) -> pd.Series:
+    return series.pow(3) if transform == "ws3" else series
+
+
+def best_wind_price_correlation(
+    wind: pd.Series,
+    price: pd.Series,
+    *,
+    max_lag_hours: int = 3,
+    transforms: Sequence[str] = _WIND_TRANSFORMS,
+    min_samples: int = 720,
+) -> tuple[int, str, float]:
+    """Return ``(lag_hours, transform, pearson)`` maximising ``|pearson|`` of a wind transform (lagged
+    ``0..max_lag_hours``) against ``price``. Both series are aligned on a common hourly grid. Returns
+    ``(0, "ws", nan)`` when overlap is too small. The correlation is typically negative (wind depresses
+    price); we rank by magnitude so sign does not matter."""
+    joined = pd.DataFrame({"wind": wind, "price": price}).sort_index().resample("h").mean()
+    best = (0, "ws", float("nan"))
+    for transform in transforms:
+        base = _transform(joined["wind"], transform)
+        for lag in range(max_lag_hours + 1):
+            pair = pd.DataFrame({"wind": base.shift(lag), "price": joined["price"]}).dropna()
+            if len(pair) < min_samples:
+                continue
+            r = pair["wind"].corr(pair["price"])
+            if pd.notna(r) and (pd.isna(best[2]) or abs(r) > abs(best[2])):
+                best = (lag, transform, float(r))
+    return best
+
+
+def rank_neighbour_candidates(
+    candidates: Sequence[Candidate],
+    price: pd.Series,
+    country: str,
+    *,
+    start: str | date | datetime,
+    end: str | date | datetime,
+    max_lag_hours: int = 3,
+    history_fetcher: HistoryFetcher = fetch_history,
+) -> list[NeighbourScore]:
+    """Score every ``country`` candidate against DE ``price`` and return them sorted best-first."""
+    scores: list[NeighbourScore] = []
+    total = len(candidates)
+    for index, candidate in enumerate(candidates, start=1):
+        history = history_fetcher(
+            candidate.lat, candidate.lon, start=start, end=end, variables=[WIND_SPEED_100M]
+        )
+        if not history.empty:
+            wind = history.set_index("timestamp")[WIND_SPEED_100M]
+            lag, transform, pearson = best_wind_price_correlation(
+                wind, price, max_lag_hours=max_lag_hours
+            )
+            if pd.notna(pearson):
+                samples = int(wind.notna().sum())
+                scores.append(NeighbourScore(candidate, country, lag, transform, pearson, samples))
+        if index % _PROGRESS_EVERY == 0 or index == total:
+            logger.info("Fetched %d/%d %s wind candidates", index, total, country)
+    scores.sort(key=lambda score: score.abs_pearson, reverse=True)
+    logger.info("Ranked %d/%d %s candidates vs DE price", len(scores), len(candidates), country)
+    return scores
+
+
+def select_neighbour_points(
+    scores: Sequence[NeighbourScore],
+    *,
+    count: int = NEIGHBOUR_POINTS_PER_COUNTRY,
+    min_distance_km: float = NEIGHBOUR_MIN_DISTANCE_KM,
+) -> list[SelectedPoint]:
+    """Keep the ``count`` best-correlated points at least ``min_distance_km`` apart (best first).
+
+    Diversity matters: the top few candidates in a neighbour cluster together, and two coordinates a few
+    km apart carry near-identical wind. Column names are ``ws_<country>NN`` (e.g. ``ws_dk01``).
+    """
+    chosen: list[SelectedPoint] = []
+    kept_coords: list[tuple[float, float]] = []
+    for score in scores:
+        lat, lon = score.candidate.lat, score.candidate.lon
+        if all(haversine_km(lat, lon, k_lat, k_lon) >= min_distance_km for k_lat, k_lon in kept_coords):
+            rank = len(chosen) + 1
+            chosen.append(
+                SelectedPoint(
+                    column=f"ws_{score.country.lower()}{rank:02d}",
+                    lat=lat,
+                    lon=lon,
+                    variable=WIND_SPEED_100M,
+                    candidate_id=score.candidate.point_id,
+                    pearson=round(score.pearson, 4),
+                    best_lag_hours=score.best_lag_hours,
+                )
+            )
+            kept_coords.append((lat, lon))
+            if len(chosen) >= count:
+                break
+    return chosen
+
+
+def write_neighbour_rank_csv(scores: Sequence[NeighbourScore], path: Path) -> Path:
+    """Write the full neighbour ranking (best first) to a CSV for inspection."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(
+            ["rank", "country", "candidate_id", "lat", "lon", "pearson", "transform", "lag_h", "samples"]
+        )
+        for rank, score in enumerate(scores, start=1):
+            writer.writerow(
+                [
+                    rank,
+                    score.country,
+                    score.candidate.point_id,
+                    score.candidate.lat,
+                    score.candidate.lon,
+                    round(score.pearson, 4),
+                    score.best_transform,
+                    score.best_lag_hours,
+                    score.samples,
+                ]
+            )
+    return path
 
 
 # -- points config (config/weather_points.json) ---------------------------------

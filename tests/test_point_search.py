@@ -10,13 +10,17 @@ import pandas as pd
 
 from eex_forecast.weather.candidates import Candidate
 from eex_forecast.weather.point_search import (
+    NEIGHBOUR_WIND_ROLE,
     ROLES,
+    NeighbourScore,
     SelectedPoint,
     best_lagged_correlation,
+    best_wind_price_correlation,
     load_points_config,
     point_columns,
     rank_candidates,
     save_points,
+    select_neighbour_points,
     select_points,
 )
 
@@ -98,3 +102,35 @@ def test_point_columns_adds_irradiance_at_temp_points() -> None:
 def test_point_columns_leaves_solar_single_variable() -> None:
     solar = SelectedPoint("ghi_de01", 49.0, 9.0, "shortwave_radiation", "de_land_002", 0.8, 0)
     assert point_columns("solar", solar) == {"shortwave_radiation": "ghi_de01"}
+
+
+def test_neighbour_point_columns_wind_only() -> None:
+    # A neighbour-wind point is a bare price proxy: only wind speed, no auxiliary temperature.
+    point = SelectedPoint("ws_dk01", 56.0, 8.0, "wind_speed_100m", "dk_zones_001", -0.4, 1)
+    assert point_columns(NEIGHBOUR_WIND_ROLE, point) == {"wind_speed_100m": "ws_dk01"}
+
+
+def test_best_wind_price_correlation_prefers_cube_and_finds_lag() -> None:
+    rng = np.random.default_rng(2)
+    wind = _hourly(6 + 4 * np.sin(np.arange(3000) * 0.05) + rng.normal(0, 0.3, 3000)).clip(lower=0)
+    # Price responds (negatively) to wind *power* ~ v^3, one hour later.
+    price = (-0.5 * wind.pow(3)).shift(1) + rng.normal(0, 5, 3000)
+    lag, transform, pearson = best_wind_price_correlation(wind, price)
+    assert transform == "ws3"
+    assert lag == 1
+    assert pearson < -0.8  # strong negative coupling
+
+
+def test_select_neighbour_points_enforces_diversity() -> None:
+    # Two top candidates a few km apart, a third far away. Diversity must skip the near-duplicate.
+    near_a = Candidate("dk_zones_001", 56.00, 8.00, "zones")
+    near_b = Candidate("dk_zones_002", 56.02, 8.02, "zones")  # ~2.6 km from near_a
+    far = Candidate("dk_zones_003", 55.00, 11.00, "zones")  # ~200+ km away
+    scores = [
+        NeighbourScore(near_a, "DK", 0, "ws3", -0.50, 8000),
+        NeighbourScore(near_b, "DK", 0, "ws3", -0.49, 8000),
+        NeighbourScore(far, "DK", 1, "ws3", -0.40, 8000),
+    ]
+    selected = select_neighbour_points(scores, count=2, min_distance_km=50.0)
+    assert [p.column for p in selected] == ["ws_dk01", "ws_dk02"]
+    assert [p.candidate_id for p in selected] == ["dk_zones_001", "dk_zones_003"]

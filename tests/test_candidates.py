@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from eex_forecast.config import COUNTRY_IDENTIFIERS, EUROPE_BBOX
 from eex_forecast.weather.candidates import (
     build_candidates,
     haversine_km,
@@ -53,6 +54,46 @@ def test_candidate_csv_roundtrip(germany_geojson: Path, tmp_path: Path) -> None:
     candidates = build_candidates(germany_geojson, mode="zones", points=15)
     csv_path = write_candidates(tmp_path / "candidates.csv", candidates)
     assert read_candidates(csv_path) == candidates
+
+
+def test_build_candidates_for_neighbour_country(tmp_path: Path) -> None:
+    # A two-country file: candidates for a neighbour must come from that country's polygon only,
+    # carry its own point-id prefix, and be clipped to its ring extent within the Europe bbox.
+    features = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"CNTR_ID": "DE"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[8, 49], [12, 49], [12, 53], [8, 53], [8, 49]]],
+                },
+            },
+            {
+                "type": "Feature",
+                "properties": {"CNTR_ID": "DK"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[8, 55], [11, 55], [11, 57], [8, 57], [8, 55]]],
+                },
+            },
+        ],
+    }
+    path = tmp_path / "two.geojson"
+    path.write_text(json.dumps(features), encoding="utf-8")
+    candidates = build_candidates(
+        path,
+        mode="zones",
+        points=12,
+        bbox=EUROPE_BBOX,
+        country="DK",
+        identifiers=COUNTRY_IDENTIFIERS["DK"],
+    )
+    assert len(candidates) == 12
+    assert all(c.point_id.startswith("dk_zones_") for c in candidates)
+    # Every chosen point sits inside the Danish box, never the German one.
+    assert all(55.0 <= c.lat <= 57.0 and 8.0 <= c.lon <= 11.0 for c in candidates)
 
 
 def test_build_candidates_from_top_level_list_geojson(tmp_path: Path) -> None:
