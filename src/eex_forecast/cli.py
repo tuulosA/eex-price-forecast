@@ -11,8 +11,8 @@ Command groups:
 - eex backfill weather: backfill weather history at the chosen points.
 - eex update: refresh the latest actuals + weather over a rolling recent window.
 - eex analyze correlation: feature correlation matrix over the backfilled data.
-- eex analyze ablation wind|solar|load: compare a fundamental's weather-aggregation strategies.
-- eex analyze drop: A/B a model's full feature set vs the set with chosen features removed.
+- eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
+- eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
@@ -28,9 +28,8 @@ from typing import Annotated
 
 import typer
 
-from eex_forecast import ablation, tuning
+from eex_forecast import ablation, aggregation, tuning
 from eex_forecast import backfill as backfill_ops
-from eex_forecast import feature_drop as feature_drop_ops
 from eex_forecast import forecast as forecast_ops
 from eex_forecast import model as model_ops
 from eex_forecast.analysis import (
@@ -86,10 +85,10 @@ backfill_app = typer.Typer(help="Backfill data into the database.", no_args_is_h
 analyze_app = typer.Typer(
     help="Exploratory analysis over the backfilled data.", no_args_is_help=True
 )
-ablation_app = typer.Typer(
+aggregation_app = typer.Typer(
     help="A/B a fundamental's weather-aggregation strategies.", no_args_is_help=True
 )
-analyze_app.add_typer(ablation_app, name="ablation")
+analyze_app.add_typer(aggregation_app, name="aggregation")
 model_app = typer.Typer(help="Train and tune the forecast models.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
@@ -397,7 +396,7 @@ def analyze_correlation(
         typer.echo(f"  vs price: {top}")
 
 
-def _run_ablation(
+def _run_aggregation(
     fundamental: str,
     strategies: str,
     cutoffs: int,
@@ -406,7 +405,7 @@ def _run_ablation(
     capacity_scaling: bool,
     cutoff_start: str,
 ) -> None:
-    """Shared body for the ``analyze ablation <fundamental>`` subcommands."""
+    """Shared body for the ``analyze aggregation <fundamental>`` subcommands."""
     selected = tuple(name.strip() for name in strategies.split(",") if name.strip())
     if not selected:
         raise typer.BadParameter("Give at least one strategy.")
@@ -415,7 +414,7 @@ def _run_ablation(
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
-    result = ablation.run_ablation(
+    result = aggregation.run_aggregation(
         frame,
         fundamental,
         strategies=selected,
@@ -425,10 +424,10 @@ def _run_ablation(
         n_regions=regions,
         capacity_scaling=capacity_scaling,
     )
-    path = ablation.save_ablation_report(result)
+    path = aggregation.save_aggregation_report(result)
     scaling_label = "capacity factor" if capacity_scaling else "raw MW"
     typer.echo(
-        f"{fundamental} weather-aggregation ablation "
+        f"{fundamental} weather-aggregation A/B "
         f"({len(result.cutoffs)} cutoffs, {scaling_label}):"
     )
     for variant in result.variants:
@@ -443,8 +442,8 @@ def _strategies_default(fundamental: str) -> str:
     return ",".join(WEATHER_AGG[fundamental].strategies)
 
 
-# Earliest walk-forward cutoff. Defaults to 2025-01-01 so tuning/ablation weight the recent market
-# regime rather than years-old history (mirrors nordpool-predict's --cutoff-start default).
+# Earliest walk-forward cutoff. Defaults to 2025-01-01 so the walk-forward tools weight the recent
+# market regime rather than years-old history (mirrors nordpool-predict's --cutoff-start default).
 DEFAULT_CUTOFF_START = "2025-01-01"
 
 _CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]
@@ -458,8 +457,8 @@ _CapacityOpt = Annotated[
 ]
 
 
-@ablation_app.command("wind")
-def ablation_wind(
+@aggregation_app.command("wind")
+def aggregation_wind(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = _strategies_default("wind"),
@@ -470,11 +469,11 @@ def ablation_wind(
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """A/B wind's weather aggregation: mean / cube (mean(v^3)) / spread / stats / regional / raw."""
-    _run_ablation("wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
+    _run_aggregation("wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
 
 
-@ablation_app.command("solar")
-def ablation_solar(
+@aggregation_app.command("solar")
+def aggregation_solar(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = _strategies_default("solar"),
@@ -485,11 +484,11 @@ def ablation_solar(
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """A/B solar's irradiance aggregation: mean / spread / stats / regional / raw."""
-    _run_ablation("solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
+    _run_aggregation("solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
 
 
-@ablation_app.command("load")
-def ablation_load(
+@aggregation_app.command("load")
+def aggregation_load(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = _strategies_default("load"),
@@ -499,13 +498,13 @@ def ablation_load(
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """A/B load's temperature aggregation: mean / spread / stats / regional / raw (no capacity)."""
-    _run_ablation(
+    _run_aggregation(
         "load", strategies, cutoffs, horizon_hours, regions, False, cutoff_start
     )
 
 
-@ablation_app.command("neighbour")
-def ablation_neighbour(
+@aggregation_app.command("neighbour")
+def aggregation_neighbour(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = ",".join(NEIGHBOUR_STRATEGIES),
@@ -526,15 +525,15 @@ def ablation_neighbour(
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
-    result = ablation.run_neighbour_ablation(
+    result = aggregation.run_neighbour_aggregation(
         frame,
         strategies=selected,
         n_cutoffs=cutoffs,
         horizon_hours=horizon_hours,
         cutoff_start=cutoff_start,
     )
-    path = ablation.save_neighbour_ablation_report(result)
-    typer.echo(f"neighbour-wind ablation ({len(result.cutoffs)} cutoffs, price MAE in EUR/MWh):")
+    path = aggregation.save_neighbour_aggregation_report(result)
+    typer.echo(f"neighbour-wind A/B ({len(result.cutoffs)} cutoffs, price MAE in EUR/MWh):")
     for variant in result.variants:
         typer.echo(
             f"  {variant['strategy']:<12} {variant['n_features']:>3} feat | "
@@ -543,8 +542,8 @@ def ablation_neighbour(
     typer.echo(f"  best: {result.best_strategy} | report -> {path}")
 
 
-@analyze_app.command("drop")
-def analyze_drop(
+@analyze_app.command("ablation")
+def analyze_ablation(
     target: Annotated[ModelName, typer.Option(help="Model whose features to drop (not 'all').")],
     drop: Annotated[
         str | None,
@@ -555,9 +554,9 @@ def analyze_drop(
     cutoffs: _CutoffsOpt = 6,
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
 ) -> None:
-    """Compare a model's full feature set against the set with chosen features removed (walk-forward).
+    """Feature ablation: remove chosen features and measure the loss (full vs reduced, walk-forward).
 
-    With no --drop, lists the features numbered and prompts for which to drop; pass --drop for a
+    With no --drop, lists the features numbered and prompts for which to remove; pass --drop for a
     non-interactive run. Works for any model - price lags/aggregates, or raw per-point sub-model columns.
     """
     if target is ModelName.all:
@@ -568,24 +567,24 @@ def analyze_drop(
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
-    names = feature_drop_ops.feature_names(spec, frame)
+    names = ablation.feature_names(spec, frame)
     if drop is None:
         typer.echo(f"'{target.value}' has {len(names)} features:")
         for index, name in enumerate(names, start=1):
             typer.echo(f"  {index:3d}  {name}")
         drop = typer.prompt("Features to drop (numbers/names, comma-separated)")
     try:
-        dropped = feature_drop_ops.resolve_selection(drop.split(","), names)
+        dropped = ablation.resolve_selection(drop.split(","), names)
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     if not dropped:
         raise typer.BadParameter("No features selected to drop.")
 
-    result = feature_drop_ops.run_feature_drop(
+    result = ablation.run_ablation(
         spec, frame, dropped, n_cutoffs=cutoffs, horizon_hours=horizon_hours
     )
-    path = feature_drop_ops.save_drop_report(result)
-    typer.echo(f"Feature drop on '{target.value}' ({len(dropped)} dropped): {', '.join(dropped)}")
+    path = ablation.save_ablation_report(result)
+    typer.echo(f"Feature ablation on '{target.value}' ({len(dropped)} dropped): {', '.join(dropped)}")
     typer.echo(f"  full    MAE {result.full['mean_mae']:.3f} | RMSE {result.full['mean_rmse']:.3f}")
     typer.echo(
         f"  reduced MAE {result.reduced['mean_mae']:.3f} | RMSE {result.reduced['mean_rmse']:.3f} "
