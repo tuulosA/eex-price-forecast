@@ -112,12 +112,12 @@ eex geo download                          # one-time geometry download (land + l
 eex points build --mode zones             # German wind candidates (land + sea)
 eex points build --mode land              # German temperature / solar candidates (land only)
 eex backfill entsoe --start 2023-01-01    # DE price + wind/solar/load actuals + installed capacity
-eex points rank --target wind             # choose the best German points vs each actual (writes config)
-eex points rank --target temp
-eex points rank --target solar
+eex points rank --target wind --year 2025   # choose the best German points vs each actual (writes config)
+eex points rank --target temp --year 2025
+eex points rank --target solar --year 2025
 
-eex points neighbours build               # cross-border wind candidates + ranking (see below)
-eex points neighbours rank --year 2024
+eex points neighbours build                 # cross-border wind candidates + ranking (see below)
+eex points neighbours rank --year 2025
 
 eex backfill weather --start 2023-01-01   # weather history at every chosen point (German + neighbour)
 
@@ -172,7 +172,7 @@ points per country** (kept ≥ 50 km apart, so they are not near-duplicates) are
 
 ```bash
 eex points neighbours build               # land+sea wind candidates inside each neighbour (one CSV per country)
-eex points neighbours rank --year 2024    # rank each neighbour's candidates vs DE price -> chosen points in config
+eex points neighbours rank --year 2025    # rank each neighbour's candidates vs DE price -> chosen points in config
 eex points neighbours map                 # plot the candidates + selection -> data/analysis/candidate_map_neighbours.png
 ```
 
