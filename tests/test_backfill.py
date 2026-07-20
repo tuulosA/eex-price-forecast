@@ -46,26 +46,15 @@ def test_refresh_recent_refetches_a_rolling_window(
         calls["weather_start"] = start
         return {"ws_de01": 4}
 
-    def fake_nuclear(db_path: object, *, start: str, end: object = None) -> int:
-        calls["nuclear_start"] = start
-        return 5
-
-    def fake_ntc(db_path: object, *, start: str, end: object = None) -> int:
-        calls["ntc_start"] = start
-        return 6
-
     monkeypatch.setattr(backfill_ops, "backfill_entsoe", fake_entsoe)
     monkeypatch.setattr(backfill_ops, "backfill_weather", fake_weather)
-    monkeypatch.setattr(backfill_ops, "backfill_nuclear", fake_nuclear)
-    monkeypatch.setattr(backfill_ops, "backfill_ntc", fake_ntc)
 
     result = backfill_ops.refresh_recent(tmp_path / "refresh.sqlite", days=10)
 
-    # All sources are refreshed from the same ~10-day-ago start.
-    assert calls["entsoe_start"] == calls["weather_start"] == calls["nuclear_start"] == calls["ntc_start"]
+    # Both refreshed sources start from the same ~10-day-ago point; nuclear/NTC are the forecast step's job.
+    assert calls["entsoe_start"] == calls["weather_start"]
     days_back = (pd.Timestamp.now(tz="UTC") - pd.Timestamp(calls["entsoe_start"], tz="UTC")).days
     assert days_back == 10
     assert result["entsoe"]["prices"] == 1
     assert result["weather"]["ws_de01"] == 4
-    assert result["nuclear"]["nuclear_available_mw"] == 5
-    assert result["ntc"]["rows"] == 6
+    assert "nuclear" not in result and "ntc" not in result

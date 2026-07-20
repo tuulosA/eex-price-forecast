@@ -46,7 +46,8 @@ def test_run_forecast_fills_fundamentals_then_price(
     # Train tiny models on the history, and serve them via TrainedModel.load.
     history = frame.loc[~future]
     models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
-    monkeypatch.setattr(forecast_ops, "fetch_forecast_weather", lambda *a, **k: {})
+    # No network: stub the forward-looking input fetch (weather forecast + nuclear + NTC) entirely.
+    monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
     monkeypatch.setattr(
         forecast_ops.TrainedModel,
         "load",
@@ -75,3 +76,4 @@ def test_run_forecast_fills_fundamentals_then_price(
     assert (tmp_path / "out" / "forecast.csv").exists()
     assert (tmp_path / "out" / "forecast.png").exists()  # price plot
     assert (tmp_path / "out" / "fundamentals.png").exists()  # wind/solar/load plot
+    assert (tmp_path / "out" / "drivers.png").exists()  # per-driver-group dashboard

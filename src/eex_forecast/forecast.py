@@ -25,10 +25,17 @@ import logging
 import numpy as np
 import pandas as pd
 
-from eex_forecast.config import FORECAST_DIR, HORIZON_DAYS
+from eex_forecast.config import DEFAULT_REFRESH_DAYS, FORECAST_DIR, HORIZON_DAYS
 from eex_forecast.db import connect, read_frame, upsert
 from eex_forecast.db.schema import create_schema
-from eex_forecast.features import TIMESTAMP
+from eex_forecast.features import (
+    TIMESTAMP,
+    calendar_features,
+    neighbour_wind_block,
+    ntc_features,
+    nuclear_feature,
+    weather_means,
+)
 from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
 from eex_forecast.sources import ntc, nuclear
 from eex_forecast.weather.openmeteo import fetch_forecast
@@ -74,11 +81,14 @@ def fetch_forecast_nuclear(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
     """Fetch cross-border nuclear availability across the horizon into the database's future rows.
 
     Nuclear outages publish ahead, so this fills real ``nuclear_available_mw`` for the forecast horizon
-    (unlike the weather forecast, which is a genuine prediction). A no-op if no nuclear zone returns data.
+    (unlike the weather forecast, which is a genuine prediction). The window also spans the recent refresh
+    period so this single known-ahead fetch keeps the last couple of weeks current too - nuclear is *not*
+    re-fetched by ``update`` (unlike weather, which has a distinct history vs forecast source). A no-op if
+    no nuclear zone returns data.
     """
     now = pd.Timestamp.now(tz="UTC").floor("h")
     frame = nuclear.fetch_nuclear_available(
-        now - pd.Timedelta(days=2), now + pd.Timedelta(days=horizon_days)
+        now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=horizon_days)
     )
     if frame.empty:
         return 0
@@ -92,11 +102,14 @@ def fetch_forecast_nuclear(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
 def fetch_forecast_ntc(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int:
     """Fetch month-ahead transfer capacity across the horizon into the database's future rows.
 
-    Month-ahead NTC is published ahead, so this fills real per-border capacity for the forecast horizon.
-    A no-op if no border returns data.
+    Month-ahead NTC is published ahead, so this fills real per-border capacity for the forecast horizon;
+    the window also spans the recent refresh period, so - like nuclear - NTC is fetched once here and not
+    again by ``update``. A no-op if no border returns data.
     """
     now = pd.Timestamp.now(tz="UTC").floor("h")
-    frame = ntc.fetch_ntc(now - pd.Timedelta(days=2), now + pd.Timedelta(days=horizon_days))
+    frame = ntc.fetch_ntc(
+        now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=horizon_days)
+    )
     if frame.empty:
         return 0
     with connect(db_path) as conn:
@@ -106,6 +119,15 @@ def fetch_forecast_ntc(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int
     return rows
 
 
+def fetch_forecast_inputs(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> None:
+    """Fetch every forward-looking model input for the horizon into the database: the weather forecast
+    plus the known-ahead nuclear and NTC series. After this the frame is complete through the horizon, so
+    prediction needs no further I/O - which lets the pipeline read as fetch -> train -> pure predict."""
+    fetch_forecast_weather(db_path, horizon_days=horizon_days)
+    fetch_forecast_nuclear(db_path, horizon_days=horizon_days)
+    fetch_forecast_ntc(db_path, horizon_days=horizon_days)
+
+
 def run_forecast(
     db_path: str,
     *,
@@ -113,11 +135,15 @@ def run_forecast(
     history_days: int = 21,
     write_db: bool = False,
     plot: bool = False,
+    fetch_inputs: bool = True,
 ) -> pd.DataFrame:
-    """Produce the 14-day hourly price forecast and write it to CSV (and optionally the DB / a plot)."""
-    fetch_forecast_weather(db_path, horizon_days=horizon_days)
-    fetch_forecast_nuclear(db_path, horizon_days=horizon_days)
-    fetch_forecast_ntc(db_path, horizon_days=horizon_days)
+    """Produce the 14-day hourly price forecast and write it to CSV (and optionally the DB / a plot).
+
+    ``fetch_inputs`` fetches the forward-looking inputs first (the standalone ``eex forecast`` default);
+    ``eex run`` sets it False because it has already fetched them up front, so prediction does no I/O.
+    """
+    if fetch_inputs:
+        fetch_forecast_inputs(db_path, horizon_days=horizon_days)
 
     now = pd.Timestamp.now(tz="UTC").floor("h")
     with connect(db_path) as conn:
@@ -160,6 +186,7 @@ def run_forecast(
     if plot:
         plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
         plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")
+        plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
     return result
 
 
@@ -241,6 +268,82 @@ def plot_fundamentals(
         ax.legend(loc="upper left", fontsize=8)
     axes[0].set_title(f"DE generation & load: {HORIZON_DAYS}-day forecast")
     axes[-1].set_xlabel("time (UTC)")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    return path
+
+
+def _shade_runs(ax: object, times: pd.Series, flags: pd.Series, color: str, alpha: float) -> None:
+    """Shade the contiguous runs where ``flags`` is truthy (e.g. weekends, holidays) as vertical bands."""
+    values = pd.to_numeric(flags, errors="coerce").fillna(0).to_numpy() > 0
+    moments = pd.to_datetime(times, utc=True).to_numpy()
+    index = 0
+    while index < len(values):
+        if values[index]:
+            end = index
+            while end + 1 < len(values) and values[end + 1]:
+                end += 1
+            ax.axvspan(moments[index], moments[end], color=color, alpha=alpha, linewidth=0)  # type: ignore[attr-defined]
+            index = end + 1
+        else:
+            index += 1
+
+
+def _driver_panels(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+    """The (label, series-frame) panels to draw - one per driver group actually present in ``frame``.
+
+    Built from the feature builders themselves, so the panels show exactly what the price model consumes.
+    """
+    weather = weather_means(frame)
+    candidates: list[tuple[str, pd.DataFrame]] = [
+        ("wind speed (m/s)", weather.reindex(columns=["wind_speed"]).dropna(axis=1, how="all")),
+        (
+            "irradiance (W/m2)",
+            weather.reindex(columns=["irr_solar", "irr_load"]).dropna(axis=1, how="all"),
+        ),
+        (
+            "temperature (deg C)",
+            weather.reindex(columns=["temp_load", "temp_wind"]).dropna(axis=1, how="all"),
+        ),
+        ("neighbour wind (m/s)", neighbour_wind_block(frame, "country_mean")),
+        ("nuclear avail. (MW)", nuclear_feature(frame)),
+        ("transfer capacity (MW)", ntc_features(frame)),
+    ]
+    return [(label, data) for label, data in candidates if not data.empty]
+
+
+def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
+    """Plot every price-model driver group over the window, one panel each, weekends/holidays shaded.
+
+    A diagnostic dashboard of the model's inputs (weather means, neighbour wind, nuclear, NTC) so the
+    forecast's drivers can be eyeballed alongside the price/fundamentals plots.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    panels = _driver_panels(frame)
+    if not panels:
+        return path
+    calendar = calendar_features(frame[TIMESTAMP])
+    fig, axes = plt.subplots(
+        len(panels), 1, figsize=(12.0, 2.1 * len(panels) + 1.0), sharex=True, squeeze=False
+    )
+    for ax, (label, data) in zip(axes[:, 0], panels, strict=True):
+        _shade_runs(ax, times, calendar["is_weekend"], "0.85", 0.6)
+        _shade_runs(ax, times, calendar["is_holiday"], "#5e17eb", 0.15)
+        for column in data.columns:
+            ax.plot(times, pd.to_numeric(data[column], errors="coerce"), linewidth=1.0, label=column)
+        ax.axvline(now, color="0.5", linestyle="--", linewidth=0.8)
+        ax.set_ylabel(label, fontsize=8)
+        ax.grid(True, color="0.93")
+        if data.shape[1] > 1:
+            ax.legend(loc="upper left", fontsize=7, ncol=min(4, data.shape[1]))
+    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple; split at now)")
+    axes[-1, 0].set_xlabel("time (UTC)")
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(path, dpi=120)

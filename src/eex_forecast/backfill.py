@@ -168,9 +168,9 @@ def refresh_recent(
     """
     start = _window_start(days)
     logger.info("Refreshing the last %d days (from %s)", days, start)
+    # Nuclear and NTC are single known-ahead series (no history/forecast split like weather), so they are
+    # fetched once by the forecast step over [recent, horizon] rather than re-fetched here.
     return {
         "entsoe": backfill_entsoe(db_path, start=start),
         "weather": backfill_weather(db_path, start=start),
-        "nuclear": {"nuclear_available_mw": backfill_nuclear(db_path, start=start)},
-        "ntc": {"rows": backfill_ntc(db_path, start=start)},
     }
