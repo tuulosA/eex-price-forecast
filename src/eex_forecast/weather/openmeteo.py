@@ -1,7 +1,8 @@
-"""Open-Meteo client: hourly weather **history** (archive API) and **forecast** for a coordinate.
+"""Open-Meteo client: hourly weather **history** and **forecast** for a coordinate, on one NWP model.
 
-Returns tidy frames keyed on a UTC ``timestamp`` column with one column per requested variable. The
-relevant variables for this project:
+Both endpoints use the **ECMWF IFS** model (history via the archived-forecast API, future via the forecast
+API) so the sub-models train and serve on the same weather distribution - see :data:`ECMWF_MODEL`. Returns
+tidy frames keyed on a UTC ``timestamp`` column with one column per requested variable:
 
 - ``wind_speed_100m`` - 100 m wind speed (wind generation driver)
 - ``temperature_2m`` - 2 m temperature (load driver)
@@ -33,7 +34,15 @@ SHORTWAVE_RADIATION = "shortwave_radiation"
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 _CUSTOMER_HOST = "customer-api.open-meteo.com"
+
+# A single consistent NWP model for both history and forecast. Open-Meteo's default forecast is a
+# best_match *blend* that switches models with lead time - fine for smooth fields (irradiance, temperature)
+# but spiky and horizon-inconsistent for wind, the chaotic, model-sensitive field that dominates the DE
+# price. ECMWF IFS is one coherent global model and matches the upstream nordpool-predict weather source,
+# so training and serving see the same wind distribution (no train/serve mismatch).
+ECMWF_MODEL = "ecmwf_ifs"
 
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _RETRY_ATTEMPTS = 4
@@ -101,9 +110,15 @@ def fetch_history(
     end: str | date | datetime,
     variables: Sequence[str],
 ) -> pd.DataFrame:
-    """Hourly weather **history** at a coordinate over ``[start, end]`` (inclusive, UTC)."""
+    """Hourly weather **history** at a coordinate over ``[start, end]`` (inclusive, UTC).
+
+    Uses the **historical-forecast** API (archived past forecasts) with the same ECMWF IFS model the live
+    forecast uses - so the sub-models train on the exact weather distribution they are served at forecast
+    time. (The ERA5 *reanalysis* archive would be a different, smoother "truth" field the models never see
+    live - a train/serve mismatch that badly hurt the wind forecast.)
+    """
     payload = _get_json(
-        ARCHIVE_URL,
+        HISTORICAL_FORECAST_URL,
         {
             "latitude": lat,
             "longitude": lon,
@@ -112,6 +127,7 @@ def fetch_history(
             "hourly": ",".join(variables),
             "timezone": "UTC",
             "wind_speed_unit": "ms",
+            "models": ECMWF_MODEL,
         },
     )
     return _hourly_frame(payload, variables)
@@ -134,6 +150,7 @@ def fetch_forecast(
             "timezone": "UTC",
             "forecast_days": forecast_days,
             "wind_speed_unit": "ms",
+            "models": ECMWF_MODEL,
         },
     )
     return _hourly_frame(payload, variables)
