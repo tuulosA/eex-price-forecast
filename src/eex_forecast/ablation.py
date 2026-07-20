@@ -1,328 +1,179 @@
-"""A/B feature ablation for the generation/load sub-models' weather aggregation.
+"""Feature ablation: does removing a chosen set of features help or hurt?
 
-Each sub-model (wind, solar, load) reduces its ranked per-point weather columns to a handful of
-features. *How* it reduces them is a modelling choice with real consequences - e.g. wind power is a
-convex (~v^3) function of speed and capacity is concentrated in the north, so the plain national
-**mean** discards information a richer aggregation could keep. This module makes the choice
-**measurable**: each strategy is scored by the same **walk-forward MAE/RMSE** the tuner uses
-(:func:`eex_forecast.tuning.walk_forward_metrics`), with the hyperparameters and cutoffs held fixed, so
-the numbers are directly comparable.
+This is ablation in the literal sense - remove a part and measure the loss (or gain). Where
+:mod:`eex_forecast.aggregation` compares whole weather-aggregation *strategies*, this measures the
+marginal worth of individual **features**. It works for **any** model in the registry - price (drop a
+price lag, a weather aggregate) or, once a sub-model is switched to raw per-point columns, a subset of
+those columns (e.g. drop the least-useful ``ws_de*`` points).
 
-Strategies (see :func:`eex_forecast.features.weather_strategy_block`):
+The comparison is a single A/B: the full feature matrix versus the matrix with exactly the selected
+columns removed, both scored by the same walk-forward MAE/RMSE the tuner uses
+(:func:`eex_forecast.tuning.walk_forward_metrics`) with hyperparameters and cutoffs held fixed. A
+negative delta (reduced < full) means the removed features were, on net, not pulling their weight.
 
-- ``mean``     - national mean of the primary role (the current production feature).
-- ``cube``     - the mean plus ``mean(v^3)`` (wind only - a proxy for the convex power curve).
-- ``spread``   - the mean plus the cross-point standard deviation (spatial dispersion).
-- ``stats``    - cross-point summary statistics: mean + sum, std, min, max.
-- ``regional`` - one mean per latitude band (south->north), capturing spatial structure.
-- ``raw``      - every per-point column fed in directly (maximum information, highest variance).
-
-For the generation sub-models (wind, solar) ``capacity_scaling`` is an orthogonal toggle: on (the
-default) the model learns a capacity factor and multiplies back by installed capacity; off, it learns
-raw MW directly. Both modes are scored in MW, so a scaled and an unscaled run are directly comparable -
-run twice to measure what the scaling itself buys. (Load has no capacity, so the toggle is a no-op.)
-
-**Scope / caveats.** This measures the sub-model's own skill at predicting its ``*_actual_mw`` column,
-not the downstream price impact. And because the hyperparameters are held fixed across strategies, a
-feature set with many more columns (``raw``) may be under-served by them - so **re-tune the winning
-strategy** (``eex model tune --target <fundamental>``) before adopting it, not read the ranking as final.
+The CLI (``eex analyze ablation``) lists the features numbered and lets you type which to drop; the pure
+functions here (:func:`resolve_selection`, :func:`run_ablation`) take an explicit list so the tool is
+scriptable and testable without a prompt.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from functools import partial
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
 from eex_forecast.config import ABLATION_DIR, HORIZON_DAYS
-from eex_forecast.features import (
-    KNOWN_STRATEGIES,
-    NEIGHBOUR_STRATEGIES,
-    TIMESTAMP,
-    WEATHER_AGG,
-    fundamental_features_from,
-    price_features_with_neighbours,
-    weather_strategy_block,
-)
-from eex_forecast.model import REGISTRY, ModelSpec, load_params
+from eex_forecast.features import TIMESTAMP
+from eex_forecast.model import REGISTRY, FeatureBuilder, ModelSpec, load_params
 from eex_forecast.tuning import walk_forward_cutoffs, walk_forward_metrics
-from eex_forecast.weather.point_search import load_points_config
 
 logger = logging.getLogger(__name__)
-
-# The fundamentals this tool can ablate, and the point-search config role holding each one's primary
-# role's coordinates (load's temperature points live under the "temp" role).
-FUNDAMENTALS: tuple[str, ...] = ("wind", "solar", "load")
-_COORD_ROLE: dict[str, str] = {"wind": "wind", "solar": "solar", "load": "temp"}
 
 
 @dataclass(frozen=True, slots=True)
 class AblationResult:
-    """A completed ablation: the per-strategy metrics (best MAE first), cutoffs, and the JSON report."""
+    """The full-vs-reduced comparison: what was dropped, both metric sets, and the JSON report."""
 
-    fundamental: str
-    variants: list[dict[str, Any]]
-    cutoffs: list[pd.Timestamp]
+    model: str
+    dropped: list[str]
+    full: dict[str, Any]
+    reduced: dict[str, Any]
     report: dict[str, Any]
 
     @property
-    def best_strategy(self) -> str:
-        return str(self.variants[0]["strategy"])
+    def mae_delta(self) -> float:
+        """Reduced minus full mean MAE - negative means dropping the features helped."""
+        return float(self.reduced["mean_mae"] - self.full["mean_mae"])
 
 
-def load_coords(
-    fundamental: str, config_path: Path | None = None
-) -> dict[str, tuple[float, float]]:
-    """Map each of ``fundamental``'s primary-role point columns to its ``(lat, lon)`` (empty if unset)."""
-    role = _COORD_ROLE[fundamental]
-    config = load_points_config() if config_path is None else load_points_config(config_path)
-    return {point.column: (point.lat, point.lon) for point in config.get(role, [])}
+def feature_names(spec: ModelSpec, frame: pd.DataFrame) -> list[str]:
+    """The ordered feature columns ``spec`` builds from ``frame`` (what the user picks from)."""
+    return list(spec.build_features(frame).columns)
 
 
-def _variant_spec(
-    fundamental: str,
-    strategy: str,
-    *,
-    coords: dict[str, tuple[float, float]],
-    n_regions: int,
-    capacity_scaling: bool,
-) -> ModelSpec:
-    """A sub-model :class:`ModelSpec` differing from production only in aggregation and scaling.
+def resolve_selection(tokens: Iterable[str], names: list[str]) -> list[str]:
+    """Resolve user tokens (1-based numbers and/or exact feature names) to a unique, ordered column list.
 
-    With ``capacity_scaling`` off the ``capacity_column`` is dropped, so the model learns raw MW directly
-    rather than a capacity factor. Either way the walk-forward error is in MW, so the modes compare.
+    Raises :class:`ValueError` on an out-of-range number or an unknown name, so a typo is caught before a
+    long run rather than silently dropping nothing.
     """
-    if strategy not in KNOWN_STRATEGIES:
-        raise ValueError(f"Unknown strategy '{strategy}'. Known: {', '.join(KNOWN_STRATEGIES)}.")
-    base = REGISTRY[fundamental]
-    weather_builder = partial(
-        weather_strategy_block,
-        agg=WEATHER_AGG[fundamental],
-        strategy=strategy,
-        coords=coords,
-        n_regions=n_regions,
-    )
-    return replace(
-        base,
-        name=f"{fundamental}:{strategy}",
-        build_features=fundamental_features_from(weather_builder),
-        capacity_column=base.capacity_column if capacity_scaling else None,
-    )
+    resolved: list[str] = []
+    for raw in tokens:
+        token = raw.strip()
+        if not token:
+            continue
+        if token.isdigit():
+            index = int(token)
+            if not 1 <= index <= len(names):
+                raise ValueError(f"Feature number {index} out of range (1..{len(names)}).")
+            name = names[index - 1]
+        elif token in names:
+            name = token
+        else:
+            raise ValueError(f"Unknown feature '{token}'. Use a 1-based number or an exact name.")
+        if name not in resolved:
+            resolved.append(name)
+    return resolved
+
+
+def _drop_builder(build: FeatureBuilder, dropped: list[str]) -> FeatureBuilder:
+    """Wrap a feature builder so it removes ``dropped`` columns (ignoring any not present)."""
+
+    def builder(frame: pd.DataFrame) -> pd.DataFrame:
+        matrix = build(frame)
+        return matrix.drop(columns=[c for c in dropped if c in matrix.columns])
+
+    return builder
 
 
 def run_ablation(
+    spec: ModelSpec,
     frame: pd.DataFrame,
-    fundamental: str = "wind",
+    dropped: list[str],
     *,
-    strategies: tuple[str, ...] | None = None,
     params: dict[str, Any] | None = None,
     n_cutoffs: int = 6,
     horizon_hours: int = HORIZON_DAYS * 24,
     min_train_days: int = 120,
-    cutoff_start: pd.Timestamp | str | None = None,
-    n_regions: int = 3,
-    capacity_scaling: bool = True,
-    coords: dict[str, tuple[float, float]] | None = None,
 ) -> AblationResult:
-    """Score each weather-aggregation ``strategy`` for ``fundamental`` by walk-forward MAE/RMSE.
+    """Score ``spec`` with its full feature set versus the set minus ``dropped`` (walk-forward MAE/RMSE)."""
+    names = feature_names(spec, frame)
+    if not dropped:
+        raise ValueError("No features selected to drop.")
+    remaining = [name for name in names if name not in dropped]
+    if not remaining:
+        raise ValueError("Refusing to drop every feature - the model needs at least one.")
 
-    ``strategies`` defaults to the fundamental's menu (see :data:`eex_forecast.features.WEATHER_AGG`).
-    ``params`` defaults to the tuned hyperparameters (or built-in defaults); the same set is used for
-    every strategy so the comparison isolates the feature choice. ``capacity_scaling`` toggles learning a
-    capacity factor (default) versus raw MW - both scored in MW. ``coords`` (for ``regional``) defaults to
-    the fundamental's chosen points in ``config/weather_points.json``.
-    """
-    if fundamental not in FUNDAMENTALS:
-        raise ValueError(f"Cannot ablate '{fundamental}'. Choose one of {', '.join(FUNDAMENTALS)}.")
-    strategies = strategies or WEATHER_AGG[fundamental].strategies
-    if coords is None:
-        coords = load_coords(fundamental)
-    params = params or load_params(fundamental)
+    params = params or load_params(spec.name)
     cutoffs = walk_forward_cutoffs(
         frame[TIMESTAMP],
         horizon_hours=horizon_hours,
         n_cutoffs=n_cutoffs,
         min_train_days=min_train_days,
-        cutoff_start=cutoff_start,
+    )
+    reduced_spec = replace(
+        spec, name=f"{spec.name}-drop", build_features=_drop_builder(spec.build_features, dropped)
     )
     logger.info(
-        "[ablate:%s] %d strategies over %d cutoffs (%s .. %s), %d h horizon | capacity scaling %s",
-        fundamental,
-        len(strategies),
-        len(cutoffs),
-        cutoffs[0].date(),
-        cutoffs[-1].date(),
-        horizon_hours,
-        "on" if capacity_scaling else "off",
+        "[drop:%s] full %d features vs reduced %d (dropping %d): %s",
+        spec.name,
+        len(names),
+        len(remaining),
+        len(dropped),
+        ", ".join(dropped),
     )
 
-    variants: list[dict[str, Any]] = []
-    for strategy in strategies:
-        spec = _variant_spec(
-            fundamental,
-            strategy,
-            coords=coords,
-            n_regions=n_regions,
-            capacity_scaling=capacity_scaling,
-        )
-        n_features = spec.build_features(frame).shape[1]
-        metrics = walk_forward_metrics(
-            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
-        )
-        variants.append(
-            {
-                "strategy": strategy,
-                "n_features": n_features,
-                "capacity_scaled": capacity_scaling,
-                "mean_mae": round(metrics["mean_mae"], 4),
-                "mean_rmse": round(metrics["mean_rmse"], 4),
-                "folds": metrics["folds"],
-            }
-        )
-        logger.info(
-            "[ablate:%s] %-8s | %2d features | MAE %.3f | RMSE %.3f",
-            fundamental,
-            strategy,
-            n_features,
-            metrics["mean_mae"],
-            metrics["mean_rmse"],
-        )
+    full = walk_forward_metrics(spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours)
+    reduced = walk_forward_metrics(
+        reduced_spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
+    )
+    logger.info(
+        "[drop:%s] full MAE %.3f | reduced MAE %.3f | delta %+.3f",
+        spec.name,
+        full["mean_mae"],
+        reduced["mean_mae"],
+        reduced["mean_mae"] - full["mean_mae"],
+    )
 
-    variants.sort(key=lambda variant: variant["mean_mae"])
     report: dict[str, Any] = {
         "config": {
             "n_cutoffs": len(cutoffs),
             "horizon_hours": horizon_hours,
             "min_train_days": min_train_days,
-            "n_regions": n_regions,
-            "capacity_scaling": capacity_scaling,
             "params": params,
         },
         "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
-        "variants": variants,
+        "dropped": dropped,
+        "kept": remaining,
+        "full": {"mean_mae": round(full["mean_mae"], 4), "mean_rmse": round(full["mean_rmse"], 4)},
+        "reduced": {
+            "mean_mae": round(reduced["mean_mae"], 4),
+            "mean_rmse": round(reduced["mean_rmse"], 4),
+        },
+        "mae_delta": round(reduced["mean_mae"] - full["mean_mae"], 4),
     }
-    return AblationResult(fundamental, variants, cutoffs, report)
+    return AblationResult(spec.name, dropped, full, reduced, report)
 
 
 def save_ablation_report(result: AblationResult, *, reports_dir: Path = ABLATION_DIR) -> Path:
-    """Write the ablation report to ``<fundamental>_ablation.json`` (ranking + folds + config)."""
+    """Write the feature-drop report to ``<model>_ablation.json``."""
     payload = {
-        "model": result.fundamental,
-        "ablated": "weather-aggregation strategy",
+        "model": result.model,
+        "compared": "feature removal",
         "run_at": pd.Timestamp.now(tz="UTC").isoformat(),
-        "best_strategy": result.best_strategy,
         **result.report,
     }
     reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / f"{result.fundamental}_ablation.json"
+    path = reports_dir / f"{result.model}_ablation.json"
     path.write_text(json.dumps(payload, indent=2) + "\n")
     return path
 
 
-# -- neighbour-wind ablation (a price-model feature block) -----------------------
-# Unlike the sub-model ablations above (which score a fundamental's own MW skill), this scores the
-# **price** model: it A/Bs how the cross-border neighbour-wind points enter the price feature set,
-# including a ``none`` baseline so the ranking answers "does neighbour wind help price MAE at all?".
-def run_neighbour_ablation(
-    frame: pd.DataFrame,
-    *,
-    strategies: tuple[str, ...] | None = None,
-    params: dict[str, Any] | None = None,
-    n_cutoffs: int = 6,
-    horizon_hours: int = HORIZON_DAYS * 24,
-    min_train_days: int = 120,
-    cutoff_start: pd.Timestamp | str | None = None,
-) -> AblationResult:
-    """Score each neighbour-wind aggregation ``strategy`` by the **price** model's walk-forward MAE/RMSE.
-
-    ``strategies`` defaults to :data:`eex_forecast.features.NEIGHBOUR_STRATEGIES` (incl. the ``none``
-    baseline). ``params`` defaults to the tuned price hyperparameters; the same set is used for every
-    strategy so the comparison isolates the neighbour feature block. Errors are in EUR/MWh (price scale).
-    """
-    strategies = strategies or NEIGHBOUR_STRATEGIES
-    unknown = set(strategies) - set(NEIGHBOUR_STRATEGIES)
-    if unknown:
-        raise ValueError(
-            f"Unknown neighbour strategy: {', '.join(sorted(unknown))}. "
-            f"Known: {', '.join(NEIGHBOUR_STRATEGIES)}."
-        )
-    base = REGISTRY["price"]
-    params = params or load_params("price")
-    cutoffs = walk_forward_cutoffs(
-        frame[TIMESTAMP],
-        horizon_hours=horizon_hours,
-        n_cutoffs=n_cutoffs,
-        min_train_days=min_train_days,
-        cutoff_start=cutoff_start,
-    )
-    logger.info(
-        "[ablate:neighbour] %d strategies over %d cutoffs (%s .. %s), %d h horizon",
-        len(strategies),
-        len(cutoffs),
-        cutoffs[0].date(),
-        cutoffs[-1].date(),
-        horizon_hours,
-    )
-
-    variants: list[dict[str, Any]] = []
-    for strategy in strategies:
-        spec = replace(
-            base,
-            name=f"price:nbr={strategy}",
-            build_features=partial(price_features_with_neighbours, neighbour_strategy=strategy),
-        )
-        n_features = spec.build_features(frame).shape[1]
-        metrics = walk_forward_metrics(
-            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
-        )
-        variants.append(
-            {
-                "strategy": strategy,
-                "n_features": n_features,
-                "mean_mae": round(metrics["mean_mae"], 4),
-                "mean_rmse": round(metrics["mean_rmse"], 4),
-                "folds": metrics["folds"],
-            }
-        )
-        logger.info(
-            "[ablate:neighbour] %-12s | %2d features | MAE %.3f | RMSE %.3f",
-            strategy,
-            n_features,
-            metrics["mean_mae"],
-            metrics["mean_rmse"],
-        )
-
-    variants.sort(key=lambda variant: variant["mean_mae"])
-    report: dict[str, Any] = {
-        "config": {
-            "n_cutoffs": len(cutoffs),
-            "horizon_hours": horizon_hours,
-            "min_train_days": min_train_days,
-            "params": params,
-        },
-        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
-        "variants": variants,
-    }
-    return AblationResult("neighbour", variants, cutoffs, report)
-
-
-def save_neighbour_ablation_report(
-    result: AblationResult, *, reports_dir: Path = ABLATION_DIR
-) -> Path:
-    """Write the neighbour-wind ablation to ``neighbour_ablation.json`` (ranking + folds + config)."""
-    payload = {
-        "model": "price",
-        "ablated": "neighbour-wind aggregation",
-        "run_at": pd.Timestamp.now(tz="UTC").isoformat(),
-        "best_strategy": result.best_strategy,
-        **result.report,
-    }
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / "neighbour_ablation.json"
-    path.write_text(json.dumps(payload, indent=2) + "\n")
-    return path
+def registry_spec(target: str) -> ModelSpec:
+    """The registered :class:`ModelSpec` for ``target`` (convenience for the CLI)."""
+    return REGISTRY[target]

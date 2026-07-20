@@ -198,8 +198,8 @@ def walk_forward_metrics(
 ) -> dict[str, Any]:
     """Full walk-forward result for one param set: mean MAE, mean RMSE, and the per-cutoff folds.
 
-    The richer sibling of :func:`evaluate_params`; the feature-ablation tool uses it to compare
-    strategies on the same footing the tuner scores hyperparameters on.
+    The richer sibling of :func:`evaluate_params`; the aggregation and ablation A/B tools use it to
+    compare strategies/feature sets on the same footing the tuner scores hyperparameters on.
     """
     folds, mean_mae, mean_rmse = _fold_metrics(
         spec, _prepare(spec, frame), params, cutoffs, horizon_hours

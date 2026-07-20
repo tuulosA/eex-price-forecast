@@ -190,60 +190,55 @@ the neighbour columns flow into the database alongside the German ones with no e
 these with `eex backfill weather --role neighbour_wind`). In the price model each neighbour contributes a
 single **per-country mean** wind feature (`nbr_wind_dk`, `nbr_wind_nl`, …), keeping each border's
 distinct coupling while staying low-dimensional. This aggregation was chosen empirically by
-`eex analyze ablation neighbour` (below): adding neighbour wind cut price walk-forward MAE by **~1.4
+`eex analyze aggregation neighbour` (below): adding neighbour wind cut price walk-forward MAE by **~1.4
 EUR/MWh (~7.5%)**, and the per-country mean beat both a single global index and the raw per-point columns
 (with only two points per country, `raw` just adds noise).
 
-### Feature ablation
+### Feature aggregation and ablation
 
-Three tools measure how feature choices affect forecast skill. All score candidates by the same
-walk-forward MAE/RMSE the tuner uses (hyperparameters and cutoffs held fixed) and write ranked reports to
-`data/ablation/`.
+Two tools measure how feature choices affect forecast skill by the same walk-forward MAE/RMSE the tuner
+uses (hyperparameters and cutoffs held fixed), and write ranked reports under `data/`. Note the naming:
+**aggregation** *compares alternative feature representations*; **ablation** *removes* features and
+measures the loss (the literal meaning).
 
-**Weather aggregation (`analyze ablation <fundamental>`).** Each generation/load sub-model reduces its
-ranked per-point weather columns to a few features. *How* it reduces them is a modelling choice with real
-consequences — e.g. wind power is a convex (~v³) function of speed and capacity is concentrated in the
-north, so the plain national **mean** discards spatial information a richer aggregation keeps. This study
-found **`raw`** (every per-point column) best for all three, decisively for wind (~25% MAE over the mean)
-and marginally for solar/load — so **all three sub-models now default to `raw`**. There is a subcommand
-per fundamental:
+**Aggregation — `analyze aggregation <fundamental>` (→ `data/aggregation/`).** Each generation/load
+sub-model reduces its ranked per-point weather columns to a few features. *How* it reduces them is a
+modelling choice with real consequences — e.g. wind power is a convex (~v³) function of speed and capacity
+is concentrated in the north, so the plain national **mean** discards spatial information a richer
+aggregation keeps. This A/B found **`raw`** (every per-point column) best for all three, decisively for
+wind (~25% MAE over the mean) and marginally for solar/load — so **all three sub-models now default to
+`raw`**. A subcommand per fundamental, plus one for the cross-border neighbour wind:
 
 ```bash
-eex analyze ablation wind                 # compare wind strategies -> data/ablation/wind_ablation.json
-eex analyze ablation solar                # solar (irradiance is near-uniform, so raw's gain is marginal)
-eex analyze ablation load                 # load (temperature has spatial structure)
-eex analyze ablation wind --no-capacity-scaling      # learn raw MW instead of a capacity factor
-eex analyze ablation wind --strategies mean,raw --cutoffs 8   # pick strategies / more cutoffs
+eex analyze aggregation wind              # compare wind strategies -> data/aggregation/wind_aggregation.json
+eex analyze aggregation solar             # solar (irradiance is near-uniform, so raw's gain is marginal)
+eex analyze aggregation load              # load (temperature has spatial structure)
+eex analyze aggregation neighbour         # how neighbour wind enters the PRICE model (see below)
+eex analyze aggregation wind --no-capacity-scaling            # learn raw MW instead of a capacity factor
+eex analyze aggregation wind --strategies mean,raw --cutoffs 8   # pick strategies / more cutoffs
 ```
 
-The strategies are `mean` (national mean), `spread` (adds the cross-point standard deviation), `stats`
-(cross-point summary statistics: mean + sum, std, min, max), `regional` (one mean per latitude band —
-`--regions` sets how many), `raw` (every per-point column, maximum information — **the adopted production
-feature for all three sub-models**), and — for **wind** only — `cube` (adds `mean(v³)`, a proxy for the
-convex power curve). For the generation sub-models, `--capacity-scaling` / `--no-capacity-scaling` toggles
-learning a capacity factor versus raw MW; both modes are scored in MW, so a scaled and an unscaled run
-are directly comparable — run it twice to measure what the scaling itself buys (load has no capacity, so
-the flag is absent there).
+The sub-model strategies are `mean` (national mean), `spread` (adds the cross-point standard deviation),
+`stats` (mean + sum, std, min, max), `regional` (one mean per latitude band — `--regions` sets how many),
+`raw` (every per-point column, maximum information — **the adopted production feature for all three
+sub-models**), and — for **wind** only — `cube` (adds `mean(v³)`, a proxy for the convex power curve).
+`--capacity-scaling` / `--no-capacity-scaling` toggles learning a capacity factor versus raw MW (both
+scored in MW; load has no capacity, so the flag is absent there).
 
-**Neighbour wind (`analyze ablation neighbour`).** Unlike the sub-model studies above (which score a
-fundamental's own MW skill), this scores the **price** model — how the cross-border neighbour-wind points
-should enter it — including a `none` baseline so the ranking answers whether neighbour wind helps price
-MAE *at all* (it does: ~1.4 EUR/MWh). Strategies: `none`, `global_mean` (one index), `country_mean` (the
-adopted default), `country_cube` (`mean(v³)` per neighbour), `raw` (every point).
+The **`neighbour`** variant is different: it scores the **price** model — how the cross-border
+neighbour-wind points should enter it — including a `none` baseline, so the ranking answers whether
+neighbour wind helps price MAE *at all* (it does: ~1.4 EUR/MWh). Strategies: `none`, `global_mean` (one
+index), `country_mean` (the adopted default), `country_cube` (`mean(v³)` per neighbour), `raw` (every point).
 
-```bash
-eex analyze ablation neighbour            # price MAE by neighbour aggregation -> data/ablation/neighbour_ablation.json
-```
-
-**Dropping features (`analyze drop`).** A generic A/B for *any* model: it compares the full feature set
-against the set with features you choose removed. Run without `--drop` and it lists the features numbered
-and prompts for which to drop; pass `--drop` for a non-interactive run. Handy for price (are the price
-lags earning their keep?) and, once a sub-model is switched to `raw` per-point columns, for pruning the
-weakest of those columns:
+**Ablation — `analyze ablation` (→ `data/ablation/`).** Ablation in the literal sense: remove chosen
+features and measure the loss. A generic A/B for *any* model — the full feature set versus the set with
+features you remove. Run without `--drop` and it lists the features numbered and prompts for which to
+remove; pass `--drop` for a non-interactive run. Handy for price (are the price lags earning their keep?)
+and, with sub-models on `raw` per-point columns, for pruning the weakest of those columns:
 
 ```bash
-eex analyze drop --target price           # interactive: lists features, you type numbers/names to drop
-eex analyze drop --target price --drop price_lag_168h,price_lag_336h   # non-interactive
+eex analyze ablation --target price       # interactive: lists features, you type numbers/names to remove
+eex analyze ablation --target price --drop price_lag_168h,price_lag_336h   # non-interactive
 ```
 
 Two caveats apply to both tools: the score is the target model's own MAE (for a sub-model, not the

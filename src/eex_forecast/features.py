@@ -38,9 +38,9 @@ PRICE_LAGS_HOURS: tuple[int, ...] = (168, 336)  # one and two weeks; 336 h spans
 _NEIGHBOUR_WS_RE = re.compile(r"^ws_([a-z]{2})\d+$")
 _HOME_CODE = AREA_CODE.lower()
 # How the per-country neighbour wind points enter the *price* model. The choice is decided empirically by
-# `eex analyze ablation neighbour`; see :func:`neighbour_wind_block`.
+# `eex analyze aggregation neighbour`; see :func:`neighbour_wind_block`.
 NEIGHBOUR_STRATEGIES: tuple[str, ...] = ("none", "global_mean", "country_mean", "country_cube", "raw")
-# The adopted production strategy: the ablation found country_mean best (tied with country_cube on MAE,
+# The adopted production strategy: the aggregation A/B found country_mean best (tied with country_cube on MAE,
 # better on RMSE, simpler), cutting price MAE ~1.4 EUR/MWh vs no neighbour wind.
 PRICE_NEIGHBOUR_STRATEGY = "country_mean"
 
@@ -139,12 +139,12 @@ def fundamentals(frame: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out, index=frame.index)
 
 
-# -- weather-aggregation strategies (for the fundamentals ablation) --------------
+# -- weather-aggregation strategies (for the fundamentals aggregation) --------------
 # Each generation/load sub-model reduces the ranked per-point weather columns of its *primary* role to a
 # handful of features. *How* is a modelling choice with real consequences - e.g. wind power is a convex
 # (~v^3) function of speed and capacity is concentrated in the north, so the plain national mean discards
 # information a richer aggregation could keep. :func:`weather_strategy_block` builds the weather block
-# under a named strategy so the ablation tool (``eex analyze ablation``) can score the strategies against
+# under a named strategy so the aggregation tool (``eex analyze aggregation``) can score the strategies against
 # each other. The default builders below use ``mean`` - the production feature set, kept byte-identical.
 WeatherBuilder = Callable[[pd.DataFrame], pd.DataFrame]
 
@@ -275,9 +275,9 @@ def fundamental_features_from(weather_builder: WeatherBuilder) -> WeatherBuilder
 def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Wind generation drivers: calendar + every wind-speed and air-density-temperature point (``raw``).
 
-    Uses the ``raw`` aggregation - the ablation winner by a wide margin (~25% MAE vs the national mean),
+    Uses the ``raw`` aggregation - the aggregation winner by a wide margin (~25% MAE vs the national mean),
     because wind capacity is spatially concentrated and the per-point structure carries real signal the
-    mean discards. :func:`weather_strategy_block` builds the variants the ablation tool compares.
+    mean discards. :func:`weather_strategy_block` builds the variants the aggregation tool compares.
     """
     return pd.concat(
         [
@@ -291,7 +291,7 @@ def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Solar generation drivers: calendar (hour / season carry the diurnal cycle) + every irradiance point.
 
-    Uses ``raw`` for consistency with the other sub-models; it was also the ablation winner for solar,
+    Uses ``raw`` for consistency with the other sub-models; it was also the aggregation winner for solar,
     though only marginally (~3%) since irradiance is near-uniform over Germany.
     """
     return pd.concat(
@@ -306,7 +306,7 @@ def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
 def load_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Load drivers: calendar (weekday / holiday / hour) + every temperature/irradiance point (``raw``).
 
-    Uses the ``raw`` aggregation - the ablation winner (temperature has strong spatial structure), though
+    Uses the ``raw`` aggregation - the aggregation winner (temperature has strong spatial structure), though
     its edge over the mean is modest.
     """
     return pd.concat(
@@ -358,7 +358,7 @@ def neighbour_wind_block(frame: pd.DataFrame, strategy: str = "country_mean") ->
 
     A neighbour's wind depresses its own price and, through the interconnector, Germany's, so these are a
     cross-border price driver. How to aggregate the two points chosen per neighbour is decided by
-    ``eex analyze ablation neighbour``:
+    ``eex analyze aggregation neighbour``:
 
     - ``none``         - no neighbour features (the baseline: does cross-border wind help at all?).
     - ``global_mean``  - one feature, the mean wind over every neighbour point.
@@ -397,7 +397,7 @@ def price_features_with_neighbours(
     """The price feature matrix plus a neighbour-wind block under ``neighbour_strategy``.
 
     ``none`` gives the base feature set (no neighbour wind); :func:`price_features` is this with the
-    adopted :data:`PRICE_NEIGHBOUR_STRATEGY`. Used by the neighbour ablation to A/B the aggregations.
+    adopted :data:`PRICE_NEIGHBOUR_STRATEGY`. Used by the neighbour aggregation to A/B the aggregations.
     """
     return pd.concat(
         [_price_base(frame), neighbour_wind_block(frame, neighbour_strategy)], axis=1
