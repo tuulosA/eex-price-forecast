@@ -18,6 +18,7 @@ blocks above into the feature matrix for one model.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -25,10 +26,23 @@ import holidays
 import numpy as np
 import pandas as pd
 
+from eex_forecast.config import AREA_CODE
+
 TIMESTAMP = "timestamp"
 PRICE_ACTUAL = "price_actual_eur_mwh"
 PRICE_FORECAST = "price_forecast_eur_mwh"
 PRICE_LAGS_HOURS: tuple[int, ...] = (168, 336)  # one and two weeks; 336 h spans the 14-day horizon
+
+# Neighbour wind columns are ``ws_<cc>NN`` (cc = neighbour country code); the home country's own wind
+# points share the ``ws_`` prefix and are excluded by code. See point_search's neighbour_wind role.
+_NEIGHBOUR_WS_RE = re.compile(r"^ws_([a-z]{2})\d+$")
+_HOME_CODE = AREA_CODE.lower()
+# How the per-country neighbour wind points enter the *price* model. The choice is decided empirically by
+# `eex analyze ablation neighbour`; see :func:`neighbour_wind_block`.
+NEIGHBOUR_STRATEGIES: tuple[str, ...] = ("none", "global_mean", "country_mean", "country_cube", "raw")
+# The adopted production strategy: the ablation found country_mean best (tied with country_cube on MAE,
+# better on RMSE, simpler), cutting price MAE ~1.4 EUR/MWh vs no neighbour wind.
+PRICE_NEIGHBOUR_STRATEGY = "country_mean"
 
 # Friendly feature name -> the weather column prefix whose ranked points are averaged into a mean.
 # Prefixes are mutually exclusive: ``t_ws_de`` does not match ``t_de``, nor ``ghi_t_de`` match ``ghi_de``.
@@ -259,35 +273,53 @@ def fundamental_features_from(weather_builder: WeatherBuilder) -> WeatherBuilder
 
 # -- per-model feature builders -------------------------------------------------
 def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Wind generation drivers: calendar + wind speed and air-density temperature at the wind points.
+    """Wind generation drivers: calendar + every wind-speed and air-density-temperature point (``raw``).
 
-    Uses the ``mean`` aggregation strategy - the production default. :func:`weather_strategy_block` builds
-    the variants the ablation tool compares.
+    Uses the ``raw`` aggregation - the ablation winner by a wide margin (~25% MAE vs the national mean),
+    because wind capacity is spatially concentrated and the per-point structure carries real signal the
+    mean discards. :func:`weather_strategy_block` builds the variants the ablation tool compares.
     """
     return pd.concat(
-        [calendar_features(frame[TIMESTAMP]), weather_strategy_block(frame, WEATHER_AGG["wind"])],
+        [
+            calendar_features(frame[TIMESTAMP]),
+            weather_strategy_block(frame, WEATHER_AGG["wind"], "raw"),
+        ],
         axis=1,
     )
 
 
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Solar generation drivers: calendar (hour / season carry the diurnal cycle) + irradiance."""
+    """Solar generation drivers: calendar (hour / season carry the diurnal cycle) + every irradiance point.
+
+    Uses ``raw`` for consistency with the other sub-models; it was also the ablation winner for solar,
+    though only marginally (~3%) since irradiance is near-uniform over Germany.
+    """
     return pd.concat(
-        [calendar_features(frame[TIMESTAMP]), weather_strategy_block(frame, WEATHER_AGG["solar"])],
+        [
+            calendar_features(frame[TIMESTAMP]),
+            weather_strategy_block(frame, WEATHER_AGG["solar"], "raw"),
+        ],
         axis=1,
     )
 
 
 def load_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Load drivers: calendar (weekday / holiday / hour) + temperature and irradiance at load points."""
+    """Load drivers: calendar (weekday / holiday / hour) + every temperature/irradiance point (``raw``).
+
+    Uses the ``raw`` aggregation - the ablation winner (temperature has strong spatial structure), though
+    its edge over the mean is modest.
+    """
     return pd.concat(
-        [calendar_features(frame[TIMESTAMP]), weather_strategy_block(frame, WEATHER_AGG["load"])],
+        [
+            calendar_features(frame[TIMESTAMP]),
+            weather_strategy_block(frame, WEATHER_AGG["load"], "raw"),
+        ],
         axis=1,
     )
 
 
-def price_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Price drivers: calendar + price lags + all weather aggregates + the (coalesced) fundamentals."""
+def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
+    """Price drivers excluding the cross-border block: calendar + price lags + weather means + fundamentals."""
     return pd.concat(
         [
             calendar_features(frame[TIMESTAMP]),
@@ -296,4 +328,77 @@ def price_features(frame: pd.DataFrame) -> pd.DataFrame:
             fundamentals(frame),
         ],
         axis=1,
+    )
+
+
+def price_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """Production price drivers: the base blocks plus the adopted neighbour-wind block (country_mean).
+
+    On a frame with no neighbour columns the block is empty, so this degrades to the base feature set.
+    """
+    return price_features_with_neighbours(frame, neighbour_strategy=PRICE_NEIGHBOUR_STRATEGY)
+
+
+# -- cross-border neighbour wind (a price-model feature block) --------------------
+def _neighbour_wind_columns(frame: pd.DataFrame) -> dict[str, list[str]]:
+    """Map each neighbour country code to its sorted ``ws_<cc>NN`` columns present in ``frame``.
+
+    The home country (``AREA_CODE``) is excluded - its wind is already the German wind aggregate.
+    """
+    groups: dict[str, list[str]] = {}
+    for column in frame.columns:
+        match = _NEIGHBOUR_WS_RE.match(column)
+        if match and match.group(1) != _HOME_CODE:
+            groups.setdefault(match.group(1), []).append(column)
+    return {code: sorted(cols) for code, cols in sorted(groups.items())}
+
+
+def neighbour_wind_block(frame: pd.DataFrame, strategy: str = "country_mean") -> pd.DataFrame:
+    """Reduce the neighbour wind points to price-model features under ``strategy``.
+
+    A neighbour's wind depresses its own price and, through the interconnector, Germany's, so these are a
+    cross-border price driver. How to aggregate the two points chosen per neighbour is decided by
+    ``eex analyze ablation neighbour``:
+
+    - ``none``         - no neighbour features (the baseline: does cross-border wind help at all?).
+    - ``global_mean``  - one feature, the mean wind over every neighbour point.
+    - ``country_mean`` - one mean wind per neighbour (each border's coupling kept distinct).
+    - ``country_cube`` - one ``mean(v^3)`` per neighbour (the convex wind-power effect on price).
+    - ``raw``          - every per-point column fed in directly (maximum information).
+    """
+    if strategy not in NEIGHBOUR_STRATEGIES:
+        raise ValueError(
+            f"Unknown neighbour strategy '{strategy}'. Known: {', '.join(NEIGHBOUR_STRATEGIES)}."
+        )
+    groups = _neighbour_wind_columns(frame)
+    if strategy == "none" or not groups:
+        return pd.DataFrame(index=frame.index)
+    if strategy == "raw":
+        columns = [column for cols in groups.values() for column in cols]
+        raw: pd.DataFrame = frame[columns].apply(pd.to_numeric, errors="coerce")
+        return raw
+    if strategy == "global_mean":
+        columns = [column for cols in groups.values() for column in cols]
+        numeric = frame[columns].apply(pd.to_numeric, errors="coerce")
+        return pd.DataFrame({"nbr_wind_all": numeric.mean(axis=1)}, index=frame.index)
+    out: dict[str, pd.Series] = {}
+    for code, cols in groups.items():
+        numeric = frame[cols].apply(pd.to_numeric, errors="coerce")
+        if strategy == "country_mean":
+            out[f"nbr_wind_{code}"] = numeric.mean(axis=1)
+        else:  # country_cube
+            out[f"nbr_wind_{code}_cube"] = (numeric**3).mean(axis=1)
+    return pd.DataFrame(out, index=frame.index)
+
+
+def price_features_with_neighbours(
+    frame: pd.DataFrame, *, neighbour_strategy: str = "none"
+) -> pd.DataFrame:
+    """The price feature matrix plus a neighbour-wind block under ``neighbour_strategy``.
+
+    ``none`` gives the base feature set (no neighbour wind); :func:`price_features` is this with the
+    adopted :data:`PRICE_NEIGHBOUR_STRATEGY`. Used by the neighbour ablation to A/B the aggregations.
+    """
+    return pd.concat(
+        [_price_base(frame), neighbour_wind_block(frame, neighbour_strategy)], axis=1
     )

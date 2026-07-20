@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from eex_forecast.features import (
+    NEIGHBOUR_STRATEGIES,
     WEATHER_AGG,
+    _neighbour_wind_columns,
     calendar_features,
     fundamentals,
     load_features,
+    neighbour_wind_block,
     price_features,
+    price_features_with_neighbours,
     price_lags,
     solar_features,
     weather_means,
@@ -71,19 +76,16 @@ def test_fundamentals_coalesce_actual_then_forecast() -> None:
     assert out["load"].tolist() == [300.0, 400.0]
 
 
-def test_default_fundamental_builders_are_the_mean_strategy(timeseries_frame: pd.DataFrame) -> None:
-    # The production builders must stay byte-for-byte the plain mean (persisted models depend on it).
+def test_default_fundamental_builders_use_raw_strategy(timeseries_frame: pd.DataFrame) -> None:
+    # Per the ablation study, all three sub-models adopt 'raw' (per-point columns, no national mean).
     wind = wind_features(timeseries_frame)
-    assert "wind_speed" in wind.columns and "temp_wind" in wind.columns
-    assert "wind_speed_cube" not in wind.columns
-    pd.testing.assert_series_equal(
-        wind["wind_speed"], timeseries_frame[["ws_de01", "ws_de02"]].mean(axis=1), check_names=False
-    )
-    # solar and load default builders equal calendar + their plain weather_means blocks.
+    assert {"ws_de01", "ws_de02", "t_ws_de01"} <= set(wind.columns)
+    assert "wind_speed" not in wind.columns  # no national-mean aggregate
     solar = solar_features(timeseries_frame)
-    assert "irr_solar" in solar.columns
+    assert "ghi_de01" in solar.columns and "irr_solar" not in solar.columns
     load = load_features(timeseries_frame)
-    assert {"temp_load", "irr_load"} <= set(load.columns)
+    assert {"t_de01", "ghi_t_de01"} <= set(load.columns)
+    assert "temp_load" not in load.columns
 
 
 def test_weather_strategy_cube_adds_convex_aggregate(timeseries_frame: pd.DataFrame) -> None:
@@ -157,3 +159,67 @@ def test_price_features_compose_all_blocks(timeseries_frame: pd.DataFrame) -> No
         "load",
     } <= set(matrix.columns)
     assert len(matrix) == len(timeseries_frame)
+
+
+def _frame_with_neighbours() -> pd.DataFrame:
+    """A tiny frame with a home wind point and two neighbours (2 points each)."""
+    index = pd.date_range("2025-01-01", periods=6, freq="h", tz="UTC")
+    return pd.DataFrame(
+        {
+            "timestamp": index,
+            "ws_de01": [5.0, 6, 7, 8, 9, 10],  # home - must be excluded from neighbour columns
+            "ws_dk01": [4.0, 4, 4, 4, 4, 4],
+            "ws_dk02": [6.0, 6, 6, 6, 6, 6],  # dk mean = 5
+            "ws_nl01": [2.0, 2, 2, 2, 2, 2],
+            "ws_nl02": [4.0, 4, 4, 4, 4, 4],  # nl mean = 3
+        }
+    )
+
+
+def test_neighbour_wind_columns_groups_and_excludes_home() -> None:
+    groups = _neighbour_wind_columns(_frame_with_neighbours())
+    assert groups == {"dk": ["ws_dk01", "ws_dk02"], "nl": ["ws_nl01", "ws_nl02"]}  # no 'de'
+
+
+def test_neighbour_wind_block_strategies() -> None:
+    frame = _frame_with_neighbours()
+    assert neighbour_wind_block(frame, "none").shape == (6, 0)
+
+    glob = neighbour_wind_block(frame, "global_mean")
+    assert list(glob.columns) == ["nbr_wind_all"]
+    assert glob["nbr_wind_all"].iloc[0] == 4.0  # mean of 4,6,2,4
+
+    country = neighbour_wind_block(frame, "country_mean")
+    assert list(country.columns) == ["nbr_wind_dk", "nbr_wind_nl"]
+    assert country["nbr_wind_dk"].iloc[0] == 5.0 and country["nbr_wind_nl"].iloc[0] == 3.0
+
+    cube = neighbour_wind_block(frame, "country_cube")
+    assert list(cube.columns) == ["nbr_wind_dk_cube", "nbr_wind_nl_cube"]
+    assert cube["nbr_wind_dk_cube"].iloc[0] == (4.0**3 + 6.0**3) / 2  # mean(v^3), not mean(v)^3
+
+    raw = neighbour_wind_block(frame, "raw")
+    assert list(raw.columns) == ["ws_dk01", "ws_dk02", "ws_nl01", "ws_nl02"]
+
+
+def test_neighbour_wind_block_unknown_strategy_raises() -> None:
+    with pytest.raises(ValueError, match="Unknown neighbour strategy"):
+        neighbour_wind_block(_frame_with_neighbours(), "median")
+
+
+def test_neighbour_block_empty_when_no_neighbours(timeseries_frame: pd.DataFrame) -> None:
+    # timeseries_frame has only home (ws_de*) points -> every non-'none' strategy yields no columns.
+    for strategy in NEIGHBOUR_STRATEGIES:
+        assert neighbour_wind_block(timeseries_frame, strategy).shape[1] == 0
+
+
+def test_price_features_adopts_country_mean_neighbours() -> None:
+    frame = _frame_with_neighbours()
+    prod = price_features(frame)
+    # Production bakes in the country_mean neighbour block ...
+    assert {"nbr_wind_dk", "nbr_wind_nl"} <= set(prod.columns)
+    pd.testing.assert_frame_equal(
+        prod, price_features_with_neighbours(frame, neighbour_strategy="country_mean")
+    )
+    # ... and 'none' is exactly production minus those neighbour columns.
+    none = price_features_with_neighbours(frame, neighbour_strategy="none")
+    assert set(prod.columns) - set(none.columns) == {"nbr_wind_dk", "nbr_wind_nl"}

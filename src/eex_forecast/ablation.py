@@ -42,9 +42,11 @@ import pandas as pd
 from eex_forecast.config import ABLATION_DIR, HORIZON_DAYS
 from eex_forecast.features import (
     KNOWN_STRATEGIES,
+    NEIGHBOUR_STRATEGIES,
     TIMESTAMP,
     WEATHER_AGG,
     fundamental_features_from,
+    price_features_with_neighbours,
     weather_strategy_block,
 )
 from eex_forecast.model import REGISTRY, ModelSpec, load_params
@@ -122,6 +124,7 @@ def run_ablation(
     n_cutoffs: int = 6,
     horizon_hours: int = HORIZON_DAYS * 24,
     min_train_days: int = 120,
+    cutoff_start: pd.Timestamp | str | None = None,
     n_regions: int = 3,
     capacity_scaling: bool = True,
     coords: dict[str, tuple[float, float]] | None = None,
@@ -145,6 +148,7 @@ def run_ablation(
         horizon_hours=horizon_hours,
         n_cutoffs=n_cutoffs,
         min_train_days=min_train_days,
+        cutoff_start=cutoff_start,
     )
     logger.info(
         "[ablate:%s] %d strategies over %d cutoffs (%s .. %s), %d h horizon | capacity scaling %s",
@@ -216,5 +220,109 @@ def save_ablation_report(result: AblationResult, *, reports_dir: Path = ABLATION
     }
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / f"{result.fundamental}_ablation.json"
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return path
+
+
+# -- neighbour-wind ablation (a price-model feature block) -----------------------
+# Unlike the sub-model ablations above (which score a fundamental's own MW skill), this scores the
+# **price** model: it A/Bs how the cross-border neighbour-wind points enter the price feature set,
+# including a ``none`` baseline so the ranking answers "does neighbour wind help price MAE at all?".
+def run_neighbour_ablation(
+    frame: pd.DataFrame,
+    *,
+    strategies: tuple[str, ...] | None = None,
+    params: dict[str, Any] | None = None,
+    n_cutoffs: int = 6,
+    horizon_hours: int = HORIZON_DAYS * 24,
+    min_train_days: int = 120,
+    cutoff_start: pd.Timestamp | str | None = None,
+) -> AblationResult:
+    """Score each neighbour-wind aggregation ``strategy`` by the **price** model's walk-forward MAE/RMSE.
+
+    ``strategies`` defaults to :data:`eex_forecast.features.NEIGHBOUR_STRATEGIES` (incl. the ``none``
+    baseline). ``params`` defaults to the tuned price hyperparameters; the same set is used for every
+    strategy so the comparison isolates the neighbour feature block. Errors are in EUR/MWh (price scale).
+    """
+    strategies = strategies or NEIGHBOUR_STRATEGIES
+    unknown = set(strategies) - set(NEIGHBOUR_STRATEGIES)
+    if unknown:
+        raise ValueError(
+            f"Unknown neighbour strategy: {', '.join(sorted(unknown))}. "
+            f"Known: {', '.join(NEIGHBOUR_STRATEGIES)}."
+        )
+    base = REGISTRY["price"]
+    params = params or load_params("price")
+    cutoffs = walk_forward_cutoffs(
+        frame[TIMESTAMP],
+        horizon_hours=horizon_hours,
+        n_cutoffs=n_cutoffs,
+        min_train_days=min_train_days,
+        cutoff_start=cutoff_start,
+    )
+    logger.info(
+        "[ablate:neighbour] %d strategies over %d cutoffs (%s .. %s), %d h horizon",
+        len(strategies),
+        len(cutoffs),
+        cutoffs[0].date(),
+        cutoffs[-1].date(),
+        horizon_hours,
+    )
+
+    variants: list[dict[str, Any]] = []
+    for strategy in strategies:
+        spec = replace(
+            base,
+            name=f"price:nbr={strategy}",
+            build_features=partial(price_features_with_neighbours, neighbour_strategy=strategy),
+        )
+        n_features = spec.build_features(frame).shape[1]
+        metrics = walk_forward_metrics(
+            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
+        )
+        variants.append(
+            {
+                "strategy": strategy,
+                "n_features": n_features,
+                "mean_mae": round(metrics["mean_mae"], 4),
+                "mean_rmse": round(metrics["mean_rmse"], 4),
+                "folds": metrics["folds"],
+            }
+        )
+        logger.info(
+            "[ablate:neighbour] %-12s | %2d features | MAE %.3f | RMSE %.3f",
+            strategy,
+            n_features,
+            metrics["mean_mae"],
+            metrics["mean_rmse"],
+        )
+
+    variants.sort(key=lambda variant: variant["mean_mae"])
+    report: dict[str, Any] = {
+        "config": {
+            "n_cutoffs": len(cutoffs),
+            "horizon_hours": horizon_hours,
+            "min_train_days": min_train_days,
+            "params": params,
+        },
+        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
+        "variants": variants,
+    }
+    return AblationResult("neighbour", variants, cutoffs, report)
+
+
+def save_neighbour_ablation_report(
+    result: AblationResult, *, reports_dir: Path = ABLATION_DIR
+) -> Path:
+    """Write the neighbour-wind ablation to ``neighbour_ablation.json`` (ranking + folds + config)."""
+    payload = {
+        "model": "price",
+        "ablated": "neighbour-wind aggregation",
+        "run_at": pd.Timestamp.now(tz="UTC").isoformat(),
+        "best_strategy": result.best_strategy,
+        **result.report,
+    }
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / "neighbour_ablation.json"
     path.write_text(json.dumps(payload, indent=2) + "\n")
     return path

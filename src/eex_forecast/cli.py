@@ -53,7 +53,7 @@ from eex_forecast.config import (
     get_settings,
 )
 from eex_forecast.db import connect, init_db, read_frame, read_target_series
-from eex_forecast.features import WEATHER_AGG
+from eex_forecast.features import NEIGHBOUR_STRATEGIES, WEATHER_AGG
 from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
@@ -299,9 +299,15 @@ def backfill_entsoe(
 def backfill_weather(
     start: Annotated[str, typer.Option(help="Start date, e.g. 2023-01-01.")],
     end: Annotated[str | None, typer.Option(help="End date (default: today).")] = None,
+    role: Annotated[
+        list[str] | None,
+        typer.Option(help="Limit to point-search role(s), e.g. neighbour_wind. Repeatable."),
+    ] = None,
 ) -> None:
-    """Backfill weather history at the configured points."""
-    counts = backfill_ops.backfill_weather(get_settings().db_path, start=start, end=end)
+    """Backfill weather history at the configured points (all roles, or only ``--role`` ones)."""
+    counts = backfill_ops.backfill_weather(
+        get_settings().db_path, start=start, end=end, roles=role or None
+    )
     typer.echo(f"Backfilled {len(counts)} weather columns (e.g. {next(iter(counts), '-')}).")
 
 
@@ -353,6 +359,7 @@ def _run_ablation(
     horizon_hours: int,
     regions: int,
     capacity_scaling: bool,
+    cutoff_start: str,
 ) -> None:
     """Shared body for the ``analyze ablation <fundamental>`` subcommands."""
     selected = tuple(name.strip() for name in strategies.split(",") if name.strip())
@@ -369,6 +376,7 @@ def _run_ablation(
         strategies=selected,
         n_cutoffs=cutoffs,
         horizon_hours=horizon_hours,
+        cutoff_start=cutoff_start,
         n_regions=regions,
         capacity_scaling=capacity_scaling,
     )
@@ -390,8 +398,15 @@ def _strategies_default(fundamental: str) -> str:
     return ",".join(WEATHER_AGG[fundamental].strategies)
 
 
+# Earliest walk-forward cutoff. Defaults to 2025-01-01 so tuning/ablation weight the recent market
+# regime rather than years-old history (mirrors nordpool-predict's --cutoff-start default).
+DEFAULT_CUTOFF_START = "2025-01-01"
+
 _CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]
 _HorizonOpt = Annotated[int, typer.Option(help="Backtest horizon per cutoff (hours).")]
+_CutoffStartOpt = Annotated[
+    str, typer.Option(help="Earliest walk-forward cutoff (recency floor), e.g. 2025-01-01.")
+]
 _RegionsOpt = Annotated[int, typer.Option(help="Latitude bands for the 'regional' strategy.")]
 _CapacityOpt = Annotated[
     bool, typer.Option(help="Learn a capacity factor (on) or raw MW (off). Both scored in MW.")
@@ -407,9 +422,10 @@ def ablation_wind(
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
     capacity_scaling: _CapacityOpt = True,
+    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """A/B wind's weather aggregation: mean / cube (mean(v^3)) / spread / stats / regional / raw."""
-    _run_ablation("wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling)
+    _run_ablation("wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
 
 
 @ablation_app.command("solar")
@@ -421,9 +437,10 @@ def ablation_solar(
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
     capacity_scaling: _CapacityOpt = True,
+    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """A/B solar's irradiance aggregation: mean / spread / stats / regional / raw."""
-    _run_ablation("solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling)
+    _run_ablation("solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
 
 
 @ablation_app.command("load")
@@ -434,9 +451,51 @@ def ablation_load(
     cutoffs: _CutoffsOpt = 6,
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
+    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """A/B load's temperature aggregation: mean / spread / stats / regional / raw (no capacity)."""
-    _run_ablation("load", strategies, cutoffs, horizon_hours, regions, capacity_scaling=False)
+    _run_ablation(
+        "load", strategies, cutoffs, horizon_hours, regions, False, cutoff_start
+    )
+
+
+@ablation_app.command("neighbour")
+def ablation_neighbour(
+    strategies: Annotated[
+        str, typer.Option(help="Comma-separated strategies.")
+    ] = ",".join(NEIGHBOUR_STRATEGIES),
+    cutoffs: _CutoffsOpt = 6,
+    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
+    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
+) -> None:
+    """A/B how cross-border neighbour wind enters the PRICE model, scored by price walk-forward MAE.
+
+    Strategies: none (baseline) / global_mean / country_mean / country_cube / raw. The `none` baseline
+    answers whether neighbour wind helps price MAE at all; the rest, in what shape.
+    """
+    selected = tuple(name.strip() for name in strategies.split(",") if name.strip())
+    if not selected:
+        raise typer.BadParameter("Give at least one strategy.")
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    result = ablation.run_neighbour_ablation(
+        frame,
+        strategies=selected,
+        n_cutoffs=cutoffs,
+        horizon_hours=horizon_hours,
+        cutoff_start=cutoff_start,
+    )
+    path = ablation.save_neighbour_ablation_report(result)
+    typer.echo(f"neighbour-wind ablation ({len(result.cutoffs)} cutoffs, price MAE in EUR/MWh):")
+    for variant in result.variants:
+        typer.echo(
+            f"  {variant['strategy']:<12} {variant['n_features']:>3} feat | "
+            f"MAE {variant['mean_mae']:.3f} | RMSE {variant['mean_rmse']:.3f}"
+        )
+    typer.echo(f"  best: {result.best_strategy} | report -> {path}")
 
 
 @analyze_app.command("drop")
@@ -517,6 +576,7 @@ def model_tune(
     cutoffs: Annotated[int, typer.Option(help="Walk-forward cutoffs.")] = 8,
     horizon_hours: Annotated[int, typer.Option(help="Backtest horizon per cutoff.")] = HORIZON_DAYS
     * 24,
+    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
 ) -> None:
     """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json."""
     if target is ModelName.all:
@@ -533,6 +593,7 @@ def model_tune(
         n_trials=trials,
         n_cutoffs=cutoffs,
         horizon_hours=horizon_hours,
+        cutoff_start=cutoff_start,
     )
     params_path = model_ops.save_params(target.value, result.params)
     report_path = tuning.save_tuning_report(target.value, result)
