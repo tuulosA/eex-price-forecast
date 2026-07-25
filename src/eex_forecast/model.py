@@ -42,6 +42,16 @@ _VAL_FRACTION = 0.1
 _EARLY_STOPPING_ROUNDS = 50
 _MIN_ROWS_FOR_EARLY_STOPPING = 500
 
+# Day-ahead-lag train/serve fix. price_lag_168h is present on every training row (history is complete)
+# but NaN for the far horizon (D+8..D+14) at serve, because the 168 h look-back lands after the issue
+# date. Training only on the present lag makes the model mishandle that gap and bias the far horizon; we
+# reproduce the gap in training - nulling the lag on a random fraction of rows - so it learns the
+# missing-lag default and falls back to the fundamentals there instead of leaning on a lag it will not
+# have. Only the price model carries a price lag, so this is a no-op for the sub-models.
+_PRICE_LAG_COLUMN = "price_lag_168h"
+_TRAIN_NAN_LAG_FRACTION = 0.5  # D+8..D+14 share of the 14-day horizon lacking the lag at serve
+_TRAIN_NAN_LAG_SEED = 168  # fixed so retrains are reproducible
+
 # Sensible, lightly-regularised defaults; the walk-forward tuner overrides these per model.
 DEFAULT_PARAMS: dict[str, Any] = {
     "n_estimators": 400,
@@ -290,6 +300,23 @@ def _fit(
     return final, diagnostics, metrics
 
 
+def _apply_train_nan_lag_mask(matrix: pd.DataFrame) -> pd.DataFrame:
+    """Null ``price_lag_168h`` on a random fraction of training rows to mirror serve-time availability.
+
+    Returns a copy with the column partially nulled so the model learns the missing-lag default it will
+    meet for the far horizon. A no-op (returns the input) when the column is absent - so it only touches
+    the price model - or the fraction is zero. Seeded for reproducibility; never mutates the input.
+    """
+    if _PRICE_LAG_COLUMN not in matrix.columns or _TRAIN_NAN_LAG_FRACTION <= 0.0:
+        return matrix
+    rng = np.random.default_rng(_TRAIN_NAN_LAG_SEED)
+    mask = rng.random(len(matrix)) < _TRAIN_NAN_LAG_FRACTION
+    out = matrix.copy()  # copy before nulling so the caller's frame is never mutated
+    out.loc[out.index[mask], _PRICE_LAG_COLUMN] = np.nan
+    logger.info("[price] train_nan lag fix | nulled %d/%d training rows", int(mask.sum()), len(out))
+    return out
+
+
 def train(
     spec: ModelSpec, frame: pd.DataFrame, *, params: dict[str, Any] | None = None
 ) -> TrainedModel:
@@ -309,8 +336,9 @@ def train(
     logger.info("%s params: %s", scope, ", ".join(f"{k}={v}" for k, v in params.items()))
 
     capacity = capacity_for(spec, frame)
+    train_matrix = _apply_train_nan_lag_mask(matrix[mask])
     booster, diagnostics, metrics = _fit(
-        spec, matrix[mask], target[mask], params, capacity[mask] if capacity is not None else None
+        spec, train_matrix, target[mask], params, capacity[mask] if capacity is not None else None
     )
 
     if metrics:

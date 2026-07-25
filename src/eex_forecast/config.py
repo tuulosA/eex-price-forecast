@@ -79,7 +79,7 @@ DE_BBOX = (47.0, 56.0, 5.5, 15.5)
 # DE's price is coupled to its neighbours through the interconnectors: abundant wind in a neighbouring
 # bidding zone depresses that zone's price and, via imports, DE's. We rank each neighbour's own wind
 # candidate points against DE price and keep the two best - a cross-border wind proxy for the price model.
-# The set mirrors the wind-relevant DE neighbours (offshore North Sea/Baltic + onshore) used upstream.
+# The set is DE's interconnected, wind-relevant neighbours (offshore North Sea/Baltic + onshore).
 WIND_NEIGHBOURS: tuple[str, ...] = ("DK", "NL", "PL", "FR", "CH", "CZ", "AT")
 NEIGHBOUR_POINTS_PER_COUNTRY = 2
 NEIGHBOUR_MIN_DISTANCE_KM = 50.0  # keep the two chosen points per neighbour spatially distinct

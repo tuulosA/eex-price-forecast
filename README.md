@@ -21,7 +21,7 @@ points that best explain German generation, and forecast price out to a 14-day h
    the chosen points.
 3. **Multi-stage price forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and
    load from the weather; the **price model** then forecasts the day-ahead price from those fundamentals
-   plus calendar, price lags, weather aggregates, and cross-border drivers (neighbour wind, French nuclear availability, and interconnector transfer capacity). Wind and solar are learned as a fraction of
+   plus calendar, the price lag, weather aggregates, and cross-border drivers (neighbour wind, French nuclear availability, and interconnector transfer capacity). Wind and solar are learned as a fraction of
    **installed capacity** (fetched from ENTSO-E) so the models stay calibrated as the fleet grows;
    fitting uses **early stopping** with residual **diagnostics** (Durbin-Watson, ACF). Hyperparameters
    are tuned by **Optuna walk-forward** backtesting, and the pipeline writes a 14-day hourly forecast to
@@ -46,7 +46,7 @@ src/eex_forecast/
     point_search.py    # rank candidates by best lagged Pearson vs a target (German actuals; DE price for neighbours)
   analysis/            # correlation matrix + candidate/ranked point map
   backfill.py          # orchestrate ENTSO-E + weather backfills
-  features.py          # calendar, price lags, weather aggregates, per-model feature builders
+  features.py          # calendar, price lag, weather aggregates, per-model feature builders
   model.py             # XGBoost registry (wind/solar/load/price): capacity scaling, early stopping, diagnostics
   tuning.py            # Optuna walk-forward hyperparameter tuning
   forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
@@ -256,9 +256,9 @@ Like nuclear outages, **month-ahead capacities publish ahead**, so this too is r
 horizon (refetched automatically by `eex forecast`). The price model reads the two **totals**
 (`ntc_imp_total`, `ntc_exp_total`, summed over the borders in the feature builder) — the low-dimensional
 "how coupled is DE right now" signal, keeping the per-border detail in the database for analysis. Measure
-its worth with `eex analyze ablation --target price --drop ntc_imp_total,ntc_exp_total`. (Simplification vs
-the upstream nordpool-predict implementation: month-ahead only, no week-ahead refinement, and totals rather
-than every per-border column fed to the model.)
+its worth with `eex analyze ablation --target price --drop ntc_imp_total,ntc_exp_total`. (Deliberately
+simplified: month-ahead NTC only, no week-ahead refinement, and the summed totals rather than every
+per-border column fed to the model.)
 
 ### Feature aggregation and ablation
 
@@ -299,12 +299,12 @@ index), `country_mean` (the adopted default), `country_cube` (`mean(v³)` per ne
 **Ablation — `analyze ablation` (→ `data/ablation/`).** Ablation in the literal sense: remove chosen
 features and measure the loss. A generic A/B for *any* model — the full feature set versus the set with
 features you remove. Run without `--drop` and it lists the features numbered and prompts for which to
-remove; pass `--drop` for a non-interactive run. Handy for price (are the price lags earning their keep?)
+remove; pass `--drop` for a non-interactive run. Handy for price (is the price lag earning its keep?)
 and, with sub-models on `raw` per-point columns, for pruning the weakest of those columns:
 
 ```bash
 eex analyze ablation --target price       # interactive: lists features, you type numbers/names to remove
-eex analyze ablation --target price --drop price_lag_168h,price_lag_336h   # non-interactive
+eex analyze ablation --target price --drop price_lag_168h,wind   # non-interactive
 ```
 
 Two caveats apply to both tools: the score is the target model's own MAE (for a sub-model, not the
@@ -332,7 +332,7 @@ market regime rather than years-old history that no longer reflects the fleet or
 earlier date to widen the window. Each run is an **independent, seeded** study — reproducible, but not
 resumed: a later `--trials 40` run starts over rather than continuing a `--trials 12` one (being seeded,
 its first 12 trials reproduce what you already saw, then it explores further). The horizon defaults to
-**24 h — the day-ahead product** (matching the upstream nordpool-predict tuner): the settled,
+**24 h — the day-ahead product**: the settled,
 most-predictable, most-valuable part of the forecast. Tuning on the full 14-day frame instead averages in
 the near-unpredictable far tail and pulls the hyperparameters toward smooth, conservative settings that
 under-serve D+1 — pass `--horizon-hours 336` if you deliberately want to optimise the whole curve. **Re-tune

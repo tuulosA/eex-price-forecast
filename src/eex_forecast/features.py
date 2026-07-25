@@ -7,8 +7,10 @@ matrices each model consumes:
   holiday flag;
 - **weather aggregates** - the national mean of each ranked weather role's point columns (e.g.
   ``ws_de01`` .. ``ws_de20`` -> ``wind_speed``);
-- **price lags** - the price one and two weeks back; the 336 h lag is available across the whole 14-day
-  horizon, the 168 h lag across the first week (NaN beyond, which XGBoost handles natively);
+- **price lag** - the price one week back. Present across the first week of the horizon and NaN beyond
+  it (the 168 h look-back lands after the issue date). Rather than lean on a staler two-week lag to
+  paper over that gap, the price model reproduces the gap in training (see ``model.train``), so it
+  learns to fall back to the fundamentals for the far horizon instead of mishandling the missing lag;
 - **fundamentals** - wind / solar / load, taken as actuals in history and as the sub-model forecasts in
   the future via an actual-or-forecast coalesce, so one builder serves both training and inference.
 
@@ -36,7 +38,7 @@ from eex_forecast.config import (
 TIMESTAMP = "timestamp"
 PRICE_ACTUAL = "price_actual_eur_mwh"
 PRICE_FORECAST = "price_forecast_eur_mwh"
-PRICE_LAGS_HOURS: tuple[int, ...] = (168, 336)  # one and two weeks; 336 h spans the 14-day horizon
+PRICE_LAGS_HOURS: tuple[int, ...] = (168,)  # one week; NaN past D+7 at serve
 
 # Neighbour wind columns are ``ws_<cc>NN`` (cc = neighbour country code); the home country's own wind
 # points share the ``ws_`` prefix and are excluded by code. See point_search's neighbour_wind role.

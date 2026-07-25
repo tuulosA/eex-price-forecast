@@ -40,8 +40,8 @@ _CUSTOMER_HOST = "customer-api.open-meteo.com"
 # A single consistent NWP model for both history and forecast. Open-Meteo's default forecast is a
 # best_match *blend* that switches models with lead time - fine for smooth fields (irradiance, temperature)
 # but spiky and horizon-inconsistent for wind, the chaotic, model-sensitive field that dominates the DE
-# price. ECMWF IFS is one coherent global model and matches the upstream nordpool-predict weather source,
-# so training and serving see the same wind distribution (no train/serve mismatch).
+# price. ECMWF IFS is one coherent global model, so training and serving see the same wind distribution
+# (no train/serve mismatch).
 ECMWF_MODEL = "ecmwf_ifs"
 
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})

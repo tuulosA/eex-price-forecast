@@ -14,8 +14,7 @@ with real values rather than a guess. The per-border columns are stored; the pri
 totals (:func:`eex_forecast.features.ntc_features`).
 
 The pure helper :func:`series_to_hourly` is unit-tested; the ``fetch_*`` functions are thin orchestration
-over the entsoe-py client. (Simplification vs the upstream nordpool implementation: month-ahead only, no
-week-ahead refinement.)
+over the entsoe-py client. (Deliberately simplified: month-ahead only, no week-ahead refinement.)
 """
 
 from __future__ import annotations

@@ -56,9 +56,9 @@ def test_price_lags_look_back_by_hours() -> None:
     index = pd.date_range("2025-01-01", periods=400, freq="h", tz="UTC")
     frame = pd.DataFrame({"timestamp": index, "price_actual_eur_mwh": np.arange(400.0)})
     lags = price_lags(frame)
+    assert lags.columns.tolist() == ["price_lag_168h"]
     assert lags["price_lag_168h"].iloc[200] == 200 - 168
-    assert lags["price_lag_336h"].iloc[350] == 350 - 336
-    assert np.isnan(lags["price_lag_336h"].iloc[10])  # no history 336 h before the start
+    assert np.isnan(lags["price_lag_168h"].iloc[10])  # no history 168 h before the start
 
 
 def test_fundamentals_coalesce_actual_then_forecast() -> None:
@@ -154,7 +154,6 @@ def test_price_features_compose_all_blocks(timeseries_frame: pd.DataFrame) -> No
         "hour",
         "is_holiday",
         "price_lag_168h",
-        "price_lag_336h",
         "wind_speed",
         "wind",
         "solar",

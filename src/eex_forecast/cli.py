@@ -465,13 +465,13 @@ def _strategies_default(fundamental: str) -> str:
 
 
 # Earliest walk-forward cutoff. Defaults to 2025-01-01 so the walk-forward tools weight the recent
-# market regime rather than years-old history (mirrors nordpool-predict's --cutoff-start default).
+# market regime rather than years-old history.
 DEFAULT_CUTOFF_START = "2025-01-01"
 
 # Tuning backtest horizon. Defaults to the **day-ahead** 24 h (not the full 14-day frame): the settled,
 # most-predictable, most-valuable part of the forecast. Tuning on the full horizon averages in the
 # near-unpredictable far tail and pulls the hyperparameters toward smooth, conservative settings that
-# under-serve D+1. Matches nordpool-predict's --horizon-hours default of 24. Widen it to tune the curve.
+# under-serve D+1. Widen it to tune the whole 14-day curve.
 DAY_AHEAD_HORIZON_HOURS = 24
 
 _CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]

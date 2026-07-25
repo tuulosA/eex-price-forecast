@@ -160,8 +160,7 @@ def _last_complete_market_day_cut(coverage_end: pd.Timestamp | None) -> pd.Times
     """Exclusive UTC cut at the end of the last fully-covered market (Europe/Berlin) day.
 
     A day-ahead forecast day missing any of its 24 hours is worthless, so a partial final day is dropped
-    whole; a day whose coverage reaches its last hour is kept. Ported from nordpool-predict's
-    ``last_complete_market_day_end_exclusive_utc``.
+    whole; a day whose coverage reaches its last hour is kept.
     """
     if coverage_end is None:
         return None
