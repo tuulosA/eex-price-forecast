@@ -17,7 +17,8 @@ Forecasting is two-stage: **weather → three generation sub-models → price mo
 1. Sub-models `wind`, `solar`, `load` each learn a fundamental from weather + calendar features.
 2. The `price` model learns the day-ahead price from calendar + the 168 h price lag + weather
    aggregates + the three fundamentals. The lag is NaN past D+7 at serve (the look-back lands after the
-   issue date), so training reproduces that gap - see `model._apply_train_nan_lag_mask`.
+   issue date), so training reproduces that gap - see `model.apply_train_nan_lag_mask` (and the
+   walk-forward backtest does the same, so ablation/tuning see live behaviour, not a leak).
 3. The fundamentals reach the price model through an **actual-or-forecast coalesce**
    (`features.fundamentals`): the measured value where a row has one, else the sub-model forecast. This
    is why a *single* feature builder serves both training (on measured fundamentals) and inference (on
@@ -44,7 +45,7 @@ src/eex_forecast/
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
-  tuning.py            # Optuna walk-forward tuning; walk_forward_metrics (reused by aggregation + ablation)
+  tuning.py            # Optuna walk-forward tuning; serve-faithful backtest engine + seed averaging (reused by aggregation + ablation)
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
@@ -65,9 +66,13 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   capacity) and multiplies the prediction back by capacity, so it stays calibrated as the fleet grows.
   Any code that scores or compares predictions to actuals must reverse the scaling first — see
   `model._fit` and `tuning._fold_metrics` for the pattern (`prediction * capacity`).
-- **No leakage in tuning.** Winsorising (`clip_target_quantiles`) is applied per-fold on **train rows
-  only** (`tuning._fold_metrics`), never over the whole series. Features are built once over the full
-  frame, then sliced by timestamp per fold.
+- **No leakage in tuning, and serve-faithful for the price lag.** Winsorising (`clip_target_quantiles`)
+  is applied per-fold on **train rows only** (`tuning._fold_metrics`), never over the whole series.
+  Features are built once over the full frame, then sliced by timestamp per fold — but each fold also
+  reproduces the price model's serve-time lag handling: it trains with the `train_nan` gap
+  (`model.apply_train_nan_lag_mask`) and nulls `price_lag_168h` on far-horizon test rows that would not
+  have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
+  horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
 - **Backfill window asymmetry** (`backfill.py`): ENTSO-E fetches through **D+2** (to capture tomorrow's
   already-cleared day-ahead prices), but the Open-Meteo *archive* stops at **today** (it 400s on a future
   `end_date`). These are two separate helpers (`_default_end` vs `_weather_end`) — keep them distinct.
