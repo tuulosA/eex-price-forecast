@@ -18,6 +18,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 CONFIG_DIR = PROJECT_ROOT / "config"
+LOGS_DIR = PROJECT_ROOT / "logs"  # timestamped per-run CLI logs (pruned after LOG_RETENTION_DAYS)
+LOG_RETENTION_DAYS = 14  # delete run logs older than this on startup (<= 0 disables pruning)
 GEO_DIR = DATA_DIR / "geo"
 CANDIDATES_DIR = DATA_DIR / "candidates"
 WEATHER_CACHE_DIR = DATA_DIR / "weather_cache"

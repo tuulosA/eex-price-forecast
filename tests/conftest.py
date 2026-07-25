@@ -18,6 +18,7 @@ def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.delenv("ENTSO_E_API_KEY", raising=False)
     monkeypatch.delenv("OPENMETEO_API_KEY", raising=False)
+    monkeypatch.setenv("EEX_LOG_TO_FILE", "0")  # don't write run logs during tests
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

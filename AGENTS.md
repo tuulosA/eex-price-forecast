@@ -50,6 +50,7 @@ src/eex_forecast/
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
+  logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
 tests/                 # one test_*.py per module; external APIs mocked
 config/                # hyperparams.json (tuned params), weather_points.json (chosen points)
 data/                  # gitignored runtime artifacts: eex.db, models/, forecast/, tuning/, aggregation/, ablation/, analysis/
