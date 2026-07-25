@@ -22,3 +22,6 @@ data/
 .DS_Store
 .idea/
 .vscode/
+
+# Timestamped per-run CLI logs (see eex_forecast.logging_setup)
+logs/

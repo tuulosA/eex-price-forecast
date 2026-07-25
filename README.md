@@ -352,6 +352,11 @@ pytest
 
 External APIs (ENTSO-E, Open-Meteo) are **mocked** in the test suite — no network or API key needed.
 
+Every `eex` run also writes a timestamped log to `logs/` (e.g. `logs/eex_2026-07-25_143002.log`)
+alongside the console output — useful for the long backfill / tune / forecast commands whose console
+scrolls away. Logs older than `LOG_RETENTION_DAYS` (14) are pruned on startup; set `EEX_LOG_TO_FILE=0`
+to disable file logging.
+
 ## Roadmap
 
 - **Recency sample weighting** — weight recent rows more heavily when fitting, so the models track the

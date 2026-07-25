@@ -23,7 +23,6 @@ Command groups:
 
 from __future__ import annotations
 
-import logging
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -55,6 +54,7 @@ from eex_forecast.config import (
 )
 from eex_forecast.db import connect, init_db, read_frame, read_target_series
 from eex_forecast.features import NEIGHBOUR_STRATEGIES, WEATHER_AGG
+from eex_forecast.logging_setup import configure_logging
 from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
@@ -121,9 +121,7 @@ class ModelName(StrEnum):
 
 @app.callback()
 def _main() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
+    configure_logging()
 
 
 # -- db -------------------------------------------------------------------------
