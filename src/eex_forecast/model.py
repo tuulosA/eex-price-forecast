@@ -48,7 +48,8 @@ _MIN_ROWS_FOR_EARLY_STOPPING = 500
 # reproduce the gap in training - nulling the lag on a random fraction of rows - so it learns the
 # missing-lag default and falls back to the fundamentals there instead of leaning on a lag it will not
 # have. Only the price model carries a price lag, so this is a no-op for the sub-models.
-_PRICE_LAG_COLUMN = "price_lag_168h"
+_PRICE_LAG_HOURS = 168  # the (only) price lag; present within this many hours of the issue, NaN beyond
+_PRICE_LAG_COLUMN = f"price_lag_{_PRICE_LAG_HOURS}h"
 _TRAIN_NAN_LAG_FRACTION = 0.5  # D+8..D+14 share of the 14-day horizon lacking the lag at serve
 _TRAIN_NAN_LAG_SEED = 168  # fixed so retrains are reproducible
 
@@ -300,12 +301,14 @@ def _fit(
     return final, diagnostics, metrics
 
 
-def _apply_train_nan_lag_mask(matrix: pd.DataFrame) -> pd.DataFrame:
+def apply_train_nan_lag_mask(matrix: pd.DataFrame) -> pd.DataFrame:
     """Null ``price_lag_168h`` on a random fraction of training rows to mirror serve-time availability.
 
     Returns a copy with the column partially nulled so the model learns the missing-lag default it will
     meet for the far horizon. A no-op (returns the input) when the column is absent - so it only touches
-    the price model - or the fraction is zero. Seeded for reproducibility; never mutates the input.
+    the price model - or the fraction is zero. Seeded for reproducibility; never mutates the input. Used
+    by both :func:`train` and the walk-forward backtest (:mod:`eex_forecast.tuning`) so the two train the
+    price model the same way.
     """
     if _PRICE_LAG_COLUMN not in matrix.columns or _TRAIN_NAN_LAG_FRACTION <= 0.0:
         return matrix
@@ -314,6 +317,27 @@ def _apply_train_nan_lag_mask(matrix: pd.DataFrame) -> pd.DataFrame:
     out = matrix.copy()  # copy before nulling so the caller's frame is never mutated
     out.loc[out.index[mask], _PRICE_LAG_COLUMN] = np.nan
     logger.info("[price] train_nan lag fix | nulled %d/%d training rows", int(mask.sum()), len(out))
+    return out
+
+
+def apply_serve_unavailable_lag_mask(
+    matrix: pd.DataFrame, times: pd.Series, cutoff: pd.Timestamp
+) -> pd.DataFrame:
+    """Null ``price_lag_168h`` on rows whose look-back falls after ``cutoff`` (absent at serve).
+
+    A forecast issued at ``cutoff`` has the lag only for rows within 168 h of it; beyond that the
+    look-back lands after the issue and is NaN. A backtest frame holds every actual, so without this the
+    far-horizon test rows carry a lag no live forecast has - flattering the score and hiding the
+    train/serve gap. This reproduces serve-time availability for those rows. A no-op when the column is
+    absent or no row is far enough out (e.g. a horizon within one week); never mutates the input.
+    """
+    if _PRICE_LAG_COLUMN not in matrix.columns:
+        return matrix
+    unavailable = pd.to_datetime(times, utc=True) > (cutoff + pd.Timedelta(hours=_PRICE_LAG_HOURS))
+    if not bool(unavailable.any()):
+        return matrix
+    out = matrix.copy()
+    out.loc[out.index[unavailable.to_numpy()], _PRICE_LAG_COLUMN] = np.nan
     return out
 
 
@@ -336,7 +360,7 @@ def train(
     logger.info("%s params: %s", scope, ", ".join(f"{k}={v}" for k, v in params.items()))
 
     capacity = capacity_for(spec, frame)
-    train_matrix = _apply_train_nan_lag_mask(matrix[mask])
+    train_matrix = apply_train_nan_lag_mask(matrix[mask])
     booster, diagnostics, metrics = _fit(
         spec, train_matrix, target[mask], params, capacity[mask] if capacity is not None else None
     )

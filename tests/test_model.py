@@ -14,8 +14,9 @@ from eex_forecast.model import (
     _PRICE_LAG_COLUMN,
     REGISTRY,
     TrainedModel,
-    _apply_train_nan_lag_mask,
     _residual_diagnostics,
+    apply_serve_unavailable_lag_mask,
+    apply_train_nan_lag_mask,
     capacity_scaled,
     load_params,
     save_params,
@@ -42,17 +43,38 @@ def test_train_predicts_non_negative_generation(timeseries_frame: pd.DataFrame) 
 
 def test_train_nan_lag_mask_nulls_a_fraction_without_mutating_input() -> None:
     matrix = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(2000.0), "other": np.arange(2000.0)})
-    out = _apply_train_nan_lag_mask(matrix)
+    out = apply_train_nan_lag_mask(matrix)
     assert 0.45 < out[_PRICE_LAG_COLUMN].isna().mean() < 0.55  # ~half, the far-horizon share
     assert out["other"].equals(matrix["other"])  # only the lag column is touched
     assert matrix[_PRICE_LAG_COLUMN].notna().all()  # caller's frame never mutated
-    again = _apply_train_nan_lag_mask(matrix)
+    again = apply_train_nan_lag_mask(matrix)
     assert out[_PRICE_LAG_COLUMN].isna().equals(again[_PRICE_LAG_COLUMN].isna())  # seeded
 
 
 def test_train_nan_lag_mask_is_noop_without_the_lag_column() -> None:
     matrix = pd.DataFrame({"other": np.arange(100.0)})  # sub-model matrices have no price lag
-    assert _apply_train_nan_lag_mask(matrix) is matrix
+    assert apply_train_nan_lag_mask(matrix) is matrix
+
+
+def test_serve_unavailable_lag_mask_nulls_only_beyond_the_lag_horizon() -> None:
+    cutoff = pd.Timestamp("2026-01-08", tz="UTC")
+    times = pd.Series(pd.date_range(cutoff + pd.Timedelta(hours=1), periods=336, freq="h", tz="UTC"))
+    matrix = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(336.0), "other": np.arange(336.0)}, index=times.index)
+    out = apply_serve_unavailable_lag_mask(matrix, times, cutoff)
+    within = times <= cutoff + pd.Timedelta(hours=168)  # D+1..D+7 keep the lag
+    assert out.loc[within.to_numpy(), _PRICE_LAG_COLUMN].notna().all()
+    assert out.loc[(~within).to_numpy(), _PRICE_LAG_COLUMN].isna().all()  # D+8..D+14 nulled
+    assert out["other"].equals(matrix["other"])  # only the lag column is touched
+    assert matrix[_PRICE_LAG_COLUMN].notna().all()  # caller's frame never mutated
+
+
+def test_serve_unavailable_lag_mask_is_noop_within_a_week_or_without_column() -> None:
+    cutoff = pd.Timestamp("2026-01-08", tz="UTC")
+    times = pd.Series(pd.date_range(cutoff + pd.Timedelta(hours=1), periods=24, freq="h", tz="UTC"))
+    day_ahead = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(24.0)}, index=times.index)
+    assert apply_serve_unavailable_lag_mask(day_ahead, times, cutoff) is day_ahead  # all within 168 h
+    no_lag = pd.DataFrame({"other": np.arange(24.0)}, index=times.index)
+    assert apply_serve_unavailable_lag_mask(no_lag, times, cutoff) is no_lag  # sub-model matrix
 
 
 def test_save_load_round_trip(timeseries_frame: pd.DataFrame, tmp_path: Path) -> None:

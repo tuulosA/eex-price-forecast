@@ -7,8 +7,13 @@ at each cutoff the model trains on everything up to it and is scored (mean absol
 mean error across cutoffs, so the chosen hyperparameters generalise across many forecast origins rather
 than one lucky split.
 
-Features are built once over the full frame (so price lags can see the history a forecast row would
-legitimately have), then sliced per fold by timestamp - no future row ever enters a fold's training set.
+Features are built once over the full frame, then sliced per fold by timestamp - no future row ever
+enters a fold's training set. Each fold also reproduces the price model's serve-time lag handling, so
+the score reflects live behaviour rather than a leak: it trains with the same ``train_nan`` gap and
+drops ``price_lag_168h`` from the far-horizon test rows that would not have it at serve (both via
+:mod:`eex_forecast.model`; no-ops for the sub-models and for horizons within one week). Without this a
+backtest frame - which holds every actual - would feed the far horizon a lag no forecast has, flatter
+the lag's apparent worth, and hide the very train/serve gap ``train_nan`` fixes.
 :func:`walk_forward_cutoffs` and :func:`evaluate_params` are pure/deterministic and unit-tested.
 """
 
@@ -28,7 +33,13 @@ from xgboost import XGBRegressor
 
 from eex_forecast.config import TUNING_DIR
 from eex_forecast.features import TIMESTAMP
-from eex_forecast.model import ModelSpec, capacity_for, capacity_scaled
+from eex_forecast.model import (
+    ModelSpec,
+    apply_serve_unavailable_lag_mask,
+    apply_train_nan_lag_mask,
+    capacity_for,
+    capacity_scaled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -140,9 +151,14 @@ def _fold_metrics(
         ):  # winsorise per fold (train-only) to avoid leakage
             low, high = (y_train.quantile(q) for q in spec.clip_target_quantiles)
             y_train = y_train.clip(lower=low, upper=high)
+        # Reproduce production's price-lag handling so the fold scores live behaviour: train with the
+        # same serve-time gap (train_nan), and drop the lag from the far-horizon test rows that would
+        # not have it at serve. Both are no-ops without a price lag and for horizons within one week.
+        x_train = apply_train_nan_lag_mask(data.matrix[train])
+        x_test = apply_serve_unavailable_lag_mask(data.matrix[test], data.times[test], cutoff)
         booster = XGBRegressor(**params)
-        booster.fit(data.matrix[train], y_train)
-        prediction = booster.predict(data.matrix[test])
+        booster.fit(x_train, y_train)
+        prediction = booster.predict(x_test)
         if data.capacity is not None:  # reverse the capacity scaling back to MW
             prediction = prediction * data.capacity[test].to_numpy()
         if spec.non_negative:
