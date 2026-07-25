@@ -37,7 +37,7 @@ src/eex_forecast/
   db/                  # SQLite schema (separate actual/forecast columns) + upsert/query
   sources/entsoe.py    # DE price + wind/solar generation + load actuals + installed capacity (entsoe-py)
   sources/nuclear.py   # cross-border nuclear availability (installed capacity - A80/B14 outages)
-  sources/ntc.py       # per-border month-ahead transfer capacity (NTC), import + export
+  sources/ntc.py       # per-border transfer capacity (NTC): week-ahead over month-ahead, import + export
   weather/
     geometry.py        # download GISCO land + Marine-Regions EEZ GeoJSON
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
@@ -230,16 +230,17 @@ maintenance or outage) lets a zone decouple and its price run away. The drivers 
 German price *to the extent the wires can carry them* — NTC is the valve.
 
 ```bash
-eex backfill ntc --start 2023-01-01         # per-border month-ahead NTC, import + export
+eex backfill ntc --start 2023-01-01         # per-border NTC (week-ahead over month-ahead), import + export
 ```
 
-`eex backfill ntc` fetches **month-ahead forecasted NTC** [11.1] for each of DE's borders (AT, BE, CZ,
-DK1, DK2, FR, NL, NO2, SE4) in both directions and stores per-border columns `ntc_imp_<b>` (into DE) and
-`ntc_exp_<b>` (out of DE). Like nuclear outages, **month-ahead capacities publish ahead**, so this too is
-real across the horizon (refetched automatically). The price model reads the two **totals**
-(`ntc_imp_total`, `ntc_exp_total`) — the low-dimensional "how coupled is DE right now" signal — keeping
-the per-border detail in the database for analysis. (Deliberately simplified: month-ahead only, no
-week-ahead refinement, totals rather than every per-border column fed to the model.)
+`eex backfill ntc` fetches forecasted NTC [11.1] for each of DE's borders (AT, BE, CZ, DK1, DK2, FR, NL,
+NO2, SE4) in both directions and stores per-border columns `ntc_imp_<b>` (into DE) and `ntc_exp_<b>` (out
+of DE). It **blends two horizons per day** — **week-ahead** (the more refined revision, ~1 week out)
+where published, falling back to **month-ahead** (coarser, but spanning the whole month) for the far
+horizon week-ahead has not reached — so a forecast's near ~week gets the sharper level and its second
+week gets month-ahead. Both publish ahead, so this is real across the horizon (refetched automatically).
+The price model reads the two **totals** (`ntc_imp_total`, `ntc_exp_total`) — the low-dimensional "how
+coupled is DE right now" signal — keeping the per-border detail in the database for analysis.
 
 ## Evaluating and tuning
 
@@ -357,8 +358,8 @@ External APIs (ENTSO-E, Open-Meteo) are **mocked** in the test suite — no netw
   latest market regime rather than treating three years of history equally.
 - **Separate onshore/offshore wind** — split the combined wind series into its onshore and offshore
   components (distinct weather points, capacity factors, behaviour) rather than summing them.
-- **Per-border NTC / week-ahead refinement** — feed the price model the per-border NTC columns (currently
-  only the import/export totals) and blend in week-ahead revisions (both already stored).
+- **Per-border NTC** — feed the price model the per-border NTC columns, not just the import/export totals
+  (the per-border detail is already stored; the week-ahead-over-month-ahead blend is in).
 - **Analysis defaults** — the `analyze` tools default to the 14-day horizon while the models tune at
   24 h; a 24-h default (with far-horizon opt-in) would match what is optimised.
 
