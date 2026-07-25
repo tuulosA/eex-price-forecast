@@ -5,9 +5,13 @@ zone), out to a 14-day horizon. It finds the weather grid points that best expla
 and load, forecasts those fundamentals, and turns them — together with the cross-border drivers that
 move a coupled market — into a price.
 
+![Example 14-day DE day-ahead price forecast](data/forecast/forecast.png)
+
+> *Example run (`eex forecast --plot`); the committed image is a static snapshot and will lag the code.*
+
 > Implemented end to end: weather-point search (including cross-border neighbour wind), the ENTSO-E /
 > Open-Meteo backfills, the four-model forecast, Optuna walk-forward tuning, and the 14-day forecast
-> pipeline. Remaining refinements are in the [Roadmap](#roadmap).
+> pipeline. Remaining refinements are in [Development ideas](#development-ideas).
 
 ## What it does
 
@@ -359,7 +363,7 @@ alongside the console output — useful for the long backfill / tune / forecast 
 scrolls away. Logs older than `LOG_RETENTION_DAYS` (14) are pruned on startup; set `EEX_LOG_TO_FILE=0`
 to disable file logging.
 
-## Roadmap
+## Development ideas
 
 - **Recency sample weighting** — weight recent rows more heavily when fitting, so the models track the
   latest market regime rather than treating three years of history equally.
