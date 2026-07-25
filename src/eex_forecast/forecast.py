@@ -7,8 +7,8 @@ End to end for the next ``horizon_days``:
 3. run the wind / solar / load **sub-models** to fill the fundamentals' forecast columns;
 4. run the **price model**, which consumes those forecast fundamentals alongside calendar, price lags,
    and weather aggregates;
-5. write the forecast over the **whole window** to CSV, optionally upsert it to the database, and
-   optionally plot it.
+5. trim to whole German delivery days (Berlin-midnight boundaries) and write the forecast to CSV,
+   optionally upsert it to the database, and optionally plot it.
 
 The models predict the **entire read window**, not just the future: rows that already have an actual get
 an in-sample prediction that hugs it (giving a continuous forecast line), and the genuinely out-of-sample
@@ -231,17 +231,22 @@ def run_forecast(
             "Forecast %s: horizon mean %.1f", name, frame.loc[future, spec.forecast_column].mean()
         )
 
-    # Drop any ragged tail the weather forecast did not reach: trim to the last complete market day with
-    # genuine (non-NaN) weather, so the forecast never shows garbage where the sub-models had no inputs.
+    # Trim the output (CSV / DB / plots) to whole German delivery days. The read window opens at an
+    # arbitrary hour (`now - history_days`) and its price lag needs those leading hours, but predictions are
+    # already computed above - so we can now drop the leading partial day, and any ragged tail the weather
+    # forecast did not reach (a day-ahead day missing hours is worthless). Both edges land on a Berlin
+    # midnight, so every row belongs to a complete delivery day.
+    start = _first_market_day_start(times)
     cut = _last_complete_market_day_cut(_weather_coverage_end(frame, times, now))
+    keep = (times >= start).to_numpy()
     if cut is not None:
-        keep = (times < cut).to_numpy()
-        dropped = int((~keep & (times >= now).to_numpy()).sum())
-        if dropped:
-            logger.info("Trimmed %d uncovered tail hours (weather forecast short of the horizon)", dropped)
-        frame = frame[keep].reset_index(drop=True)
-        times = pd.to_datetime(frame[TIMESTAMP], utc=True)
-        future = times >= now
+        keep &= (times < cut).to_numpy()
+    dropped_tail = int((~keep & (times >= now).to_numpy()).sum())
+    if dropped_tail:
+        logger.info("Trimmed %d uncovered tail hours (weather forecast short of the horizon)", dropped_tail)
+    frame = frame[keep].reset_index(drop=True)
+    times = pd.to_datetime(frame[TIMESTAMP], utc=True)
+    future = times >= now
 
     result = frame[_RESULT_COLUMNS].reset_index(drop=True)
     unseen = int(result[PRICE_ACTUAL].isna().sum())  # rows with no settled price yet (D+2 onward)
@@ -256,14 +261,10 @@ def run_forecast(
     result.to_csv(csv_path, index=False)
     logger.info("Wrote %d rows to %s", len(result), csv_path)
     if plot:
-        # Plot from the first whole delivery day (Berlin midnight), not the arbitrary hour the read window
-        # opened on; CSV/DB above keep the full window (the leading hours still feed the price lag).
-        view = (times >= _first_market_day_start(times)).to_numpy()
-        plot_frame = frame[view].reset_index(drop=True)
-        plot_times = pd.to_datetime(plot_frame[TIMESTAMP], utc=True)
-        plot_forecast(plot_frame, plot_times, now, FORECAST_DIR / "forecast.png")
-        plot_fundamentals(plot_frame, plot_times, now, FORECAST_DIR / "fundamentals.png")
-        plot_drivers(plot_frame, plot_times, now, FORECAST_DIR / "drivers.png")
+        # `frame` is already trimmed to whole delivery days, so the plots inherit the aligned window.
+        plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
+        plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")
+        plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
     return result
 
 

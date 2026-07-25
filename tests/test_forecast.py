@@ -68,6 +68,11 @@ def test_run_forecast_fills_fundamentals_then_price(
     # The whole window is predicted (in-sample past + future), so it spans both sides of `now`.
     result_times = pd.to_datetime(result["timestamp"], utc=True)
     assert (result_times < now).any() and (result_times >= now).any()
+    # The CSV output is trimmed to whole German delivery days: it starts at a Berlin midnight and ends on
+    # the last hour (23:00 Berlin) of a delivery day - regardless of the arbitrary hour `now` fell on.
+    berlin = result_times.dt.tz_convert("Europe/Berlin")
+    assert berlin.iloc[0].hour == 0 and berlin.iloc[0].minute == 0
+    assert berlin.iloc[-1].hour == 23
     for column in (
         "price_forecast_eur_mwh",
         "wind_forecast_mw",
