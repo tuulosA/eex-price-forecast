@@ -260,12 +260,14 @@ def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(12.0, 5.0))
+    # Actual price in hard black, drawn on top of the forecast (zorder) so it stays readable.
     ax.plot(
         times,
         _numeric_column(frame, "price_actual_eur_mwh"),
-        color="0.45",
-        linewidth=1.0,
+        color="black",
+        linewidth=1.4,
         label="actual",
+        zorder=5,
     )
     ax.plot(
         times,
