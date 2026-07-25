@@ -12,6 +12,8 @@ from tests.conftest import make_timeseries
 from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
 from eex_forecast.forecast import (
+    _forecast_split,
+    _forward_only,
     _last_complete_market_day_cut,
     _weather_coverage_end,
     run_forecast,
@@ -100,3 +102,24 @@ def test_weather_coverage_end_finds_last_real_hour() -> None:
     frame = pd.DataFrame({"timestamp": times, "ws_de01": [1.0, 2, 3, np.nan, np.nan, np.nan]})
     # Weather runs out after the third hour; coverage_end is that last present hour.
     assert _weather_coverage_end(frame, pd.Series(times), now) == times[2]
+
+
+def test_forward_only_blanks_history_keeps_forecast() -> None:
+    split = pd.Timestamp("2026-08-01 03:00", tz="UTC")
+    times = pd.Series(pd.date_range("2026-08-01 00:00", periods=6, freq="h", tz="UTC"))
+    values = pd.Series([10.0, 11, 12, 13, 14, 15])
+    forward = _forward_only(values, times, split)
+    # History (before the split) is blanked; the forecast (from the split on) is kept verbatim.
+    assert forward.iloc[:3].isna().all()
+    assert forward.iloc[3:].tolist() == [13.0, 14.0, 15.0]
+    assert values.iloc[0] == 10.0  # the input is not mutated (a copy is returned)
+
+
+def test_forecast_split_is_last_actual_not_now() -> None:
+    times = pd.Series(pd.date_range("2026-08-01 00:00", periods=6, freq="h", tz="UTC"))
+    now = pd.Timestamp("2026-08-01 02:00", tz="UTC")
+    # Actuals are settled two hours past `now` (as ENTSO-E day-ahead runs to D+1), then NaN.
+    actual = pd.Series([10.0, 11, 12, 13, np.nan, np.nan])
+    assert _forecast_split(actual, times, now) == times.iloc[3]  # last non-NaN actual, not `now`
+    # With no actual at all, it falls back to `now`.
+    assert _forecast_split(pd.Series([np.nan] * 6), times, now) == now

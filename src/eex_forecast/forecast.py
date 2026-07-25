@@ -252,18 +252,49 @@ def _numeric_column(frame: pd.DataFrame, name: str) -> pd.Series:
     return pd.to_numeric(raw, errors="coerce")
 
 
+def _forward_only(values: pd.Series, times: pd.Series, split: pd.Timestamp) -> pd.Series:
+    """A copy of ``values`` with everything before ``split`` blanked to NaN, leaving only the forward
+    (``times >= split``) part. Used to plot the forecast over its genuine horizon only, so the in-sample
+    fit over history is not shown as a spuriously accurate day-ahead track record. ``split`` is the last
+    hour that still has an actual (kept in both series) so the two lines hand off there without a gap."""
+    forward = values.copy()
+    forward[(times < split).to_numpy()] = np.nan
+    return forward
+
+
+def _forecast_split(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> pd.Timestamp:
+    """The hour where the known price ends and the forecast takes over: the last non-NaN actual.
+
+    Not ``now`` - ENTSO-E day-ahead prices are settled through D+1, so the actual line runs past ``now``.
+    Splitting the forecast at ``now`` would overlap the two lines through the ``now`` -> D+1 gap where both
+    exist. Falls back to ``now`` only if there is no actual at all (an empty history)."""
+    has_actual = actual.notna()
+    return times[has_actual.to_numpy()].max() if bool(has_actual.any()) else now
+
+
 def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
-    """Plot recent actual price and the forecast on one axis, split at ``now``."""
+    """Plot recent actual price and the forecast on one axis, split where the known price ends.
+
+    Only the **out-of-sample tail** of the forecast is drawn - from the last settled actual onward. Over
+    the history the model produces an in-sample prediction that hugs the actual, but plotting it would
+    misrepresent the forecast as a saved day-ahead track record and look implausibly accurate; the honest
+    picture is actuals up to the split and the genuine forward forecast after it, with no overlap.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(12.0, 5.0))
+    actual_price = _numeric_column(frame, "price_actual_eur_mwh")
+    # Split at the last known price (actuals run past `now` to D+1), and show the forecast only from there
+    # on, so the in-sample history is not drawn shadowing the actual - see `_forecast_split`.
+    split = _forecast_split(actual_price, times, now)
+    forecast_price = _forward_only(_numeric_column(frame, "price_forecast_eur_mwh"), times, split)
     # Actual price in hard black, drawn on top of the forecast (zorder) so it stays readable.
     ax.plot(
         times,
-        _numeric_column(frame, "price_actual_eur_mwh"),
+        actual_price,
         color="black",
         linewidth=1.4,
         label="actual",
@@ -271,12 +302,12 @@ def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
     )
     ax.plot(
         times,
-        _numeric_column(frame, "price_forecast_eur_mwh"),
+        forecast_price,
         color="#4910bc",
         linewidth=1.3,
         label="forecast",
     )
-    ax.axvline(now, color="0.7", linestyle="--", linewidth=0.8)
+    ax.axvline(split, color="0.7", linestyle="--", linewidth=0.8)
     ax.set_xlabel("time (UTC)")
     ax.set_ylabel("EUR / MWh")
     ax.set_title(f"DE day-ahead price: {HORIZON_DAYS}-day forecast")
