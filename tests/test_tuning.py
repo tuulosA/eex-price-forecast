@@ -103,7 +103,7 @@ def test_save_tuning_report_writes_full_report(tmp_path: Path) -> None:
             "horizon_hours": 336,
             "seed": 42,
         },
-        "features": ["hour", "price_lag_336h", "wind"],
+        "features": ["hour", "price_lag_168h", "wind"],
         "cutoffs": ["2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"],
         "best_trial": {
             "trial": 5,
@@ -127,7 +127,7 @@ def test_save_tuning_report_writes_full_report(tmp_path: Path) -> None:
     assert payload["model"] == "price" and "tuned_at" in payload
     assert payload["config"]["n_trials"] == 40 and payload["config"]["min_train_days"] == 120
     assert payload["cutoffs"] == ["2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"]
-    assert payload["features"] == ["hour", "price_lag_336h", "wind"]
+    assert payload["features"] == ["hour", "price_lag_168h", "wind"]
     assert payload["best_trial"]["mean_rmse"] == 22.1
     assert payload["best_trial"]["folds"][0]["rmse"] == 20.0
     assert len(payload["all_trials"]) == 1

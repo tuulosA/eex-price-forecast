@@ -15,8 +15,9 @@ run `pytest`.
 Forecasting is two-stage: **weather → three generation sub-models → price model**.
 
 1. Sub-models `wind`, `solar`, `load` each learn a fundamental from weather + calendar features.
-2. The `price` model learns the day-ahead price from calendar + price lags (168 h / 336 h) + weather
-   aggregates + the three fundamentals.
+2. The `price` model learns the day-ahead price from calendar + the 168 h price lag + weather
+   aggregates + the three fundamentals. The lag is NaN past D+7 at serve (the look-back lands after the
+   issue date), so training reproduces that gap - see `model._apply_train_nan_lag_mask`.
 3. The fundamentals reach the price model through an **actual-or-forecast coalesce**
    (`features.fundamentals`): the measured value where a row has one, else the sub-model forecast. This
    is why a *single* feature builder serves both training (on measured fundamentals) and inference (on

@@ -471,7 +471,7 @@ DEFAULT_CUTOFF_START = "2025-01-01"
 # Tuning backtest horizon. Defaults to the **day-ahead** 24 h (not the full 14-day frame): the settled,
 # most-predictable, most-valuable part of the forecast. Tuning on the full horizon averages in the
 # near-unpredictable far tail and pulls the hyperparameters toward smooth, conservative settings that
-# under-serve D+1. Widen it to tune the curve.
+# under-serve D+1. Widen it to tune the whole 14-day curve.
 DAY_AHEAD_HORIZON_HOURS = 24
 
 _CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]

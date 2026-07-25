@@ -74,7 +74,7 @@ def test_save_ablation_report(tmp_path: Path) -> None:
     result = run_ablation(
         spec,
         frame,
-        ["price_lag_336h"],
+        ["price_lag_168h"],
         params=TINY,
         n_cutoffs=2,
         horizon_hours=48,
@@ -83,5 +83,5 @@ def test_save_ablation_report(tmp_path: Path) -> None:
     path = save_ablation_report(result, reports_dir=tmp_path)
     assert path.name == "price_ablation.json"
     payload = json.loads(path.read_text())
-    assert payload["model"] == "price" and payload["dropped"] == ["price_lag_336h"]
+    assert payload["model"] == "price" and payload["dropped"] == ["price_lag_168h"]
     assert "mae_delta" in payload

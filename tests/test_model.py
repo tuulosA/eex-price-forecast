@@ -11,8 +11,10 @@ import pytest
 
 from eex_forecast import model as model_ops
 from eex_forecast.model import (
+    _PRICE_LAG_COLUMN,
     REGISTRY,
     TrainedModel,
+    _apply_train_nan_lag_mask,
     _residual_diagnostics,
     capacity_scaled,
     load_params,
@@ -36,6 +38,21 @@ def test_train_predicts_non_negative_generation(timeseries_frame: pd.DataFrame) 
     assert predictions.notna().all()
     assert (predictions >= 0).all()  # generation cannot be negative (spec.non_negative)
     assert trained.feature_names  # the training feature order was recorded
+
+
+def test_train_nan_lag_mask_nulls_a_fraction_without_mutating_input() -> None:
+    matrix = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(2000.0), "other": np.arange(2000.0)})
+    out = _apply_train_nan_lag_mask(matrix)
+    assert 0.45 < out[_PRICE_LAG_COLUMN].isna().mean() < 0.55  # ~half, the far-horizon share
+    assert out["other"].equals(matrix["other"])  # only the lag column is touched
+    assert matrix[_PRICE_LAG_COLUMN].notna().all()  # caller's frame never mutated
+    again = _apply_train_nan_lag_mask(matrix)
+    assert out[_PRICE_LAG_COLUMN].isna().equals(again[_PRICE_LAG_COLUMN].isna())  # seeded
+
+
+def test_train_nan_lag_mask_is_noop_without_the_lag_column() -> None:
+    matrix = pd.DataFrame({"other": np.arange(100.0)})  # sub-model matrices have no price lag
+    assert _apply_train_nan_lag_mask(matrix) is matrix
 
 
 def test_save_load_round_trip(timeseries_frame: pd.DataFrame, tmp_path: Path) -> None:
