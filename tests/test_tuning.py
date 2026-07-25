@@ -15,8 +15,10 @@ from eex_forecast.tuning import (
     TuneResult,
     evaluate_params,
     save_tuning_report,
+    seed_list,
     tune,
     walk_forward_cutoffs,
+    walk_forward_metrics_seeded,
 )
 
 TINY = {
@@ -70,6 +72,29 @@ def test_evaluate_params_returns_finite_mae(timeseries_frame: pd.DataFrame) -> N
         REGISTRY["wind"], timeseries_frame, TINY, cutoffs=cutoffs, horizon_hours=48
     )
     assert np.isfinite(mae) and mae >= 0
+
+
+def test_seed_list_is_deterministic_and_starts_at_the_default() -> None:
+    assert seed_list(1) == [42]  # one seed reproduces the production default
+    seeds = seed_list(5)
+    assert len(seeds) == len(set(seeds)) == 5 and seeds[0] == 42  # distinct, deterministic
+    with pytest.raises(ValueError):
+        seed_list(0)
+
+
+def test_walk_forward_metrics_seeded_reports_spread(timeseries_frame: pd.DataFrame) -> None:
+    cutoffs = walk_forward_cutoffs(
+        timeseries_frame["timestamp"], horizon_hours=48, n_cutoffs=3, min_train_days=30
+    )
+    one = walk_forward_metrics_seeded(
+        REGISTRY["wind"], timeseries_frame, TINY, cutoffs=cutoffs, horizon_hours=48, seeds=[42]
+    )
+    assert one["std_mae"] == 0.0 and len(one["per_seed_mae"]) == 1  # single seed -> no spread
+    many = walk_forward_metrics_seeded(
+        REGISTRY["wind"], timeseries_frame, TINY, cutoffs=cutoffs, horizon_hours=48, seeds=seed_list(4)
+    )
+    assert len(many["per_seed_mae"]) == 4 and many["std_mae"] >= 0.0
+    assert np.isfinite(many["mean_mae"]) and many["seeds"] == seed_list(4)
 
 
 def test_tune_returns_complete_params() -> None:

@@ -85,3 +85,32 @@ def test_save_ablation_report(tmp_path: Path) -> None:
     payload = json.loads(path.read_text())
     assert payload["model"] == "price" and payload["dropped"] == ["price_lag_168h"]
     assert "mae_delta" in payload
+
+
+def test_run_ablation_with_seeds_reports_paired_spread() -> None:
+    frame = make_timeseries(periods=24 * 120)
+    result = run_ablation(
+        REGISTRY["price"],
+        frame,
+        ["price_lag_168h"],
+        params=TINY,
+        n_cutoffs=2,
+        horizon_hours=48,
+        min_train_days=30,
+        seeds=3,
+    )
+    assert len(result.per_seed_delta) == 3  # one paired delta per seed
+    assert result.delta_std >= 0.0
+    assert isinstance(result.decisive, bool)
+    assert result.report["decisive"] == result.decisive
+    assert result.report["config"]["seeds"] == [42, 1055, 2068]  # deterministic seed list
+    assert "std_mae" in result.report["full"] and "per_seed_delta" in result.report
+
+
+def test_run_ablation_single_seed_has_zero_spread() -> None:
+    frame = make_timeseries(periods=24 * 120)
+    result = run_ablation(
+        REGISTRY["price"], frame, ["price_lag_168h"], params=TINY, n_cutoffs=2, horizon_hours=48,
+        min_train_days=30,
+    )
+    assert len(result.per_seed_delta) == 1 and result.delta_std == 0.0 and result.decisive is False
