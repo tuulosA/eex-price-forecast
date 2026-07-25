@@ -35,7 +35,7 @@ src/eex_forecast/
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
   sources/entsoe.py    # DE price + wind/solar/load actuals + installed capacity (entsoe-py)
   sources/nuclear.py   # cross-border nuclear availability = capacity - A80/B14 outages (known-ahead)
-  sources/ntc.py       # per-border month-ahead transfer capacity (NTC), import/export (known-ahead)
+  sources/ntc.py       # per-border transfer capacity (NTC), week-ahead over month-ahead, import/export (known-ahead)
   weather/
     geometry.py        # download land + EEZ GeoJSON (GISCO / Marine Regions)
     candidates.py      # candidate points (pure-Python point-in-ring; no shapely)
