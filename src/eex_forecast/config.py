@@ -53,10 +53,11 @@ NUCLEAR_COLUMN = "nuclear_available_mw"
 
 # Cross-border transfer capacity (NTC). The interconnectors cap how much power can flow between DE and each
 # neighbour, so they set how tightly the zones couple: ample NTC pulls prices together, a reduced border
-# (maintenance/outage) lets a zone decouple and spike. We fetch month-ahead forecasted NTC [11.1] per
-# border in both directions - which, like nuclear outages, is published ahead and so covers the forecast
-# horizon. Borders (label -> entsoe-py zone) are DE's month-ahead-publishing neighbours. Per-border columns
-# ntc_imp_<b> (into DE) / ntc_exp_<b> (out of DE) are stored; the price model reads the summed totals.
+# (maintenance/outage) lets a zone decouple and spike. We fetch forecasted NTC [11.1] per border in both
+# directions - week-ahead blended over month-ahead (near week refined, far horizon on month-ahead) - which,
+# like nuclear outages, is published ahead and so covers the forecast horizon. Borders (label -> entsoe-py
+# zone) are DE's NTC-publishing neighbours. Per-border columns ntc_imp_<b> (into DE) / ntc_exp_<b> (out of
+# DE) are stored; the price model reads the summed totals.
 NTC_BORDERS: dict[str, str] = {
     "at": "AT",
     "be": "BE",
