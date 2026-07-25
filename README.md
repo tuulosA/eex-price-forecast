@@ -208,11 +208,11 @@ zone into one column:
 nuclear_available_mw = installed_nuclear_capacity − Σ(unavailable from outages)
 ```
 
-Unavailability comes from ENTSO-E *Unavailability of Generation Units* (documentType A80, psrType B14),
-via entsoe-py: each outage carries the unit's installed capacity and an available-capacity step profile,
-so per unit `unavailable = nominal − available`, summed over the zone. Installed capacity is the A68
-yearly figure, forward-filled. Zones are configurable (`NUCLEAR_ZONES`, France today; extensible to
-BE/CZ).
+Unavailability comes from ENTSO-E [*Unavailability of Generation & Production Units* [15.1.A-D]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16652173943828-Planned-Unavailability-Changes-in-Actual-Availability-of-Generation-Production-Units-15-1-A-15-1-B-15-1-C-15-1-D)
+(documentType A80, psrType B14), via entsoe-py: each outage carries the unit's installed capacity and an
+available-capacity step profile, so per unit `unavailable = nominal − available`, summed over the zone.
+Installed capacity is the yearly [*Installed Generation Capacity Aggregated* [14.1.A]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16648300912916-Installed-Generation-Capacity-Aggregated-14-1-A)
+figure (A68), forward-filled. Zones are configurable (`NUCLEAR_ZONES`, France today; extensible to BE/CZ).
 
 ```bash
 eex backfill nuclear --start 2023-01-01     # history; --end reaches D+2 by default
@@ -235,10 +235,12 @@ eex backfill ntc --start 2023-01-01         # per-border NTC (week-ahead over mo
 
 `eex backfill ntc` fetches forecasted NTC [11.1] for each of DE's borders (AT, BE, CZ, DK1, DK2, FR, NL,
 NO2, SE4) in both directions and stores per-border columns `ntc_imp_<b>` (into DE) and `ntc_exp_<b>` (out
-of DE). It **blends two horizons per day** — **week-ahead** (the more refined revision, ~1 week out)
-where published, falling back to **month-ahead** (coarser, but spanning the whole month) for the far
-horizon week-ahead has not reached — so a forecast's near ~week gets the sharper level and its second
-week gets month-ahead. Both publish ahead, so this is real across the horizon (refetched automatically).
+of DE). It **blends two horizons per day**: [*Forecasted Week-ahead Transfer Capacities* [11.1]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16647273283476-Forecasted-Week-ahead-Transfer-Capacities-11-1)
+(the more refined revision, ~1 week out) where published, falling back to [*Forecasted Month-ahead
+Transfer Capacities* [11.1]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16647321153428-Forecasted-Month-ahead-Transfer-Capacities-11-1)
+(coarser, but spanning the whole month) for the far horizon week-ahead has not reached — so a forecast's
+near ~week gets the sharper level and its second week gets month-ahead. Both publish ahead, so this is
+real across the horizon (refetched automatically).
 The price model reads the two **totals** (`ntc_imp_total`, `ntc_exp_total`) — the low-dimensional "how
 coupled is DE right now" signal — keeping the per-border detail in the database for analysis.
 
@@ -373,8 +375,13 @@ All three cross-border drivers set out originally — [neighbour wind](#neighbou
 
 ## Data sources
 
-- [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — prices, generation, load, outages, NTC.
-- [Open-Meteo](https://open-meteo.com/) — ECMWF-based weather history and forecast.
+- [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — [Energy Prices [12.1.D]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16647234190100-Energy-Prices-12-1-D)
+  (the DE day-ahead forecast target), [Actual Generation per Production Type [16.1.B&C]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16648290299284-Actual-Generation-per-Production-Type-16-1-B-C)
+  (wind + solar), and [Actual Total Load [6.1.A]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16647979768084-Actual-Total-Load-Day-ahead-Per-Bidding-Zone-6-1-A-6-1-B).
+  Installed capacity, nuclear outages, and transfer capacity (NTC) are linked in their sections above.
+- [Open-Meteo](https://open-meteo.com/) — [ECMWF Weather Forecast API](https://open-meteo.com/en/docs/ecmwf-api)
+  (IFS HRES, the forward weather) and the [Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
+  (ERA5 / IFS reanalysis, the training history).
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) — country land polygons.
 - [Marine Regions](https://www.marineregions.org/) — EEZ / maritime polygons (offshore points).
 
