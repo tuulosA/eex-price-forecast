@@ -50,7 +50,7 @@ from eex_forecast.features import (
     weather_strategy_block,
 )
 from eex_forecast.model import REGISTRY, ModelSpec, load_params
-from eex_forecast.tuning import walk_forward_cutoffs, walk_forward_metrics
+from eex_forecast.tuning import seed_list, walk_forward_cutoffs, walk_forward_metrics_seeded
 from eex_forecast.weather.point_search import load_points_config
 
 logger = logging.getLogger(__name__)
@@ -128,6 +128,7 @@ def run_aggregation(
     n_regions: int = 3,
     capacity_scaling: bool = True,
     coords: dict[str, tuple[float, float]] | None = None,
+    seeds: int = 1,
 ) -> AggregationResult:
     """Score each weather-aggregation ``strategy`` for ``fundamental`` by walk-forward MAE/RMSE.
 
@@ -143,6 +144,7 @@ def run_aggregation(
     if coords is None:
         coords = load_coords(fundamental)
     params = params or load_params(fundamental)
+    seed_values = seed_list(seeds)
     cutoffs = walk_forward_cutoffs(
         frame[TIMESTAMP],
         horizon_hours=horizon_hours,
@@ -171,8 +173,8 @@ def run_aggregation(
             capacity_scaling=capacity_scaling,
         )
         n_features = spec.build_features(frame).shape[1]
-        metrics = walk_forward_metrics(
-            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
+        metrics = walk_forward_metrics_seeded(
+            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
         )
         variants.append(
             {
@@ -180,16 +182,18 @@ def run_aggregation(
                 "n_features": n_features,
                 "capacity_scaled": capacity_scaling,
                 "mean_mae": round(metrics["mean_mae"], 4),
+                "std_mae": round(metrics["std_mae"], 4),
                 "mean_rmse": round(metrics["mean_rmse"], 4),
                 "folds": metrics["folds"],
             }
         )
         logger.info(
-            "[aggregate:%s] %-8s | %2d features | MAE %.3f | RMSE %.3f",
+            "[aggregate:%s] %-8s | %2d features | MAE %.3f +/- %.3f | RMSE %.3f",
             fundamental,
             strategy,
             n_features,
             metrics["mean_mae"],
+            metrics["std_mae"],
             metrics["mean_rmse"],
         )
 
@@ -201,6 +205,7 @@ def run_aggregation(
             "min_train_days": min_train_days,
             "n_regions": n_regions,
             "capacity_scaling": capacity_scaling,
+            "seeds": seed_values,
             "params": params,
         },
         "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
@@ -237,6 +242,7 @@ def run_neighbour_aggregation(
     horizon_hours: int = HORIZON_DAYS * 24,
     min_train_days: int = 120,
     cutoff_start: pd.Timestamp | str | None = None,
+    seeds: int = 1,
 ) -> AggregationResult:
     """Score each neighbour-wind aggregation ``strategy`` by the **price** model's walk-forward MAE/RMSE.
 
@@ -253,6 +259,7 @@ def run_neighbour_aggregation(
         )
     base = REGISTRY["price"]
     params = params or load_params("price")
+    seed_values = seed_list(seeds)
     cutoffs = walk_forward_cutoffs(
         frame[TIMESTAMP],
         horizon_hours=horizon_hours,
@@ -277,23 +284,25 @@ def run_neighbour_aggregation(
             build_features=partial(price_features_with_neighbours, neighbour_strategy=strategy),
         )
         n_features = spec.build_features(frame).shape[1]
-        metrics = walk_forward_metrics(
-            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
+        metrics = walk_forward_metrics_seeded(
+            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
         )
         variants.append(
             {
                 "strategy": strategy,
                 "n_features": n_features,
                 "mean_mae": round(metrics["mean_mae"], 4),
+                "std_mae": round(metrics["std_mae"], 4),
                 "mean_rmse": round(metrics["mean_rmse"], 4),
                 "folds": metrics["folds"],
             }
         )
         logger.info(
-            "[aggregate:neighbour] %-12s | %2d features | MAE %.3f | RMSE %.3f",
+            "[aggregate:neighbour] %-12s | %2d features | MAE %.3f +/- %.3f | RMSE %.3f",
             strategy,
             n_features,
             metrics["mean_mae"],
+            metrics["std_mae"],
             metrics["mean_rmse"],
         )
 
@@ -303,6 +312,7 @@ def run_neighbour_aggregation(
             "n_cutoffs": len(cutoffs),
             "horizon_hours": horizon_hours,
             "min_train_days": min_train_days,
+            "seeds": seed_values,
             "params": params,
         },
         "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],

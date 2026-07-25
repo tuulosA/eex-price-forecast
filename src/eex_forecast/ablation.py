@@ -25,30 +25,46 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from eex_forecast.config import ABLATION_DIR, HORIZON_DAYS
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import REGISTRY, FeatureBuilder, ModelSpec, load_params
-from eex_forecast.tuning import walk_forward_cutoffs, walk_forward_metrics
+from eex_forecast.tuning import seed_list, walk_forward_cutoffs, walk_forward_metrics_seeded
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
 class AblationResult:
-    """The full-vs-reduced comparison: what was dropped, both metric sets, and the JSON report."""
+    """The full-vs-reduced comparison: what was dropped, both metric sets, and the JSON report.
+
+    ``full`` / ``reduced`` are seeded metrics (across-seed mean + std). ``per_seed_delta`` pairs the two
+    by seed (``reduced - full`` MAE per seed), so the delta's own run-to-run spread can be judged.
+    """
 
     model: str
     dropped: list[str]
     full: dict[str, Any]
     reduced: dict[str, Any]
+    per_seed_delta: list[float]
     report: dict[str, Any]
 
     @property
     def mae_delta(self) -> float:
-        """Reduced minus full mean MAE - negative means dropping the features helped."""
-        return float(self.reduced["mean_mae"] - self.full["mean_mae"])
+        """Mean paired MAE delta across seeds - negative means dropping the features helped."""
+        return float(np.mean(self.per_seed_delta))
+
+    @property
+    def delta_std(self) -> float:
+        """Across-seed sample std of the paired delta (0 with a single seed)."""
+        return float(np.std(self.per_seed_delta, ddof=1)) if len(self.per_seed_delta) > 1 else 0.0
+
+    @property
+    def decisive(self) -> bool:
+        """The delta clears run-to-run noise: more than one seed and ``|mean| > std``."""
+        return len(self.per_seed_delta) > 1 and abs(self.mae_delta) > self.delta_std
 
 
 def feature_names(spec: ModelSpec, frame: pd.DataFrame) -> list[str]:
@@ -100,8 +116,13 @@ def run_ablation(
     n_cutoffs: int = 6,
     horizon_hours: int = HORIZON_DAYS * 24,
     min_train_days: int = 120,
+    seeds: int = 1,
 ) -> AblationResult:
-    """Score ``spec`` with its full feature set versus the set minus ``dropped`` (walk-forward MAE/RMSE)."""
+    """Score ``spec``'s full feature set versus the set minus ``dropped`` (walk-forward MAE/RMSE).
+
+    With ``seeds > 1`` each side is refit under several XGBoost seeds and the delta is paired per seed,
+    so its run-to-run spread is reported alongside the mean - a delta within that spread is not a result.
+    """
     names = feature_names(spec, frame)
     if not dropped:
         raise ValueError("No features selected to drop.")
@@ -110,6 +131,7 @@ def run_ablation(
         raise ValueError("Refusing to drop every feature - the model needs at least one.")
 
     params = params or load_params(spec.name)
+    seed_values = seed_list(seeds)
     cutoffs = walk_forward_cutoffs(
         frame[TIMESTAMP],
         horizon_hours=horizon_hours,
@@ -120,24 +142,34 @@ def run_ablation(
         spec, name=f"{spec.name}-drop", build_features=_drop_builder(spec.build_features, dropped)
     )
     logger.info(
-        "[drop:%s] full %d features vs reduced %d (dropping %d): %s",
+        "[drop:%s] full %d features vs reduced %d (dropping %d): %s | %d seed(s)",
         spec.name,
         len(names),
         len(remaining),
         len(dropped),
         ", ".join(dropped),
+        seeds,
     )
 
-    full = walk_forward_metrics(spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours)
-    reduced = walk_forward_metrics(
-        reduced_spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours
+    full = walk_forward_metrics_seeded(
+        spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
     )
+    reduced = walk_forward_metrics_seeded(
+        reduced_spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
+    )
+    per_seed_delta = [
+        r - f for f, r in zip(full["per_seed_mae"], reduced["per_seed_mae"], strict=True)
+    ]
+    mean_delta = float(np.mean(per_seed_delta))
+    delta_std = float(np.std(per_seed_delta, ddof=1)) if seeds > 1 else 0.0
     logger.info(
-        "[drop:%s] full MAE %.3f | reduced MAE %.3f | delta %+.3f",
+        "[drop:%s] full MAE %.3f | reduced MAE %.3f | delta %+.3f (+/- %.3f, %d seeds)",
         spec.name,
         full["mean_mae"],
         reduced["mean_mae"],
-        reduced["mean_mae"] - full["mean_mae"],
+        mean_delta,
+        delta_std,
+        seeds,
     )
 
     report: dict[str, Any] = {
@@ -145,19 +177,28 @@ def run_ablation(
             "n_cutoffs": len(cutoffs),
             "horizon_hours": horizon_hours,
             "min_train_days": min_train_days,
+            "seeds": seed_values,
             "params": params,
         },
         "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
         "dropped": dropped,
         "kept": remaining,
-        "full": {"mean_mae": round(full["mean_mae"], 4), "mean_rmse": round(full["mean_rmse"], 4)},
+        "full": {
+            "mean_mae": round(full["mean_mae"], 4),
+            "mean_rmse": round(full["mean_rmse"], 4),
+            "std_mae": round(full["std_mae"], 4),
+        },
         "reduced": {
             "mean_mae": round(reduced["mean_mae"], 4),
             "mean_rmse": round(reduced["mean_rmse"], 4),
+            "std_mae": round(reduced["std_mae"], 4),
         },
-        "mae_delta": round(reduced["mean_mae"] - full["mean_mae"], 4),
+        "mae_delta": round(mean_delta, 4),
+        "delta_std": round(delta_std, 4),
+        "decisive": bool(seeds > 1 and abs(mean_delta) > delta_std),
+        "per_seed_delta": [round(d, 4) for d in per_seed_delta],
     }
-    return AblationResult(spec.name, dropped, full, reduced, report)
+    return AblationResult(spec.name, dropped, full, reduced, per_seed_delta, report)
 
 
 def save_ablation_report(result: AblationResult, *, reports_dir: Path = ABLATION_DIR) -> Path:

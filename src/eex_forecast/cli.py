@@ -418,6 +418,20 @@ def analyze_correlation(
         typer.echo(f"  vs price: {top}")
 
 
+def _mae_cell(mean_mae: float, std_mae: float, seeds: int) -> str:
+    """``MAE x.xxx`` for one seed, ``MAE x.xxx +/- s.sss`` when averaging several."""
+    return f"MAE {mean_mae:.3f} +/- {std_mae:.3f}" if seeds > 1 else f"MAE {mean_mae:.3f}"
+
+
+def _best_within_noise(variants: list[dict[str, object]], seeds: int) -> str:
+    """Flag when the top strategy's lead over the runner-up is inside their combined seed spread."""
+    if seeds <= 1 or len(variants) < 2:
+        return ""
+    gap = float(variants[1]["mean_mae"]) - float(variants[0]["mean_mae"])  # type: ignore[arg-type]
+    spread = float(variants[0].get("std_mae", 0.0)) + float(variants[1].get("std_mae", 0.0))  # type: ignore[arg-type]
+    return " (within seed noise of #2)" if gap < spread else ""
+
+
 def _run_aggregation(
     fundamental: str,
     strategies: str,
@@ -426,6 +440,7 @@ def _run_aggregation(
     regions: int,
     capacity_scaling: bool,
     cutoff_start: str,
+    seeds: int,
 ) -> None:
     """Shared body for the ``analyze aggregation <fundamental>`` subcommands."""
     selected = tuple(name.strip() for name in strategies.split(",") if name.strip())
@@ -445,19 +460,23 @@ def _run_aggregation(
         cutoff_start=cutoff_start,
         n_regions=regions,
         capacity_scaling=capacity_scaling,
+        seeds=seeds,
     )
     path = aggregation.save_aggregation_report(result)
     scaling_label = "capacity factor" if capacity_scaling else "raw MW"
     typer.echo(
         f"{fundamental} weather-aggregation A/B "
-        f"({len(result.cutoffs)} cutoffs, {scaling_label}):"
+        f"({len(result.cutoffs)} cutoffs x {seeds} seed(s), {scaling_label}):"
     )
     for variant in result.variants:
         typer.echo(
             f"  {variant['strategy']:<9} {variant['n_features']:>3} feat | "
-            f"MAE {variant['mean_mae']:.3f} | RMSE {variant['mean_rmse']:.3f}"
+            f"{_mae_cell(variant['mean_mae'], variant['std_mae'], seeds)} | "
+            f"RMSE {variant['mean_rmse']:.3f}"
         )
-    typer.echo(f"  best: {result.best_strategy} | report -> {path}")
+    typer.echo(
+        f"  best: {result.best_strategy}{_best_within_noise(result.variants, seeds)} | report -> {path}"
+    )
 
 
 def _strategies_default(fundamental: str) -> str:
@@ -476,6 +495,9 @@ DAY_AHEAD_HORIZON_HOURS = 24
 
 _CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]
 _HorizonOpt = Annotated[int, typer.Option(help="Backtest horizon per cutoff (hours).")]
+_SeedsOpt = Annotated[
+    int, typer.Option(help="XGBoost seeds to average over; >1 reports mean +/- spread.")
+]
 _CutoffStartOpt = Annotated[
     str, typer.Option(help="Earliest walk-forward cutoff (recency floor), e.g. 2025-01-01.")
 ]
@@ -495,9 +517,12 @@ def aggregation_wind(
     regions: _RegionsOpt = 3,
     capacity_scaling: _CapacityOpt = True,
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
+    seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B wind's weather aggregation: mean / cube (mean(v^3)) / spread / stats / regional / raw."""
-    _run_aggregation("wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
+    _run_aggregation(
+        "wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start, seeds
+    )
 
 
 @aggregation_app.command("solar")
@@ -510,9 +535,12 @@ def aggregation_solar(
     regions: _RegionsOpt = 3,
     capacity_scaling: _CapacityOpt = True,
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
+    seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B solar's irradiance aggregation: mean / spread / stats / regional / raw."""
-    _run_aggregation("solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start)
+    _run_aggregation(
+        "solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start, seeds
+    )
 
 
 @aggregation_app.command("load")
@@ -524,10 +552,11 @@ def aggregation_load(
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
+    seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B load's temperature aggregation: mean / spread / stats / regional / raw (no capacity)."""
     _run_aggregation(
-        "load", strategies, cutoffs, horizon_hours, regions, False, cutoff_start
+        "load", strategies, cutoffs, horizon_hours, regions, False, cutoff_start, seeds
     )
 
 
@@ -539,6 +568,7 @@ def aggregation_neighbour(
     cutoffs: _CutoffsOpt = 6,
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
+    seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B how cross-border neighbour wind enters the PRICE model, scored by price walk-forward MAE.
 
@@ -559,15 +589,21 @@ def aggregation_neighbour(
         n_cutoffs=cutoffs,
         horizon_hours=horizon_hours,
         cutoff_start=cutoff_start,
+        seeds=seeds,
     )
     path = aggregation.save_neighbour_aggregation_report(result)
-    typer.echo(f"neighbour-wind A/B ({len(result.cutoffs)} cutoffs, price MAE in EUR/MWh):")
+    typer.echo(
+        f"neighbour-wind A/B ({len(result.cutoffs)} cutoffs x {seeds} seed(s), price MAE in EUR/MWh):"
+    )
     for variant in result.variants:
         typer.echo(
             f"  {variant['strategy']:<12} {variant['n_features']:>3} feat | "
-            f"MAE {variant['mean_mae']:.3f} | RMSE {variant['mean_rmse']:.3f}"
+            f"{_mae_cell(variant['mean_mae'], variant['std_mae'], seeds)} | "
+            f"RMSE {variant['mean_rmse']:.3f}"
         )
-    typer.echo(f"  best: {result.best_strategy} | report -> {path}")
+    typer.echo(
+        f"  best: {result.best_strategy}{_best_within_noise(result.variants, seeds)} | report -> {path}"
+    )
 
 
 @analyze_app.command("ablation")
@@ -581,11 +617,13 @@ def analyze_ablation(
     ] = None,
     cutoffs: _CutoffsOpt = 6,
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
+    seeds: _SeedsOpt = 1,
 ) -> None:
     """Feature ablation: remove chosen features and measure the loss (full vs reduced, walk-forward).
 
     With no --drop, lists the features numbered and prompts for which to remove; pass --drop for a
     non-interactive run. Works for any model - price lags/aggregates, or raw per-point sub-model columns.
+    Pass --seeds >1 to average over XGBoost seeds and judge the delta against run-to-run noise.
     """
     if target is ModelName.all:
         raise typer.BadParameter("Drop features from one model at a time (not 'all').")
@@ -609,16 +647,31 @@ def analyze_ablation(
         raise typer.BadParameter("No features selected to drop.")
 
     result = ablation.run_ablation(
-        spec, frame, dropped, n_cutoffs=cutoffs, horizon_hours=horizon_hours
+        spec, frame, dropped, n_cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seeds
     )
     path = ablation.save_ablation_report(result)
-    typer.echo(f"Feature ablation on '{target.value}' ({len(dropped)} dropped): {', '.join(dropped)}")
-    typer.echo(f"  full    MAE {result.full['mean_mae']:.3f} | RMSE {result.full['mean_rmse']:.3f}")
-    typer.echo(
-        f"  reduced MAE {result.reduced['mean_mae']:.3f} | RMSE {result.reduced['mean_rmse']:.3f} "
-        f"| MAE delta {result.mae_delta:+.3f}"
+    delta_cell = (
+        f"MAE delta {result.mae_delta:+.3f} +/- {result.delta_std:.3f}"
+        if seeds > 1
+        else f"MAE delta {result.mae_delta:+.3f}"
     )
-    verdict = "helps (drop them)" if result.mae_delta < 0 else "hurts (keep them)"
+    typer.echo(
+        f"Feature ablation on '{target.value}' "
+        f"({len(dropped)} dropped, {len(result.report['cutoffs'])} cutoffs x {seeds} seed(s)): "
+        f"{', '.join(dropped)}"
+    )
+    typer.echo(f"  full    {_mae_cell(result.full['mean_mae'], result.full['std_mae'], seeds)}")
+    typer.echo(
+        f"  reduced {_mae_cell(result.reduced['mean_mae'], result.reduced['std_mae'], seeds)} "
+        f"| {delta_cell}"
+    )
+    direction = "helps (drop them)" if result.mae_delta < 0 else "hurts (keep them)"
+    if seeds > 1 and not result.decisive:
+        verdict = "within seed noise (inconclusive)"
+    elif seeds > 1:
+        verdict = f"{direction} - clears seed noise"
+    else:
+        verdict = direction
     typer.echo(f"  dropping {verdict} | report -> {path}")
 
 

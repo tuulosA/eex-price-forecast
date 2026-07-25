@@ -223,6 +223,58 @@ def walk_forward_metrics(
     return {"mean_mae": mean_mae, "mean_rmse": mean_rmse, "folds": folds}
 
 
+_BASE_SEED = 42  # the first seed equals the production default, so a 1-seed run reproduces the old point
+
+
+def seed_list(n_seeds: int) -> list[int]:
+    """``n_seeds`` deterministic, distinct XGBoost seeds (the first is the production default 42)."""
+    if n_seeds < 1:
+        raise ValueError("n_seeds must be >= 1.")
+    return [_BASE_SEED + 1013 * i for i in range(n_seeds)]
+
+
+def walk_forward_metrics_seeded(
+    spec: ModelSpec,
+    frame: pd.DataFrame,
+    params: dict[str, Any],
+    *,
+    cutoffs: list[pd.Timestamp],
+    horizon_hours: int,
+    seeds: list[int],
+) -> dict[str, Any]:
+    """Repeat :func:`walk_forward_metrics` once per seed (XGBoost ``random_state``).
+
+    A single walk-forward is a point estimate; gradient boosting has real run-to-run variance, so a
+    strategy/feature delta of ~1 EUR/MWh can be noise. Refitting under several seeds and reporting the
+    across-seed **mean and sample std** lets a comparison be weighed against that noise. Features are
+    built once (via :func:`_prepare`) and only the fit is repeated. With one seed the std is 0 and the
+    mean is the single run - identical to the old behaviour.
+    """
+    data = _prepare(spec, frame)
+    per_mae: list[float] = []
+    per_rmse: list[float] = []
+    folds0: list[dict[str, Any]] = []
+    for index, seed in enumerate(seeds):
+        folds, mae, rmse = _fold_metrics(
+            spec, data, {**params, "random_state": int(seed)}, cutoffs, horizon_hours
+        )
+        per_mae.append(mae)
+        per_rmse.append(rmse)
+        if index == 0:
+            folds0 = folds
+    multi = len(seeds) > 1
+    return {
+        "mean_mae": float(np.mean(per_mae)),
+        "std_mae": float(np.std(per_mae, ddof=1)) if multi else 0.0,
+        "mean_rmse": float(np.mean(per_rmse)),
+        "std_rmse": float(np.std(per_rmse, ddof=1)) if multi else 0.0,
+        "per_seed_mae": per_mae,
+        "per_seed_rmse": per_rmse,
+        "seeds": [int(seed) for seed in seeds],
+        "folds": folds0,
+    }
+
+
 def suggest_params(trial: optuna.Trial) -> dict[str, Any]:
     """Sample one XGBoost hyperparameter set (search space + the fixed params)."""
     return {
