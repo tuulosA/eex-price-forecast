@@ -172,6 +172,22 @@ def _last_complete_market_day_cut(coverage_end: pd.Timestamp | None) -> pd.Times
     return cut_market.tz_convert("UTC")
 
 
+def _first_market_day_start(times: pd.Series) -> pd.Timestamp:
+    """First Europe/Berlin midnight in the window - the start of a German delivery day.
+
+    The read window begins at ``now - history_days``, i.e. an arbitrary hour of day, so a plot drawn from
+    it starts mid-day. Snapping to the first delivery-day boundary (Berlin midnight = 22:00 UTC in summer,
+    23:00 UTC in winter) makes plots begin on a whole market day, mirroring the trailing
+    ``_last_complete_market_day_cut``. Returns a UTC timestamp present in the hourly window.
+    """
+    start_market = times.min().tz_convert(MARKET_TIMEZONE)
+    day_start = start_market.normalize()
+    if day_start < start_market:  # window opened after midnight -> the next delivery day is the first whole one
+        day_start = day_start + pd.Timedelta(days=1)
+    first_start: pd.Timestamp = day_start.tz_convert("UTC")
+    return first_start
+
+
 def run_forecast(
     db_path: str,
     *,
@@ -240,9 +256,14 @@ def run_forecast(
     result.to_csv(csv_path, index=False)
     logger.info("Wrote %d rows to %s", len(result), csv_path)
     if plot:
-        plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
-        plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")
-        plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
+        # Plot from the first whole delivery day (Berlin midnight), not the arbitrary hour the read window
+        # opened on; CSV/DB above keep the full window (the leading hours still feed the price lag).
+        view = (times >= _first_market_day_start(times)).to_numpy()
+        plot_frame = frame[view].reset_index(drop=True)
+        plot_times = pd.to_datetime(plot_frame[TIMESTAMP], utc=True)
+        plot_forecast(plot_frame, plot_times, now, FORECAST_DIR / "forecast.png")
+        plot_fundamentals(plot_frame, plot_times, now, FORECAST_DIR / "fundamentals.png")
+        plot_drivers(plot_frame, plot_times, now, FORECAST_DIR / "drivers.png")
     return result
 
 

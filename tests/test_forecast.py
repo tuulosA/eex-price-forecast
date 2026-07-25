@@ -12,6 +12,7 @@ from tests.conftest import make_timeseries
 from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
 from eex_forecast.forecast import (
+    _first_market_day_start,
     _forecast_split,
     _forward_only,
     _last_complete_market_day_cut,
@@ -113,6 +114,18 @@ def test_forward_only_blanks_history_keeps_forecast() -> None:
     assert forward.iloc[:3].isna().all()
     assert forward.iloc[3:].tolist() == [13.0, 14.0, 15.0]
     assert values.iloc[0] == 10.0  # the input is not mutated (a copy is returned)
+
+
+def test_first_market_day_start_snaps_to_berlin_midnight() -> None:
+    # Summer window opening mid-day (10:00 UTC): first Berlin midnight is the next 22:00 UTC.
+    summer = pd.Series(pd.date_range("2026-07-05 10:00", periods=48, freq="h", tz="UTC"))
+    assert _first_market_day_start(summer) == pd.Timestamp("2026-07-05 22:00", tz="UTC")
+    # Winter (CET = UTC+1): Berlin midnight is 23:00 UTC.
+    winter = pd.Series(pd.date_range("2026-01-05 10:00", periods=48, freq="h", tz="UTC"))
+    assert _first_market_day_start(winter) == pd.Timestamp("2026-01-05 23:00", tz="UTC")
+    # Already on a delivery-day boundary: kept as-is, not bumped a day forward.
+    on_edge = pd.Series(pd.date_range("2026-07-05 22:00", periods=48, freq="h", tz="UTC"))
+    assert _first_market_day_start(on_edge) == pd.Timestamp("2026-07-05 22:00", tz="UTC")
 
 
 def test_forecast_split_is_last_actual_not_now() -> None:
