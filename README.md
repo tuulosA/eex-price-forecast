@@ -399,4 +399,5 @@ matching history to train on, and the sub-1 °C offset is negligible next to the
 
 ## License
 
-MIT.
+Released under the [MIT License](LICENSE) — © 2026 Aleksi Tuulos. Free to use, modify, and distribute;
+provided as-is, without warranty.
