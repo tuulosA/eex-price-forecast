@@ -384,8 +384,9 @@ All three cross-border drivers set out originally — [neighbour wind](#neighbou
   (wind + solar), and [Actual Total Load [6.1.A]](https://transparencyplatform.zendesk.com/hc/en-us/articles/16647979768084-Actual-Total-Load-Day-ahead-Per-Bidding-Zone-6-1-A-6-1-B).
   Installed capacity, nuclear outages, and transfer capacity (NTC) are linked in their sections above.
 - [Open-Meteo](https://open-meteo.com/) — [ECMWF Weather Forecast API](https://open-meteo.com/en/docs/ecmwf-api)
-  (IFS HRES, the forward weather) and the [Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api)
-  (ERA5 / IFS reanalysis, the training history).
+  for forward weather and the [Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api)
+  for archived ECMWF IFS forecasts used as training history. The project does not use ERA5 or other
+  reanalysis weather, keeping the training and serving distributions on the same forecast model.
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) — country land polygons.
 - [Marine Regions](https://www.marineregions.org/) — EEZ / maritime polygons (offshore points).
 
