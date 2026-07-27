@@ -146,3 +146,28 @@ def test_build_candidates_from_top_level_list_geojson(tmp_path: Path) -> None:
     candidates = build_candidates(path, mode="zones", points=10)
     assert len(candidates) == 10
     assert all(c.source == "zones" for c in candidates)
+
+
+def test_build_candidates_resolution_scales_with_area(tmp_path: Path) -> None:
+    # A big square so the grid resolution (not a fixed count) drives how many candidates appear.
+    box = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"CNTR_ID": "DE"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[0, 45], [10, 45], [10, 55], [0, 55], [0, 45]]],
+                },
+            }
+        ],
+    }
+    path = tmp_path / "box.geojson"
+    path.write_text(json.dumps(box), encoding="utf-8")
+    wide = (40.0, 60.0, -5.0, 15.0)  # clipped down to the box's own extent
+
+    coarse = build_candidates(path, mode="zones", spacing_km=250.0, bbox=wide)
+    fine = build_candidates(path, mode="zones", spacing_km=80.0, bbox=wide)
+    assert len(fine) > len(coarse)  # finer resolution -> more candidates (count follows area)
+    assert all(45.0 <= c.lat <= 55.0 and 0.0 <= c.lon <= 10.0 for c in fine)
