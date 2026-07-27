@@ -92,7 +92,27 @@ copy .env.example .env.local     # Windows  (cp on macOS / Linux)
 Open `.env.local` and set your `ENTSO_E_API_KEY` (from the ENTSO-E Transparency Platform). With the venv
 active, the `eex` command is on your PATH; every command below is identical across shells.
 
-### First-time setup
+### Minimum setup for a forecast
+
+The repository already includes the selected weather anchors in `config/weather_points.json` and tuned
+model parameters in `config/hyperparams.json`. To use those committed choices, you can skip geometry,
+candidate generation, point ranking, and hyperparameter tuning. Starting with an empty database, the
+minimum path is:
+
+```bash
+eex db init
+eex backfill entsoe --start 2023-01-01      # targets, actuals, and installed capacity
+eex backfill weather --start 2023-01-01     # history at the committed weather points
+eex backfill nuclear --start 2023-01-01     # French nuclear availability
+eex backfill ntc --start 2023-01-01         # cross-border transfer capacity
+eex model train                             # train all four models with committed hyperparameters
+eex forecast --plot                         # first forecast -> data/forecast/
+```
+
+These commands still fetch the underlying history locally; the database and trained model artifacts are
+runtime files and are not committed.
+
+### Full first-time setup and experimentation
 
 Building from empty is an ordered sequence — each step feeds the next:
 
@@ -103,6 +123,7 @@ eex geo download                            # one-time geometry download (land +
 eex points build --mode zones               # German wind candidates (land + sea)
 eex points build --mode land                # German temperature / solar candidates (land only)
 eex backfill entsoe --start 2023-01-01      # DE price + wind/solar/load actuals + installed capacity
+# Ranking accepts either --year YYYY or both --start YYYY-MM-DD --end YYYY-MM-DD.
 eex points rank --target wind --year 2025   # choose the best German points vs each actual (writes config)
 eex points rank --target temp --year 2025
 eex points rank --target solar --year 2025
@@ -118,6 +139,13 @@ eex model tune --target price               # optional but recommended (also win
 eex model train                             # train all four models
 eex forecast --plot                         # first 14-day forecast -> data/forecast/
 ```
+
+This full path is the experimentation surface rather than a mandatory prerequisite. You can generate
+different candidate grids, choose another ranking year or explicit `--start`/`--end` window, retain a
+different number of points with `--count`, compare weather-aggregation strategies, run feature
+ablations, and tune each model independently. The committed point selection and hyperparameters are a
+reproducible starting point, not restrictions on rebuilding the forecast around your own data window
+and modelling choices.
 
 ### The daily loop
 
