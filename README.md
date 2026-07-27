@@ -1,9 +1,9 @@
 # eex-price-forecast
 
 Short-term **day-ahead electricity price forecasting for Germany** (the EEX / EPEX SPOT DE-LU bidding
-zone), out to a 14-day horizon. It finds the weather grid points that best explain German wind, solar,
-and load, forecasts those fundamentals, and turns them — together with the cross-border drivers that
-move a coupled market — into a price.
+zone), covering up to 14 unknown German delivery days after the latest published price. It finds the
+weather grid points that best explain German wind, solar, and load, forecasts those fundamentals, and
+turns them — together with the cross-border drivers that move a coupled market — into a price.
 
 ![Example 14-day DE day-ahead price forecast](data/forecast/forecast.png)
 
@@ -25,10 +25,12 @@ move a coupled market — into a price.
    the known-ahead cross-border drivers (French nuclear availability, interconnector transfer capacity).
 3. **Two-stage forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and load from
    the weather; the **price model** then forecasts the day-ahead price from those fundamentals plus
-   calendar, the weekly price lag, raw-weather aggregates, and the cross-border drivers. Wind and solar
-   are learned as a fraction of **installed capacity** (from ENTSO-E) so they stay calibrated as the
-   fleet grows; fitting uses **early stopping** with residual **diagnostics** (Durbin-Watson, ACF);
-   hyperparameters are **Optuna**-tuned by walk-forward backtest.
+   calendar, the weekly price lag, weather aggregates, and the cross-border drivers. Wind and solar are
+   learned as a fraction of **installed capacity** (from ENTSO-E) so they stay calibrated as the fleet
+   grows. Solar irradiance is summarized across the selected points by mean/sum/std/min/max, with a
+   physical zero-generation constraint when every point is dark. Fitting uses **early stopping** with
+   residual **diagnostics** (Durbin-Watson, ACF); hyperparameters are **Optuna**-tuned by walk-forward
+   backtest.
 
 Actuals and forecasts are stored in **separate columns** for every series, so predictions never
 overwrite measured values.
@@ -45,7 +47,7 @@ src/eex_forecast/
   weather/
     geometry.py        # download GISCO land + Marine-Regions EEZ GeoJSON
     candidates.py      # candidate points: land+sea ("zones") | land-only; point-in-ring + spread
-    openmeteo.py       # Open-Meteo client (archive history + forecast)
+    openmeteo.py       # Open-Meteo client (archived ECMWF forecasts + live forecast)
     point_search.py    # rank candidates by best lagged Pearson vs a target (DE actuals; DE price for neighbours)
   analysis/            # correlation matrix + candidate/ranked point map
   backfill.py          # orchestrate ENTSO-E + weather backfills
@@ -105,7 +107,7 @@ eex points rank --target wind --year 2025   # choose the best German points vs e
 eex points rank --target temp --year 2025
 eex points rank --target solar --year 2025
 
-eex points neighbours build                 # cross-border wind candidates + ranking
+eex points neighbours build                 # build cross-border wind candidates
 eex points neighbours rank --year 2025
 
 eex backfill weather --start 2023-01-01     # weather history at every chosen point (German + neighbour)
@@ -143,16 +145,17 @@ forecast step fetches those once over both windows rather than `update` re-pulli
 `forecast` fetches the Open-Meteo weather forecast (and the known-ahead nuclear/NTC series over the
 recent + horizon window), runs the sub-models to fill the fundamentals, then the price model, and writes
 `data/forecast/forecast.csv` — the actual price alongside all four forecast series. `--plot` adds three
-PNGs: `forecast.png` (price actual vs forecast), `fundamentals.png` (the sub-model forecasts), and
-`drivers.png` (a panel per price-model driver group — wind speed, irradiance, temperature, neighbour
-wind, nuclear, transfer capacity — over the window, weekends/holidays shaded and split at *now*).
-`--write-db` also stores the forecast.
+PNGs: `forecast.png` (actual price up to the last settled hour, then only the genuinely out-of-sample
+forecast), `fundamentals.png` (the sub-model forecasts), and `drivers.png` (a panel per price-model
+driver group — wind speed, irradiance, temperature, neighbour wind, nuclear, transfer capacity — over
+the window, weekends/holidays shaded and split at *now*). `--write-db` also stores the forecast.
 
-It predicts the **whole read window**, not just the future: rows that already have an actual get an
-in-sample prediction that hugs it, so the plotted line overlaps the actuals for context and continues
-past them as the true forecast. The genuinely out-of-sample tail — the part with no actual yet — begins
-at **D+2**, since ENTSO-E day-ahead prices are settled through D+1 (the command summary reports stats
-over that tail only).
+The models predict the **whole read window** while history supplies lag features and plotting context,
+but the price plot deliberately hides the in-sample fitted values. The forward window begins one hour
+after the latest published day-ahead price and targets the next **14 German delivery days**: before
+tomorrow's prices publish it begins at D+1; afterward it shifts to D+2. If ECMWF weather stops during
+the final delivery day, that incomplete day is dropped rather than publishing predictions from missing
+weather. The command summary reports statistics over this genuinely out-of-sample tail only.
 
 ### Quick inspection
 
@@ -258,15 +261,16 @@ live), so the numbers reflect real forecasting rather than a leak.
 
 ### Aggregation — comparing feature representations
 
-Each generation/load sub-model reduces its ranked per-point weather columns to a few features. *How*
+Each generation/load sub-model reduces its ranked per-point weather columns into model features. *How*
 matters — wind power is convex (~v³) in speed and capacity is concentrated in the north, so the plain
-national **mean** discards spatial information a richer aggregation keeps. `analyze aggregation` A/Bs the
-strategies (report → `data/aggregation/`). It found **`raw`** (every per-point column) best for all
-three, decisively for wind (~25% MAE over the mean) — so **all three sub-models default to `raw`**.
+national **mean** can discard spatial information a richer representation keeps. `analyze aggregation`
+A/Bs the strategies (report → `data/aggregation/`). Wind and load use **`raw`** (every per-point column);
+solar uses **`stats`**, reducing the existing irradiance points each hour to mean, sum, standard
+deviation, minimum, and maximum.
 
 ```bash
 eex analyze aggregation wind                # compare wind strategies
-eex analyze aggregation solar               # solar (irradiance near-uniform -> raw's gain is marginal)
+eex analyze aggregation solar               # compare the adopted solar stats with other representations
 eex analyze aggregation load                # load (temperature has spatial structure)
 eex analyze aggregation neighbour           # how neighbour wind enters the PRICE model
 eex analyze aggregation wind --strategies mean,raw --cutoffs 8 --seeds 5
@@ -394,9 +398,11 @@ All three cross-border drivers set out originally — [neighbour wind](#neighbou
 `shortwave_radiation` (solar). Two auxiliary variables are fetched at an existing role's coordinates with
 **no separate ranking**: each wind point also fetches `temperature_2m` (`t_ws_*`) as an air-density proxy,
 and each load point also fetches `shortwave_radiation` (`ghi_t_*`) as a load driver (daylight activity,
-behind-the-meter solar). Temperature is taken at **2 m even for wind points**: Open-Meteo's hub-height
-temperatures exist only on the forecast endpoint (the ERA5 archive returns them all-null), so there is no
-matching history to train on, and the sub-1 °C offset is negligible next to the seasonal/diurnal swing.
+behind-the-meter solar). Temperature is taken at **2 m even for wind points**, using the same variable
+from archived and live ECMWF IFS forecasts to avoid a train/serve mismatch. Open-Meteo exposes ECMWF
+IFS wind at 100 m but does not expose temperature at 100 m; its nearby hub-height temperature fields
+(80/120 m) are unsupported and return null for this model on both endpoints. The populated 2 m series
+is therefore used as the consistent air-density proxy alongside 100 m wind.
 
 ## License
 
