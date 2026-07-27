@@ -1,8 +1,10 @@
 """Generate candidate weather points across Germany from GeoJSON polygons.
 
-Pure-Python, no GIS dependency: read country polygons from GeoJSON, sample a hex-offset grid, keep the
-points that fall inside the polygons (ray-casting point-in-polygon), then pick a spatially well-spread
-subset by farthest-point sampling. Two geometry modes:
+Pure-Python, no GIS dependency: read country polygons from GeoJSON, sample a hex-offset grid **at a fixed
+km resolution** so the candidate count scales with country area (rather than a fixed number that
+over-samples small countries and under-samples large ones), keep the points inside the polygons
+(ray-casting point-in-polygon), and clamp the count to a ``[min, max]`` range via farthest-point spread.
+Two geometry modes:
 
 - ``zones`` - land **and** maritime (EEZ) polygons -> includes offshore points, for **wind**.
 - ``land``  - land-only polygons, for **temperature** and **solar**.
@@ -221,17 +223,40 @@ def _sample_pool(rings: list[Ring], bbox: BBox, target_pool: int) -> list[LatLon
     return pool
 
 
+# Resolution-based candidate default: one grid at ~SPACING_KM, so the candidate count scales with country
+# area (a big country gets more points than a small one, at the same density). ~50 km approximates
+# Germany's historical density (357k km^2 / 150 pts) and is roughly the length over which hourly wind is
+# near-identical, so finer sampling would just add redundant candidates.
+DEFAULT_SPACING_KM = 50.0
+
+
+def _grid_pool_at_spacing(rings: list[Ring], bbox: BBox, spacing_km: float) -> list[LatLon]:
+    """Grid-sample inside the polygons at ~``spacing_km`` resolution (so the count scales with area)."""
+    lat_min, lat_max, lon_min, lon_max = bbox
+    mean_lat = math.radians((lat_min + lat_max) / 2)
+    lat_step_deg = spacing_km / 111.0
+    lon_step_deg = spacing_km / (111.0 * max(math.cos(mean_lat), 0.1))
+    rows = max(2, round((lat_max - lat_min) / lat_step_deg) + 1)
+    cols = max(2, round((lon_max - lon_min) / lon_step_deg) + 1)
+    return _grid_points_in_rings(rings, bbox, rows, cols)
+
+
 # -- public API -----------------------------------------------------------------
 def build_candidates(
     geojson_path: Path,
     *,
     mode: Mode,
-    points: int = 150,
+    spacing_km: float = DEFAULT_SPACING_KM,
+    points: int | None = None,
     bbox: BBox = DE_BBOX,
     country: str = "DE",
     identifiers: frozenset[str] | None = None,
 ) -> list[Candidate]:
-    """Build ``points`` well-spread candidate coordinates inside ``country`` for the given geometry mode.
+    """Build candidate coordinates inside ``country`` for the given geometry mode.
+
+    By default the count is **resolution-based**: one grid at ~``spacing_km``, so a big country gets more
+    candidates than a small one at the same density. Passing an explicit ``points`` bypasses the spacing
+    and returns *exactly* that many well-spread points (the legacy fixed-count mode).
 
     Defaults to Germany. For a neighbour, pass its ``country`` code and ``identifiers`` (and a wide
     ``bbox`` such as ``EUROPE_BBOX``); the bbox is clipped to the country's own ring extent, so a
@@ -240,8 +265,13 @@ def build_candidates(
     identifiers = identifiers or COUNTRY_IDENTIFIERS.get(country.upper(), _DE_IDENTIFIERS)
     rings = country_rings(geojson_path, identifiers)
     bbox = _clip_bbox(rings, bbox)
-    pool = _sample_pool(rings, bbox, target_pool=max(points * 5, points + 50))
-    chosen = select_spread_points(pool, points)
+    if points is not None:  # explicit exact count (bypasses spacing): densify a pool and spread-select
+        pool = _sample_pool(rings, bbox, target_pool=max(points * 5, points + 50))
+        chosen = select_spread_points(pool, points)
+        detail = f"exactly {points}"
+    else:  # resolution-based: one grid at ~spacing_km, so the count follows the country's area
+        chosen = _grid_pool_at_spacing(rings, bbox, spacing_km)
+        detail = f"~{spacing_km:.0f} km spacing"
     prefix = country.lower()
     candidates = [
         Candidate(
@@ -249,7 +279,7 @@ def build_candidates(
         )
         for i, (lat, lon) in enumerate(chosen, start=1)
     ]
-    logger.info("Built %d %s %s candidates (pool of %d)", len(candidates), country, mode, len(pool))
+    logger.info("Built %d %s %s candidates (%s)", len(candidates), country, mode, detail)
     return candidates
 
 

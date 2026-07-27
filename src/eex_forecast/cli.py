@@ -149,13 +149,15 @@ def points_build(
     mode: Annotated[
         Mode, typer.Option(help="Geometry: 'zones' (wind, incl. sea) or 'land' (temp/solar).")
     ],
-    points: Annotated[int, typer.Option(help="Number of candidate points.")] = 150,
+    spacing_km: Annotated[
+        float, typer.Option(help="Candidate grid resolution in km (count scales with country area).")
+    ] = 50.0,
 ) -> None:
     """Generate candidate weather points inside Germany and write them to a CSV."""
     geojson = geometry.ZONES_PATH if mode is Mode.zones else geometry.LAND_PATH
     if not geojson.exists():
         raise typer.BadParameter(f"Missing geometry {geojson}. Run `eex geo` first.")
-    built = candidate_ops.build_candidates(geojson, mode=mode.value, points=points)
+    built = candidate_ops.build_candidates(geojson, mode=mode.value, spacing_km=spacing_km)
     out_path = candidate_ops.write_candidates(
         CANDIDATES_DIR / f"candidates_{mode.value}.csv", built
     )
@@ -231,7 +233,9 @@ def _neighbour_candidate_csv(country: str) -> Path:
 
 @neighbours_app.command("build")
 def neighbours_build(
-    points: Annotated[int, typer.Option(help="Candidate points per neighbour.")] = 150,
+    spacing_km: Annotated[
+        float, typer.Option(help="Candidate grid resolution in km per neighbour.")
+    ] = 50.0,
 ) -> None:
     """Generate land+sea wind candidates inside each DE neighbour and write a CSV per country."""
     if not geometry.ZONES_PATH.exists():
@@ -240,7 +244,7 @@ def neighbours_build(
         built = candidate_ops.build_candidates(
             geometry.ZONES_PATH,
             mode="zones",
-            points=points,
+            spacing_km=spacing_km,
             bbox=EUROPE_BBOX,
             country=country,
             identifiers=COUNTRY_IDENTIFIERS[country],
