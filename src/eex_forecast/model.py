@@ -48,10 +48,13 @@ _MIN_ROWS_FOR_EARLY_STOPPING = 500
 # reproduce the gap in training - nulling the lag on a random fraction of rows - so it learns the
 # missing-lag default and falls back to the fundamentals there instead of leaning on a lag it will not
 # have. Only the price model carries a price lag, so this is a no-op for the sub-models.
-_PRICE_LAG_HOURS = 168  # the (only) price lag; present within this many hours of the issue, NaN beyond
+_PRICE_LAG_HOURS = (
+    168  # the (only) price lag; present within this many hours of the issue, NaN beyond
+)
 _PRICE_LAG_COLUMN = f"price_lag_{_PRICE_LAG_HOURS}h"
 _TRAIN_NAN_LAG_FRACTION = 0.5  # D+8..D+14 share of the 14-day horizon lacking the lag at serve
 _TRAIN_NAN_LAG_SEED = 168  # fixed so retrains are reproducible
+_SOLAR_DARKNESS_FEATURE = "irr_solar_max"
 
 # Sensible, lightly-regularised defaults; the walk-forward tuner overrides these per model.
 DEFAULT_PARAMS: dict[str, Any] = {
@@ -129,13 +132,23 @@ class TrainedModel:
 
     def predict(self, frame: pd.DataFrame) -> pd.Series:
         """Predict the target for every row of ``frame`` (reindexed to the training feature order)."""
-        matrix = self.spec.build_features(frame).reindex(columns=self.feature_names)
+        built_features = self.spec.build_features(frame)
+        matrix = built_features.reindex(columns=self.feature_names)
         values = self.booster.predict(matrix)
         series = pd.Series(values, index=frame.index, name=self.spec.forecast_column)
         if self.spec.capacity_column is not None:  # model predicts a capacity factor -> scale to MW
             series = series * _capacity_series(frame, self.spec.capacity_column)
         if self.spec.non_negative:
             series = series.clip(lower=0.0)
+        if self.spec.name == "solar" and _SOLAR_DARKNESS_FEATURE in built_features:
+            # A regression tree's lowest leaf need not pass through physical zero. With Germany's large
+            # installed fleet, even a small positive capacity-factor floor becomes a spurious GW-scale
+            # nighttime plateau. All configured points dark is an unambiguous physical constraint; leave
+            # twilight and cloudy daylight model-driven whenever any point has positive irradiance.
+            darkness = (
+                pd.to_numeric(built_features[_SOLAR_DARKNESS_FEATURE], errors="coerce") <= 0.0
+            )
+            series = series.mask(darkness, 0.0)
         return series
 
     def save(self, models_dir: Path = MODELS_DIR) -> Path:

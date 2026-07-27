@@ -58,8 +58,12 @@ def test_train_nan_lag_mask_is_noop_without_the_lag_column() -> None:
 
 def test_serve_unavailable_lag_mask_nulls_only_beyond_the_lag_horizon() -> None:
     cutoff = pd.Timestamp("2026-01-08", tz="UTC")
-    times = pd.Series(pd.date_range(cutoff + pd.Timedelta(hours=1), periods=336, freq="h", tz="UTC"))
-    matrix = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(336.0), "other": np.arange(336.0)}, index=times.index)
+    times = pd.Series(
+        pd.date_range(cutoff + pd.Timedelta(hours=1), periods=336, freq="h", tz="UTC")
+    )
+    matrix = pd.DataFrame(
+        {_PRICE_LAG_COLUMN: np.arange(336.0), "other": np.arange(336.0)}, index=times.index
+    )
     out = apply_serve_unavailable_lag_mask(matrix, times, cutoff)
     within = times <= cutoff + pd.Timedelta(hours=168)  # D+1..D+7 keep the lag
     assert out.loc[within.to_numpy(), _PRICE_LAG_COLUMN].notna().all()
@@ -72,7 +76,9 @@ def test_serve_unavailable_lag_mask_is_noop_within_a_week_or_without_column() ->
     cutoff = pd.Timestamp("2026-01-08", tz="UTC")
     times = pd.Series(pd.date_range(cutoff + pd.Timedelta(hours=1), periods=24, freq="h", tz="UTC"))
     day_ahead = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(24.0)}, index=times.index)
-    assert apply_serve_unavailable_lag_mask(day_ahead, times, cutoff) is day_ahead  # all within 168 h
+    assert (
+        apply_serve_unavailable_lag_mask(day_ahead, times, cutoff) is day_ahead
+    )  # all within 168 h
     no_lag = pd.DataFrame({"other": np.arange(24.0)}, index=times.index)
     assert apply_serve_unavailable_lag_mask(no_lag, times, cutoff) is no_lag  # sub-model matrix
 
@@ -115,6 +121,18 @@ def test_capacity_model_predicts_in_mw(timeseries_frame: pd.DataFrame) -> None:
     # Prediction reverses the scaling (factor * capacity), so it is MW, not a 0..1 factor.
     assert predictions.max() > 1000
     assert (predictions >= 0).all()
+
+
+def test_solar_prediction_is_zero_when_all_irradiance_points_are_dark(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    trained = train(REGISTRY["solar"], timeseries_frame, params=TINY)
+    predictions = trained.predict(timeseries_frame)
+    irradiance = timeseries_frame.filter(regex=r"^ghi_de\d+$")
+    dark = irradiance.max(axis=1) <= 0.0
+    assert dark.any() and (~dark).any()
+    assert (predictions[dark] == 0.0).all()
+    assert (predictions[~dark] > 0.0).any()  # daylight predictions remain model-driven
 
 
 def test_residual_diagnostics_detect_autocorrelation() -> None:
