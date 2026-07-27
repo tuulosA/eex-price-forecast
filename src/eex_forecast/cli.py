@@ -23,6 +23,7 @@ Command groups:
 
 from __future__ import annotations
 
+from datetime import date
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
@@ -164,10 +165,37 @@ def points_build(
     typer.echo(f"Wrote {len(built)} {mode.value} candidates -> {out_path}")
 
 
+def _rank_window(year: int | None, start: str | None, end: str | None) -> tuple[str, str]:
+    """Resolve the ranking window: ``--year Y`` (that whole calendar year) or an explicit
+    ``--start``/``--end`` range (``YYYY-MM-DD``). The two are mutually exclusive; with neither, 2025."""
+    if start is not None or end is not None:
+        if year is not None:
+            raise typer.BadParameter("Use either --year or --start/--end, not both.")
+        if start is None or end is None:
+            raise typer.BadParameter("Provide both --start and --end (YYYY-MM-DD).")
+        try:
+            first, last = date.fromisoformat(start), date.fromisoformat(end)
+        except ValueError as exc:
+            raise typer.BadParameter(f"--start/--end must be YYYY-MM-DD: {exc}") from exc
+        if first >= last:
+            raise typer.BadParameter("--start must be before --end.")
+        return start, end
+    resolved = 2025 if year is None else year
+    return f"{resolved}-01-01", f"{resolved}-12-31"
+
+
 @points_app.command("rank")
 def points_rank(
     target: Annotated[Target, typer.Option(help="Role to rank: wind / temp / solar.")],
-    year: Annotated[int, typer.Option(help="Year of actuals/weather to rank against.")] = 2025,
+    year: Annotated[
+        int | None, typer.Option(help="Calendar year to rank against (default 2025).")
+    ] = None,
+    start: Annotated[
+        str | None, typer.Option(help="Range start YYYY-MM-DD (with --end; not with --year).")
+    ] = None,
+    end: Annotated[
+        str | None, typer.Option(help="Range end YYYY-MM-DD (with --start; not with --year).")
+    ] = None,
     count: Annotated[int, typer.Option(help="How many top points to keep.")] = 20,
 ) -> None:
     """Rank candidates against the matching actual and write the chosen points to config."""
@@ -179,7 +207,7 @@ def points_rank(
         )
     candidates = candidate_ops.read_candidates(candidate_csv)
 
-    start, end = f"{year}-01-01", f"{year}-12-31"
+    start, end = _rank_window(year, start, end)
     with connect(get_settings().db_path) as conn:
         target_series = read_target_series(conn, role.target_column, start=start, end=end)
     if target_series.empty:
@@ -256,13 +284,21 @@ def neighbours_build(
 
 @neighbours_app.command("rank")
 def neighbours_rank(
-    year: Annotated[int, typer.Option(help="Year of DE price + weather to rank against.")] = 2025,
+    year: Annotated[
+        int | None, typer.Option(help="Calendar year to rank against (default 2025).")
+    ] = None,
+    start: Annotated[
+        str | None, typer.Option(help="Range start YYYY-MM-DD (with --end; not with --year).")
+    ] = None,
+    end: Annotated[
+        str | None, typer.Option(help="Range end YYYY-MM-DD (with --start; not with --year).")
+    ] = None,
     count: Annotated[
         int, typer.Option(help="Points to keep per neighbour.")
     ] = NEIGHBOUR_POINTS_PER_COUNTRY,
 ) -> None:
     """Rank each neighbour's wind candidates against DE price and write the chosen points to config."""
-    start, end = f"{year}-01-01", f"{year}-12-31"
+    start, end = _rank_window(year, start, end)
     with connect(get_settings().db_path) as conn:
         price = read_target_series(conn, PRICE_TARGET_COLUMN, start=start, end=end)
     if price.empty:

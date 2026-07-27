@@ -7,9 +7,27 @@ from typing import Any
 
 import pandas as pd
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from eex_forecast import cli
+
+
+def test_rank_window_year_and_range_modes() -> None:
+    assert cli._rank_window(2024, None, None) == ("2024-01-01", "2024-12-31")
+    assert cli._rank_window(None, None, None) == ("2025-01-01", "2025-12-31")  # default year
+    assert cli._rank_window(None, "2025-01-01", "2026-06-30") == ("2025-01-01", "2026-06-30")
+
+
+def test_rank_window_rejects_bad_combinations() -> None:
+    with pytest.raises(typer.BadParameter):  # --year and --start/--end together
+        cli._rank_window(2025, "2025-01-01", "2025-12-31")
+    with pytest.raises(typer.BadParameter):  # only one endpoint of the range
+        cli._rank_window(None, "2025-01-01", None)
+    with pytest.raises(typer.BadParameter):  # start not before end
+        cli._rank_window(None, "2026-06-30", "2025-01-01")
+    with pytest.raises(typer.BadParameter):  # not YYYY-MM-DD
+        cli._rank_window(None, "2025/01/01", "2025-12-31")
 
 
 def _forecast_df() -> pd.DataFrame:
