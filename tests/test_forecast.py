@@ -14,9 +14,11 @@ from eex_forecast.db import write_frame
 from eex_forecast.forecast import (
     _first_market_day_start,
     _forecast_split,
+    _forecast_window_end,
     _forward_only,
     _last_complete_market_day_cut,
     _weather_coverage_end,
+    _weather_limited_forecast_end,
     run_forecast,
 )
 from eex_forecast.model import ALL_MODELS, REGISTRY, train
@@ -41,7 +43,8 @@ def test_run_forecast_fills_fundamentals_then_price(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     now = pd.Timestamp.now(tz="UTC").floor("h")
-    frame = make_timeseries(periods=24 * 43, start=now - pd.Timedelta(days=40))
+    # Include a two-day serving buffer beyond the requested horizon.
+    frame = make_timeseries(periods=24 * 45 + 1, start=now - pd.Timedelta(days=40))
     times = pd.to_datetime(frame["timestamp"], utc=True)
     future = times >= now
 
@@ -68,11 +71,12 @@ def test_run_forecast_fills_fundamentals_then_price(
     # The whole window is predicted (in-sample past + future), so it spans both sides of `now`.
     result_times = pd.to_datetime(result["timestamp"], utc=True)
     assert (result_times < now).any() and (result_times >= now).any()
-    # The CSV output is trimmed to whole German delivery days: it starts at a Berlin midnight and ends on
-    # the last hour (23:00 Berlin) of a delivery day - regardless of the arbitrary hour `now` fell on.
+    # The historical edge starts at a Berlin midnight. The unknown-price tail is exactly three delivery
+    # days, anchored after the last published actual rather than at the arbitrary run hour.
     berlin = result_times.dt.tz_convert("Europe/Berlin")
     assert berlin.iloc[0].hour == 0 and berlin.iloc[0].minute == 0
-    assert berlin.iloc[-1].hour == 23
+    unknown_times = result_times[result["price_actual_eur_mwh"].isna()]
+    assert len(unknown_times) == 3 * 24
     for column in (
         "price_forecast_eur_mwh",
         "wind_forecast_mw",
@@ -110,6 +114,20 @@ def test_weather_coverage_end_finds_last_real_hour() -> None:
     assert _weather_coverage_end(frame, pd.Series(times), now) == times[2]
 
 
+def test_weather_limited_end_drops_incomplete_final_market_day() -> None:
+    requested = pd.Timestamp("2026-08-11 22:00", tz="UTC")
+    # Weather ending at 15:00 CEST makes August 11 incomplete, so cut at its 00:00 CEST boundary.
+    partial = pd.Timestamp("2026-08-11 13:00", tz="UTC")
+    assert _weather_limited_forecast_end(requested, partial) == pd.Timestamp(
+        "2026-08-10 22:00", tz="UTC"
+    )
+    # Coverage through the requested final hour leaves the full horizon intact.
+    assert (
+        _weather_limited_forecast_end(requested, pd.Timestamp("2026-08-11 21:00", tz="UTC"))
+        == requested
+    )
+
+
 def test_forward_only_blanks_history_keeps_forecast() -> None:
     split = pd.Timestamp("2026-08-01 03:00", tz="UTC")
     times = pd.Series(pd.date_range("2026-08-01 00:00", periods=6, freq="h", tz="UTC"))
@@ -141,3 +159,24 @@ def test_forecast_split_is_last_actual_not_now() -> None:
     assert _forecast_split(actual, times, now) == times.iloc[3]  # last non-NaN actual, not `now`
     # With no actual at all, it falls back to `now`.
     assert _forecast_split(pd.Series([np.nan] * 6), times, now) == now
+
+
+def test_forecast_window_end_anchors_after_last_actual() -> None:
+    times = pd.Series(pd.date_range("2026-07-27 00:00", periods=72, freq="h", tz="UTC"))
+    now = pd.Timestamp("2026-07-27 10:00", tz="UTC")
+    actual = pd.Series(np.nan, index=times.index)
+    # 21:00 UTC is 23:00 CEST: the next unknown hour is Berlin midnight.
+    actual[times <= pd.Timestamp("2026-07-27 21:00", tz="UTC")] = 50.0
+    assert _forecast_window_end(actual, times, now, 14) == pd.Timestamp(
+        "2026-08-10 22:00", tz="UTC"
+    )
+
+
+def test_forecast_window_end_is_dst_aware() -> None:
+    times = pd.Series(pd.date_range("2026-10-23 00:00", periods=72, freq="h", tz="UTC"))
+    now = pd.Timestamp("2026-10-23 10:00", tz="UTC")
+    actual = pd.Series(np.nan, index=times.index)
+    actual[times <= pd.Timestamp("2026-10-23 21:00", tz="UTC")] = 50.0
+    end = _forecast_window_end(actual, times, now, 3)
+    # Three Berlin delivery days include the 25-hour DST-ending Sunday.
+    assert end - pd.Timestamp("2026-10-23 22:00", tz="UTC") == pd.Timedelta(hours=73)
