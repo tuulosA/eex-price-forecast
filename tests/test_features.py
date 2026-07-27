@@ -78,13 +78,28 @@ def test_fundamentals_coalesce_actual_then_forecast() -> None:
     assert out["load"].tolist() == [300.0, 400.0]
 
 
-def test_default_fundamental_builders_use_raw_strategy(timeseries_frame: pd.DataFrame) -> None:
-    # Per the ablation study, all three sub-models adopt 'raw' (per-point columns, no national mean).
+def test_default_fundamental_builders_use_adopted_strategies(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    # Wind/load retain raw per-point inputs; solar uses cross-point summary statistics.
     wind = wind_features(timeseries_frame)
     assert {"ws_de01", "ws_de02", "t_ws_de01"} <= set(wind.columns)
     assert "wind_speed" not in wind.columns  # no national-mean aggregate
+    timeseries_frame = timeseries_frame.assign(ghi_de02=timeseries_frame["ghi_de01"] * 0.5)
     solar = solar_features(timeseries_frame)
-    assert "ghi_de01" in solar.columns and "irr_solar" not in solar.columns
+    assert {
+        "irr_solar",
+        "irr_solar_sum",
+        "irr_solar_std",
+        "irr_solar_min",
+        "irr_solar_max",
+    } <= set(solar.columns)
+    assert "ghi_de01" not in solar.columns
+    solar_points = timeseries_frame[["ghi_de01", "ghi_de02"]]
+    pd.testing.assert_series_equal(solar["irr_solar"], solar_points.mean(axis=1), check_names=False)
+    pd.testing.assert_series_equal(
+        solar["irr_solar_max"], solar_points.max(axis=1), check_names=False
+    )
     load = load_features(timeseries_frame)
     assert {"t_de01", "ghi_t_de01"} <= set(load.columns)
     assert "temp_load" not in load.columns
@@ -215,7 +230,9 @@ def test_neighbour_block_empty_when_no_neighbours(timeseries_frame: pd.DataFrame
 
 def test_nuclear_feature_present_and_absent() -> None:
     index = pd.date_range("2025-01-01", periods=3, freq="h", tz="UTC")
-    with_nuclear = pd.DataFrame({"timestamp": index, "nuclear_available_mw": [50000.0, 51000.0, 52000.0]})
+    with_nuclear = pd.DataFrame(
+        {"timestamp": index, "nuclear_available_mw": [50000.0, 51000.0, 52000.0]}
+    )
     block = nuclear_feature(with_nuclear)
     assert list(block.columns) == ["nuclear_available_mw"]
     assert block["nuclear_available_mw"].tolist() == [50000.0, 51000.0, 52000.0]

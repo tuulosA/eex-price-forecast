@@ -46,7 +46,13 @@ _NEIGHBOUR_WS_RE = re.compile(r"^ws_([a-z]{2})\d+$")
 _HOME_CODE = AREA_CODE.lower()
 # How the per-country neighbour wind points enter the *price* model. The choice is decided empirically by
 # `eex analyze aggregation neighbour`; see :func:`neighbour_wind_block`.
-NEIGHBOUR_STRATEGIES: tuple[str, ...] = ("none", "global_mean", "country_mean", "country_cube", "raw")
+NEIGHBOUR_STRATEGIES: tuple[str, ...] = (
+    "none",
+    "global_mean",
+    "country_mean",
+    "country_cube",
+    "raw",
+)
 # The adopted production strategy: the aggregation A/B found country_mean best (tied with country_cube on MAE,
 # better on RMSE, simpler), cutting price MAE ~1.4 EUR/MWh vs no neighbour wind.
 PRICE_NEIGHBOUR_STRATEGY = "country_mean"
@@ -296,15 +302,17 @@ def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Solar generation drivers: calendar (hour / season carry the diurnal cycle) + every irradiance point.
+    """Solar generation drivers: calendar plus spatial irradiance summary statistics.
 
-    Uses ``raw`` for consistency with the other sub-models; it was also the aggregation winner for solar,
-    though only marginally (~3%) since irradiance is near-uniform over Germany.
+    At each hour the existing ranked irradiance points are reduced to their mean, sum, standard deviation,
+    minimum, and maximum. This retains the national level and spatial spread without making the model learn
+    a separate relationship for every location. Hour and season calendar features carry the diurnal and
+    annual solar cycles; capacity scaling remains part of the model target/prediction path.
     """
     return pd.concat(
         [
             calendar_features(frame[TIMESTAMP]),
-            weather_strategy_block(frame, WEATHER_AGG["solar"], "raw"),
+            weather_strategy_block(frame, WEATHER_AGG["solar"], "stats"),
         ],
         axis=1,
     )
@@ -349,12 +357,12 @@ def ntc_features(frame: pd.DataFrame) -> pd.DataFrame:
     exports = sorted(c for c in frame.columns if c.startswith(NTC_EXPORT_PREFIX))
     out: dict[str, pd.Series] = {}
     if imports:
-        out["ntc_imp_total"] = frame[imports].apply(pd.to_numeric, errors="coerce").sum(
-            axis=1, min_count=1
+        out["ntc_imp_total"] = (
+            frame[imports].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
         )
     if exports:
-        out["ntc_exp_total"] = frame[exports].apply(pd.to_numeric, errors="coerce").sum(
-            axis=1, min_count=1
+        out["ntc_exp_total"] = (
+            frame[exports].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
         )
     return pd.DataFrame(out, index=frame.index)
 
@@ -443,6 +451,4 @@ def price_features_with_neighbours(
     ``none`` gives the base feature set (no neighbour wind); :func:`price_features` is this with the
     adopted :data:`PRICE_NEIGHBOUR_STRATEGY`. Used by the neighbour aggregation to A/B the aggregations.
     """
-    return pd.concat(
-        [_price_base(frame), neighbour_wind_block(frame, neighbour_strategy)], axis=1
-    )
+    return pd.concat([_price_base(frame), neighbour_wind_block(frame, neighbour_strategy)], axis=1)
