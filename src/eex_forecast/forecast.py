@@ -7,7 +7,7 @@ End to end for the next ``horizon_days``:
 3. run the wind / solar / load **sub-models** to fill the fundamentals' forecast columns;
 4. run the **price model**, which consumes those forecast fundamentals alongside calendar, price lags,
    and weather aggregates;
-5. trim to whole German delivery days (Berlin-midnight boundaries) and write the forecast to CSV,
+5. trim the historical edge to a German delivery-day boundary and write the forecast to CSV,
    optionally upsert it to the database, and optionally plot it.
 
 The models predict the **entire read window**, not just the future: rows that already have an actual get
@@ -99,8 +99,9 @@ def fetch_forecast_nuclear(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
     no nuclear zone returns data.
     """
     now = pd.Timestamp.now(tz="UTC").floor("h")
+    buffered_days = horizon_days + 2
     frame = nuclear.fetch_nuclear_available(
-        now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=horizon_days)
+        now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=buffered_days)
     )
     if frame.empty:
         return 0
@@ -119,8 +120,9 @@ def fetch_forecast_ntc(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int
     again by ``update``. A no-op if no border returns data.
     """
     now = pd.Timestamp.now(tz="UTC").floor("h")
+    buffered_days = horizon_days + 2
     frame = ntc.fetch_ntc(
-        now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=horizon_days)
+        now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=buffered_days)
     )
     if frame.empty:
         return 0
@@ -182,10 +184,50 @@ def _first_market_day_start(times: pd.Series) -> pd.Timestamp:
     """
     start_market = times.min().tz_convert(MARKET_TIMEZONE)
     day_start = start_market.normalize()
-    if day_start < start_market:  # window opened after midnight -> the next delivery day is the first whole one
+    if (
+        day_start < start_market
+    ):  # window opened after midnight -> the next delivery day is the first whole one
         day_start = day_start + pd.Timedelta(days=1)
     first_start: pd.Timestamp = day_start.tz_convert("UTC")
     return first_start
+
+
+def _forecast_window_end(
+    actual: pd.Series, times: pd.Series, now: pd.Timestamp, horizon_days: int
+) -> pd.Timestamp:
+    """Exclusive end of ``horizon_days`` unknown German delivery days.
+
+    Day-ahead prices normally end at 23:00 market time. The following hour is therefore a Berlin
+    midnight and the first genuinely unknown delivery hour. Anchoring the horizon there, rather than at
+    the arbitrary command run hour, keeps the unknown forecast at the requested number of delivery days
+    both before and after tomorrow's auction prices appear. Calendar-day arithmetic in the market
+    timezone also preserves the 23/25-hour DST delivery days.
+
+    If the latest actual is unexpectedly not a day's 23:00 hour, retain the exact next-hour anchor. This
+    avoids silently skipping an unpublished part-day while still producing a deterministic elapsed
+    fallback for incomplete source data.
+    """
+    split = _forecast_split(actual, times, now)
+    start_market = (split + pd.Timedelta(hours=1)).tz_convert(MARKET_TIMEZONE)
+    end_market = start_market + pd.DateOffset(days=horizon_days)
+    end: pd.Timestamp = end_market.tz_convert("UTC")
+    return end
+
+
+def _weather_limited_forecast_end(
+    requested_end: pd.Timestamp, coverage_end: pd.Timestamp | None
+) -> pd.Timestamp:
+    """Keep ``requested_end`` when weather covers it; otherwise drop the incomplete final market day.
+
+    ``requested_end`` is exclusive, while ``coverage_end`` is the last covered hourly row. Missing
+    weather makes XGBoost return technically valid but economically nonsensical tail predictions, so a
+    partly covered delivery day must not be published. The existing market-day cut is DST-aware.
+    """
+    required_last_hour = requested_end - pd.Timedelta(hours=1)
+    if coverage_end is None or coverage_end >= required_last_hour:
+        return requested_end
+    complete_day_end = _last_complete_market_day_cut(coverage_end)
+    return min(requested_end, complete_day_end) if complete_day_end is not None else requested_end
 
 
 def run_forecast(
@@ -206,11 +248,12 @@ def run_forecast(
         fetch_forecast_inputs(db_path, horizon_days=horizon_days)
 
     now = pd.Timestamp.now(tz="UTC").floor("h")
+    input_buffer_days = horizon_days + 2
     with connect(db_path) as conn:
         frame = read_frame(
             conn,
             start=now - pd.Timedelta(days=history_days),
-            end=now + pd.Timedelta(days=horizon_days),
+            end=now + pd.Timedelta(days=input_buffer_days),
         )
     if frame.empty:
         raise RuntimeError(
@@ -231,19 +274,26 @@ def run_forecast(
             "Forecast %s: horizon mean %.1f", name, frame.loc[future, spec.forecast_column].mean()
         )
 
-    # Trim the output (CSV / DB / plots) to whole German delivery days. The read window opens at an
-    # arbitrary hour (`now - history_days`) and its price lag needs those leading hours, but predictions are
-    # already computed above - so we can now drop the leading partial day, and any ragged tail the weather
-    # forecast did not reach (a day-ahead day missing hours is worthless). Both edges land on a Berlin
-    # midnight, so every row belongs to a complete delivery day.
+    # Trim the historical edge to a whole German delivery day, then end after the requested number of
+    # unknown delivery days. Predictions are already computed over the buffered frame, so price lags and
+    # the evening case (where tomorrow's prices are already known) both have enough input rows.
     start = _first_market_day_start(times)
-    cut = _last_complete_market_day_cut(_weather_coverage_end(frame, times, now))
-    keep = (times >= start).to_numpy()
-    if cut is not None:
-        keep &= (times < cut).to_numpy()
-    dropped_tail = int((~keep & (times >= now).to_numpy()).sum())
-    if dropped_tail:
-        logger.info("Trimmed %d uncovered tail hours (weather forecast short of the horizon)", dropped_tail)
+    requested_end = _forecast_window_end(
+        _numeric_column(frame, PRICE_ACTUAL), times, now, horizon_days
+    )
+    coverage_end = _weather_coverage_end(frame, times, now)
+    end = _weather_limited_forecast_end(requested_end, coverage_end)
+    if end < requested_end:
+        requested_hours = int(((times >= now) & (times < requested_end)).sum())
+        retained_hours = int(((times >= now) & (times < end)).sum())
+        logger.warning(
+            "Weather ends at %s; dropped incomplete final delivery day "
+            "(requested %d forward hours, retained %d)",
+            coverage_end,
+            requested_hours,
+            retained_hours,
+        )
+    keep = ((times >= start) & (times < end)).to_numpy()
     frame = frame[keep].reset_index(drop=True)
     times = pd.to_datetime(frame[TIMESTAMP], utc=True)
     future = times >= now
@@ -261,7 +311,7 @@ def run_forecast(
     result.to_csv(csv_path, index=False)
     logger.info("Wrote %d rows to %s", len(result), csv_path)
     if plot:
-        # `frame` is already trimmed to whole delivery days, so the plots inherit the aligned window.
+        # The historical edge is aligned to a delivery day; the forward edge retains the full horizon.
         plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
         plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")
         plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
@@ -447,7 +497,9 @@ def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path:
         _shade_runs(ax, times, calendar["is_weekend"], "0.85", 0.6)
         _shade_runs(ax, times, calendar["is_holiday"], "#5e17eb", 0.15)
         for column in data.columns:
-            ax.plot(times, pd.to_numeric(data[column], errors="coerce"), linewidth=1.0, label=column)
+            ax.plot(
+                times, pd.to_numeric(data[column], errors="coerce"), linewidth=1.0, label=column
+            )
         ax.axvline(now, color="0.5", linestyle="--", linewidth=0.8)
         ax.set_ylabel(label, fontsize=8)
         ax.grid(True, color="0.93")
