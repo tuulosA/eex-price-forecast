@@ -15,6 +15,7 @@ Command groups:
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
+- eex analyze eval: backtest the price and sub-models on the frozen cutoffs and report per-model MAE.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
@@ -30,7 +31,7 @@ from typing import Annotated
 
 import typer
 
-from eex_forecast import ablation, aggregation, tuning
+from eex_forecast import ablation, aggregation, evaluation, tuning
 from eex_forecast import backfill as backfill_ops
 from eex_forecast import forecast as forecast_ops
 from eex_forecast import model as model_ops
@@ -151,7 +152,8 @@ def points_build(
         Mode, typer.Option(help="Geometry: 'zones' (wind, incl. sea) or 'land' (temp/solar).")
     ],
     spacing_km: Annotated[
-        float, typer.Option(help="Candidate grid resolution in km (count scales with country area).")
+        float,
+        typer.Option(help="Candidate grid resolution in km (count scales with country area)."),
     ] = 50.0,
 ) -> None:
     """Generate candidate weather points inside Germany and write them to a CSV."""
@@ -600,9 +602,9 @@ def aggregation_load(
 
 @aggregation_app.command("neighbour")
 def aggregation_neighbour(
-    strategies: Annotated[
-        str, typer.Option(help="Comma-separated strategies.")
-    ] = ",".join(NEIGHBOUR_STRATEGIES),
+    strategies: Annotated[str, typer.Option(help="Comma-separated strategies.")] = ",".join(
+        NEIGHBOUR_STRATEGIES
+    ),
     cutoffs: _CutoffsOpt = 6,
     horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
@@ -713,6 +715,56 @@ def analyze_ablation(
     typer.echo(f"  dropping {verdict} | report -> {path}")
 
 
+@analyze_app.command("eval")
+def analyze_eval(
+    models: Annotated[
+        str, typer.Option(help="Comma-separated models to score (or 'all').")
+    ] = "all",
+    horizon: Annotated[
+        str, typer.Option(help=f"Horizon to score ({', '.join(evaluation.EVAL_HORIZONS)}).")
+    ] = "24h",
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Backtest the price and sub-models on the frozen evaluation cutoffs and report per-model MAE.
+
+    The cutoffs are a fixed, hand-picked, month/weekday/weekend/holiday- and wind-balanced set of delivery
+    days (see :mod:`eex_forecast.evaluation`), so every run scores the identical days and different anchors
+    / features / params compare directly. Errors are in each model's natural unit (EUR/MWh for price, MW for
+    the fundamentals) - only same-model runs compare, not price against a sub-model. Pass --seeds >1 to
+    average over XGBoost seeds. Note: price is scored on the *actual* fundamentals (its own skill, not the
+    end-to-end pipeline); for anchor/feature propagation read the sub-models' MAE.
+    """
+    selected = (
+        list(ALL_MODELS)
+        if models.strip().lower() == "all"
+        else [name.strip() for name in models.split(",") if name.strip()]
+    )
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    try:
+        result = evaluation.run_evaluation(
+            frame, models=tuple(selected), horizon=horizon, seeds=seeds
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    path = evaluation.save_evaluation_report(result)
+
+    typer.echo(
+        f"Frozen-cutoff eval ({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"{result.horizon}):"
+    )
+    for model_eval in result.models:
+        typer.echo(
+            f"  {model_eval.model:<6} "
+            f"{_mae_cell(model_eval.mean_mae, model_eval.std_mae, seeds)} {model_eval.unit:<7} | "
+            f"RMSE {model_eval.mean_rmse:.3f} | {model_eval.n_cutoffs} cutoffs"
+        )
+    typer.echo(f"  report -> {path}")
+
+
 # -- model ----------------------------------------------------------------------
 @model_app.command("train")
 def model_train(
@@ -809,7 +861,9 @@ def run_cmd(
 
     # Fetch everything up front: recent actuals + weather history, then the forward-looking horizon inputs
     # (weather forecast + known-ahead nuclear/NTC). After this the database is complete through the horizon.
-    typer.echo(f"[fetch] refreshing the last {days} days of actuals + weather, then horizon inputs ...")
+    typer.echo(
+        f"[fetch] refreshing the last {days} days of actuals + weather, then horizon inputs ..."
+    )
     counts = backfill_ops.refresh_recent(db_path, days=days)
     entsoe_summary = ", ".join(f"{name}={rows}" for name, rows in counts["entsoe"].items())
     typer.echo(f"[fetch] entsoe: {entsoe_summary} | weather columns: {len(counts['weather'])}")
