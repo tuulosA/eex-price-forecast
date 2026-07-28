@@ -22,6 +22,15 @@ data/**
 !data/**/
 !data/**/*.png
 !data/.gitkeep
+# ...and the small text reports that are the empirical paper trail behind committed configs/decisions:
+# the frozen-cutoff benchmark, tuning provenance for hyperparams.json, the aggregation/ablation A/Bs, the
+# point rankings behind weather_points.json, and the correlation matrix. (geo/models/forecast stay out.)
+!data/evaluation/*.json
+!data/tuning/*.json
+!data/aggregation/*.json
+!data/ablation/*.json
+!data/rank/*.csv
+!data/analysis/correlation.csv
 
 # OS / editor
 .DS_Store
