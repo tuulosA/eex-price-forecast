@@ -1,0 +1,102 @@
+{
+  "model": "wind",
+  "compared": "feature removal",
+  "run_at": "2026-07-25T10:47:35.863390+00:00",
+  "config": {
+    "n_cutoffs": 2,
+    "horizon_hours": 336,
+    "min_train_days": 120,
+    "seeds": [
+      42
+    ],
+    "params": {
+      "n_estimators": 450,
+      "max_depth": 9,
+      "learning_rate": 0.08960785365368121,
+      "subsample": 0.8394633936788146,
+      "colsample_bytree": 0.6624074561769746,
+      "min_child_weight": 3.96389588638785,
+      "reg_alpha": 0.0017073967431528124,
+      "reg_lambda": 2.9154431891537547,
+      "objective": "reg:squarederror",
+      "tree_method": "hist",
+      "random_state": 42,
+      "n_jobs": 0
+    }
+  },
+  "cutoffs": [
+    "2023-05-01T00:00:00+00:00",
+    "2026-07-26T23:00:00+00:00"
+  ],
+  "dropped": [
+    "ws_de20"
+  ],
+  "kept": [
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_holiday",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "month_sin",
+    "month_cos",
+    "ws_de01",
+    "ws_de02",
+    "ws_de03",
+    "ws_de04",
+    "ws_de05",
+    "ws_de06",
+    "ws_de07",
+    "ws_de08",
+    "ws_de09",
+    "ws_de10",
+    "ws_de11",
+    "ws_de12",
+    "ws_de13",
+    "ws_de14",
+    "ws_de15",
+    "ws_de16",
+    "ws_de17",
+    "ws_de18",
+    "ws_de19",
+    "t_ws_de01",
+    "t_ws_de02",
+    "t_ws_de03",
+    "t_ws_de04",
+    "t_ws_de05",
+    "t_ws_de06",
+    "t_ws_de07",
+    "t_ws_de08",
+    "t_ws_de09",
+    "t_ws_de10",
+    "t_ws_de11",
+    "t_ws_de12",
+    "t_ws_de13",
+    "t_ws_de14",
+    "t_ws_de15",
+    "t_ws_de16",
+    "t_ws_de17",
+    "t_ws_de18",
+    "t_ws_de19",
+    "t_ws_de20"
+  ],
+  "full": {
+    "mean_mae": 2008.6478,
+    "mean_rmse": 2667.831,
+    "std_mae": 0.0
+  },
+  "reduced": {
+    "mean_mae": 2075.2262,
+    "mean_rmse": 2742.6745,
+    "std_mae": 0.0
+  },
+  "mae_delta": 66.5784,
+  "delta_std": 0.0,
+  "decisive": false,
+  "per_seed_delta": [
+    66.5784
+  ]
+}
