@@ -475,11 +475,8 @@ def _best_within_noise(variants: list[dict[str, object]], seeds: int) -> str:
 def _run_aggregation(
     fundamental: str,
     strategies: str,
-    cutoffs: int,
-    horizon_hours: int,
     regions: int,
     capacity_scaling: bool,
-    cutoff_start: str,
     seeds: int,
 ) -> None:
     """Shared body for the ``analyze aggregation <fundamental>`` subcommands."""
@@ -495,9 +492,6 @@ def _run_aggregation(
         frame,
         fundamental,
         strategies=selected,
-        n_cutoffs=cutoffs,
-        horizon_hours=horizon_hours,
-        cutoff_start=cutoff_start,
         n_regions=regions,
         capacity_scaling=capacity_scaling,
         seeds=seeds,
@@ -506,7 +500,7 @@ def _run_aggregation(
     scaling_label = "capacity factor" if capacity_scaling else "raw MW"
     typer.echo(
         f"{fundamental} weather-aggregation A/B "
-        f"({len(result.cutoffs)} cutoffs x {seeds} seed(s), {scaling_label}):"
+        f"({len(result.cutoffs)} frozen cutoffs x {seeds} seed(s), {scaling_label}):"
     )
     for variant in result.variants:
         typer.echo(
@@ -523,23 +517,11 @@ def _strategies_default(fundamental: str) -> str:
     return ",".join(WEATHER_AGG[fundamental].strategies)
 
 
-# Earliest walk-forward cutoff. Defaults to 2025-01-01 so the walk-forward tools weight the recent
-# market regime rather than years-old history.
-DEFAULT_CUTOFF_START = "2025-01-01"
-
-# Tuning backtest horizon. Defaults to the **day-ahead** 24 h (not the full 14-day frame): the settled,
-# most-predictable, most-valuable part of the forecast. Tuning on the full horizon averages in the
-# near-unpredictable far tail and pulls the hyperparameters toward smooth, conservative settings that
-# under-serve D+1. Widen it to tune the whole 14-day curve.
-DAY_AHEAD_HORIZON_HOURS = 24
-
-_CutoffsOpt = Annotated[int, typer.Option(help="Walk-forward cutoffs.")]
-_HorizonOpt = Annotated[int, typer.Option(help="Backtest horizon per cutoff (hours).")]
+# Every backtest tool (tuning / aggregation / ablation / eval) scores the frozen delivery days in
+# config/backtest_cutoffs.yaml at the day-ahead 24 h horizon - the only horizon this backtest scores
+# faithfully. There is no cutoff or horizon option: edit the YAML to change the set.
 _SeedsOpt = Annotated[
     int, typer.Option(help="XGBoost seeds to average over; >1 reports mean +/- spread.")
-]
-_CutoffStartOpt = Annotated[
-    str, typer.Option(help="Earliest walk-forward cutoff (recency floor), e.g. 2025-01-01.")
 ]
 _RegionsOpt = Annotated[int, typer.Option(help="Latitude bands for the 'regional' strategy.")]
 _CapacityOpt = Annotated[
@@ -552,17 +534,12 @@ def aggregation_wind(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = _strategies_default("wind"),
-    cutoffs: _CutoffsOpt = 6,
-    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
     capacity_scaling: _CapacityOpt = True,
-    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
     seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B wind's weather aggregation: mean / cube (mean(v^3)) / spread / stats / regional / raw."""
-    _run_aggregation(
-        "wind", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start, seeds
-    )
+    _run_aggregation("wind", strategies, regions, capacity_scaling, seeds)
 
 
 @aggregation_app.command("solar")
@@ -570,17 +547,12 @@ def aggregation_solar(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = _strategies_default("solar"),
-    cutoffs: _CutoffsOpt = 6,
-    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
     capacity_scaling: _CapacityOpt = True,
-    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
     seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B solar's irradiance aggregation: mean / spread / stats / regional / raw."""
-    _run_aggregation(
-        "solar", strategies, cutoffs, horizon_hours, regions, capacity_scaling, cutoff_start, seeds
-    )
+    _run_aggregation("solar", strategies, regions, capacity_scaling, seeds)
 
 
 @aggregation_app.command("load")
@@ -588,16 +560,11 @@ def aggregation_load(
     strategies: Annotated[
         str, typer.Option(help="Comma-separated strategies.")
     ] = _strategies_default("load"),
-    cutoffs: _CutoffsOpt = 6,
-    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     regions: _RegionsOpt = 3,
-    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
     seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B load's temperature aggregation: mean / spread / stats / regional / raw (no capacity)."""
-    _run_aggregation(
-        "load", strategies, cutoffs, horizon_hours, regions, False, cutoff_start, seeds
-    )
+    _run_aggregation("load", strategies, regions, False, seeds)
 
 
 @aggregation_app.command("neighbour")
@@ -605,9 +572,6 @@ def aggregation_neighbour(
     strategies: Annotated[str, typer.Option(help="Comma-separated strategies.")] = ",".join(
         NEIGHBOUR_STRATEGIES
     ),
-    cutoffs: _CutoffsOpt = 6,
-    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
-    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
     seeds: _SeedsOpt = 1,
 ) -> None:
     """A/B how cross-border neighbour wind enters the PRICE model, scored by price walk-forward MAE.
@@ -623,17 +587,11 @@ def aggregation_neighbour(
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
-    result = aggregation.run_neighbour_aggregation(
-        frame,
-        strategies=selected,
-        n_cutoffs=cutoffs,
-        horizon_hours=horizon_hours,
-        cutoff_start=cutoff_start,
-        seeds=seeds,
-    )
+    result = aggregation.run_neighbour_aggregation(frame, strategies=selected, seeds=seeds)
     path = aggregation.save_neighbour_aggregation_report(result)
     typer.echo(
-        f"neighbour-wind A/B ({len(result.cutoffs)} cutoffs x {seeds} seed(s), price MAE in EUR/MWh):"
+        f"neighbour-wind A/B ({len(result.cutoffs)} frozen cutoffs x {seeds} seed(s), "
+        f"price MAE in EUR/MWh):"
     )
     for variant in result.variants:
         typer.echo(
@@ -655,15 +613,14 @@ def analyze_ablation(
             help="Features to drop (1-based numbers/names, comma-separated). Omit to pick interactively."
         ),
     ] = None,
-    cutoffs: _CutoffsOpt = 6,
-    horizon_hours: _HorizonOpt = HORIZON_DAYS * 24,
     seeds: _SeedsOpt = 1,
 ) -> None:
     """Feature ablation: remove chosen features and measure the loss (full vs reduced, walk-forward).
 
-    With no --drop, lists the features numbered and prompts for which to remove; pass --drop for a
-    non-interactive run. Works for any model - price lags/aggregates, or raw per-point sub-model columns.
-    Pass --seeds >1 to average over XGBoost seeds and judge the delta against run-to-run noise.
+    Scored over the frozen backtest cutoffs at the day-ahead 24 h horizon. With no --drop, lists the features
+    numbered and prompts for which to remove; pass --drop for a non-interactive run. Works for any model -
+    price lags/aggregates, or raw per-point sub-model columns. Pass --seeds >1 to average over XGBoost
+    seeds and judge the delta against run-to-run noise.
     """
     if target is ModelName.all:
         raise typer.BadParameter("Drop features from one model at a time (not 'all').")
@@ -686,9 +643,7 @@ def analyze_ablation(
     if not dropped:
         raise typer.BadParameter("No features selected to drop.")
 
-    result = ablation.run_ablation(
-        spec, frame, dropped, n_cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seeds
-    )
+    result = ablation.run_ablation(spec, frame, dropped, seeds=seeds)
     path = ablation.save_ablation_report(result)
     delta_cell = (
         f"MAE delta {result.mae_delta:+.3f} +/- {result.delta_std:.3f}"
@@ -697,7 +652,7 @@ def analyze_ablation(
     )
     typer.echo(
         f"Feature ablation on '{target.value}' "
-        f"({len(dropped)} dropped, {len(result.report['cutoffs'])} cutoffs x {seeds} seed(s)): "
+        f"({len(dropped)} dropped, {len(result.report['cutoffs'])} frozen cutoffs x {seeds} seed(s)): "
         f"{', '.join(dropped)}"
     )
     typer.echo(f"  full    {_mae_cell(result.full['mean_mae'], result.full['std_mae'], seeds)}")
@@ -720,18 +675,15 @@ def analyze_eval(
     models: Annotated[
         str, typer.Option(help="Comma-separated models to score (or 'all').")
     ] = "all",
-    horizon: Annotated[
-        str, typer.Option(help=f"Horizon to score ({', '.join(evaluation.EVAL_HORIZONS)}).")
-    ] = "24h",
     seeds: _SeedsOpt = 1,
 ) -> None:
-    """Backtest the price and sub-models on the frozen evaluation cutoffs and report per-model MAE.
+    """Backtest the price and sub-models on the frozen cutoffs and report per-model 24h MAE.
 
-    The cutoffs are a fixed, hand-picked, month/weekday/weekend/holiday- and wind-balanced set of delivery
-    days (see :mod:`eex_forecast.evaluation`), so every run scores the identical days and different anchors
-    / features / params compare directly. Errors are in each model's natural unit (EUR/MWh for price, MW for
-    the fundamentals) - only same-model runs compare, not price against a sub-model. Pass --seeds >1 to
-    average over XGBoost seeds. Note: price is scored on the *actual* fundamentals (its own skill, not the
+    The cutoffs are the shared, fixed, month/weekday/weekend/holiday- and wind-balanced delivery days in
+    config/backtest_cutoffs.yaml, so every run scores the identical days and different anchors / features /
+    params compare directly. Errors are in each model's natural unit (EUR/MWh for price, MW for the
+    fundamentals) - only same-model runs compare, not price against a sub-model. Pass --seeds >1 to average
+    over XGBoost seeds. Note: price is scored on the *actual* fundamentals (its own skill, not the
     end-to-end pipeline); for anchor/feature propagation read the sub-models' MAE.
     """
     selected = (
@@ -745,16 +697,14 @@ def analyze_eval(
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
     try:
-        result = evaluation.run_evaluation(
-            frame, models=tuple(selected), horizon=horizon, seeds=seeds
-        )
+        result = evaluation.run_evaluation(frame, models=tuple(selected), seeds=seeds)
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)
 
     typer.echo(
         f"Frozen-cutoff eval ({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
-        f"{result.horizon}):"
+        f"{result.report['horizon']}):"
     )
     for model_eval in result.models:
         typer.echo(
@@ -787,14 +737,14 @@ def model_train(
 @model_app.command("tune")
 def model_tune(
     target: Annotated[ModelName, typer.Option(help="Model to tune (not 'all').")],
-    trials: Annotated[int, typer.Option(help="Optuna trials.")] = 40,
-    cutoffs: Annotated[int, typer.Option(help="Walk-forward cutoffs.")] = 8,
-    horizon_hours: Annotated[
-        int, typer.Option(help="Backtest horizon per cutoff (24 = day-ahead).")
-    ] = DAY_AHEAD_HORIZON_HOURS,
-    cutoff_start: _CutoffStartOpt = DEFAULT_CUTOFF_START,
+    trials: Annotated[int, typer.Option(help="Optuna trials.")] = 20,
 ) -> None:
-    """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json."""
+    """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json.
+
+    Scored over the frozen backtest cutoffs (config/backtest_cutoffs.yaml) at the day-ahead 24 h horizon -
+    the settled, most-valuable part of the forecast. No cutoff or horizon options: edit the YAML to change
+    the day set.
+    """
     if target is ModelName.all:
         raise typer.BadParameter(
             "Tune one model at a time (wind / solar / load / price), not 'all'."
@@ -803,14 +753,7 @@ def model_tune(
         frame = read_frame(conn)
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
-    result = tuning.tune(
-        REGISTRY[target.value],
-        frame,
-        n_trials=trials,
-        n_cutoffs=cutoffs,
-        horizon_hours=horizon_hours,
-        cutoff_start=cutoff_start,
-    )
+    result = tuning.tune(REGISTRY[target.value], frame, n_trials=trials)
     params_path = model_ops.save_params(target.value, result.params)
     report_path = tuning.save_tuning_report(target.value, result)
     typer.echo(

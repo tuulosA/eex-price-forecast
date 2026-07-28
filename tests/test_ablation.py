@@ -26,6 +26,10 @@ TINY = {
     "n_jobs": 0,
 }
 
+# Cutoffs inside the synthetic 2024 frame (the frozen production set is 2025-26), scored at a 2-day horizon.
+CUTOFFS = ("2024-03-01", "2024-04-01")
+DAYS = 2
+
 
 def test_resolve_selection_numbers_and_names() -> None:
     names = ["hour", "is_holiday", "price_lag_168h", "wind"]
@@ -46,9 +50,7 @@ def test_run_ablation_reports_full_vs_reduced() -> None:
     spec = REGISTRY["price"]
     names = feature_names(spec, frame)
     dropped = [names[0], "price_lag_168h"]
-    result = run_ablation(
-        spec, frame, dropped, params=TINY, n_cutoffs=2, horizon_hours=48, min_train_days=30
-    )
+    result = run_ablation(spec, frame, dropped, params=TINY, days=DAYS, cutoffs=CUTOFFS)
     assert result.dropped == dropped
     assert np.isfinite(result.full["mean_mae"]) and np.isfinite(result.reduced["mean_mae"])
     # The delta is exactly reduced-minus-full, and the kept list excludes the dropped features.
@@ -61,25 +63,15 @@ def test_run_ablation_guards() -> None:
     spec = REGISTRY["wind"]
     names = feature_names(spec, frame)
     with pytest.raises(ValueError, match="No features selected"):
-        run_ablation(spec, frame, [], params=TINY, n_cutoffs=2, horizon_hours=48)
+        run_ablation(spec, frame, [], params=TINY, days=DAYS, cutoffs=CUTOFFS)
     with pytest.raises(ValueError, match="at least one"):
-        run_ablation(
-            spec, frame, list(names), params=TINY, n_cutoffs=2, horizon_hours=48, min_train_days=30
-        )
+        run_ablation(spec, frame, list(names), params=TINY, days=DAYS, cutoffs=CUTOFFS)
 
 
 def test_save_ablation_report(tmp_path: Path) -> None:
     frame = make_timeseries(periods=24 * 120)
     spec = REGISTRY["price"]
-    result = run_ablation(
-        spec,
-        frame,
-        ["price_lag_168h"],
-        params=TINY,
-        n_cutoffs=2,
-        horizon_hours=48,
-        min_train_days=30,
-    )
+    result = run_ablation(spec, frame, ["price_lag_168h"], params=TINY, days=DAYS, cutoffs=CUTOFFS)
     path = save_ablation_report(result, reports_dir=tmp_path)
     assert path.name == "price_ablation.json"
     payload = json.loads(path.read_text())
@@ -94,9 +86,8 @@ def test_run_ablation_with_seeds_reports_paired_spread() -> None:
         frame,
         ["price_lag_168h"],
         params=TINY,
-        n_cutoffs=2,
-        horizon_hours=48,
-        min_train_days=30,
+        days=DAYS,
+        cutoffs=CUTOFFS,
         seeds=3,
     )
     assert len(result.per_seed_delta) == 3  # one paired delta per seed
@@ -110,7 +101,6 @@ def test_run_ablation_with_seeds_reports_paired_spread() -> None:
 def test_run_ablation_single_seed_has_zero_spread() -> None:
     frame = make_timeseries(periods=24 * 120)
     result = run_ablation(
-        REGISTRY["price"], frame, ["price_lag_168h"], params=TINY, n_cutoffs=2, horizon_hours=48,
-        min_train_days=30,
+        REGISTRY["price"], frame, ["price_lag_168h"], params=TINY, days=DAYS, cutoffs=CUTOFFS
     )
     assert len(result.per_seed_delta) == 1 and result.delta_std == 0.0 and result.decisive is False

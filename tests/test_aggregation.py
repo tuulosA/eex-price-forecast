@@ -26,6 +26,10 @@ TINY = {
     "n_jobs": 0,
 }
 
+# Cutoffs inside the synthetic 2024 frame (the frozen production set is 2025-26), scored at a 2-day horizon.
+CUTOFFS = ("2024-03-01", "2024-04-01")
+DAYS = 2
+
 # Coordinates for the two synthetic wind points, so the 'regional' strategy has something to band.
 COORDS = {"ws_de01": (48.0, 10.0), "ws_de02": (54.0, 8.0)}
 
@@ -37,9 +41,8 @@ def test_run_aggregation_ranks_all_wind_strategies() -> None:
         "wind",
         strategies=("mean", "cube", "spread", "regional", "raw"),
         params=TINY,
-        n_cutoffs=2,
-        horizon_hours=48,
-        min_train_days=30,
+        days=DAYS,
+        cutoffs=CUTOFFS,
         coords=COORDS,
     )
     assert result.fundamental == "wind"
@@ -63,9 +66,8 @@ def test_run_aggregation_solar_and_load() -> None:
             fundamental,
             strategies=("mean", "raw"),
             params=TINY,
-            n_cutoffs=2,
-            horizon_hours=48,
-            min_train_days=30,
+            days=DAYS,
+            cutoffs=CUTOFFS,
         )
         assert result.fundamental == fundamental
         assert {v["strategy"] for v in result.variants} == {"mean", "raw"}
@@ -79,14 +81,14 @@ def test_run_aggregation_without_capacity_scaling() -> None:
         "wind",
         strategies=("mean", "raw"),
         params=TINY,
-        n_cutoffs=2,
-        horizon_hours=48,
-        min_train_days=30,
+        days=DAYS,
+        cutoffs=CUTOFFS,
         capacity_scaling=False,
         coords=COORDS,
     )
     # The toggle is recorded, scores are still finite MW errors, and the ranking is well-formed.
     assert result.report["config"]["capacity_scaling"] is False
+    assert result.report["config"]["days"] == DAYS
     assert all(v["capacity_scaled"] is False for v in result.variants)
     assert all(np.isfinite(v["mean_mae"]) and v["mean_mae"] >= 0 for v in result.variants)
 
@@ -99,9 +101,8 @@ def test_run_aggregation_rejects_unknown_strategy() -> None:
             "wind",
             strategies=("mean", "nonsense"),
             params=TINY,
-            n_cutoffs=2,
-            horizon_hours=48,
-            min_train_days=30,
+            days=DAYS,
+            cutoffs=CUTOFFS,
             coords=COORDS,
         )
 
@@ -109,7 +110,7 @@ def test_run_aggregation_rejects_unknown_strategy() -> None:
 def test_run_aggregation_rejects_unknown_fundamental() -> None:
     frame = make_timeseries(periods=24 * 120)
     with pytest.raises(ValueError, match="Cannot aggregate"):
-        run_aggregation(frame, "price", params=TINY, n_cutoffs=2, horizon_hours=48, min_train_days=30)
+        run_aggregation(frame, "price", params=TINY, days=DAYS, cutoffs=CUTOFFS)
 
 
 def test_save_aggregation_report_writes_ranking(tmp_path: Path) -> None:
@@ -131,10 +132,10 @@ def test_save_aggregation_report_writes_ranking(tmp_path: Path) -> None:
                 "folds": [],
             },
         ],
-        cutoffs=[pd.Timestamp("2026-01-01", tz="UTC")],
+        cutoffs=("2025-01-01",),
         report={
-            "config": {"n_cutoffs": 1, "horizon_hours": 48, "min_train_days": 30, "n_regions": 3},
-            "cutoffs": ["2026-01-01T00:00:00+00:00"],
+            "config": {"n_cutoffs": 1, "days": 14, "n_regions": 3},
+            "cutoffs": ["2025-01-01"],
             "variants": [
                 {"strategy": "cube", "n_features": 14, "mean_mae": 100.0, "mean_rmse": 130.0},
                 {"strategy": "mean", "n_features": 13, "mean_mae": 110.0, "mean_rmse": 140.0},
@@ -194,9 +195,8 @@ def test_run_neighbour_aggregation_ranks_strategies_incl_baseline() -> None:
         frame,
         strategies=("none", "country_mean", "raw"),
         params=TINY,
-        n_cutoffs=2,
-        horizon_hours=48,
-        min_train_days=30,
+        days=DAYS,
+        cutoffs=CUTOFFS,
     )
     strategies = {v["strategy"] for v in result.variants}
     assert strategies == {"none", "country_mean", "raw"}
@@ -215,8 +215,7 @@ def test_save_neighbour_aggregation_report(tmp_path: Path) -> None:
 
     frame = _frame_with_neighbours()
     result = run_neighbour_aggregation(
-        frame, strategies=("none", "country_mean"), params=TINY, n_cutoffs=2,
-        horizon_hours=48, min_train_days=30,
+        frame, strategies=("none", "country_mean"), params=TINY, days=DAYS, cutoffs=CUTOFFS
     )
     path = save_neighbour_aggregation_report(result, reports_dir=tmp_path)
     payload = json.loads(path.read_text())

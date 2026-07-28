@@ -30,12 +30,19 @@ FORECAST_DIR = DATA_DIR / "forecast"  # written forecasts (CSV) and plots
 TUNING_DIR = (
     DATA_DIR / "tuning"
 )  # per-model tuning reports (cutoffs + metadata) from `eex model tune`
-AGGREGATION_DIR = DATA_DIR / "aggregation"  # weather-aggregation A/B reports from `eex analyze aggregation`
-ABLATION_DIR = DATA_DIR / "ablation"  # feature-removal (ablation) reports from `eex analyze ablation`
+AGGREGATION_DIR = (
+    DATA_DIR / "aggregation"
+)  # weather-aggregation A/B reports from `eex analyze aggregation`
+ABLATION_DIR = (
+    DATA_DIR / "ablation"
+)  # feature-removal (ablation) reports from `eex analyze ablation`
 EVALUATION_DIR = DATA_DIR / "evaluation"  # frozen-cutoff backtest reports from `eex analyze eval`
 
 # Tuned hyperparameters per model, written by `eex model tune` and read by `eex model train`.
 HYPERPARAMS_PATH = CONFIG_DIR / "hyperparams.json"
+BACKTEST_CUTOFFS_PATH = (
+    CONFIG_DIR / "backtest_cutoffs.yaml"
+)  # frozen walk-forward cutoffs (all tools)
 
 # -- German market / domain constants -------------------------------------------
 AREA_CODE = "DE"

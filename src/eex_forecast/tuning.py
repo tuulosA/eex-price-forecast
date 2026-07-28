@@ -1,11 +1,13 @@
-"""Optuna walk-forward hyperparameter tuning.
+"""Optuna walk-forward hyperparameter tuning - the shared backtest engine.
 
 A single train/test split flatters a time-series model: it can peek at the future and tune to one
-arbitrary period. Instead we backtest. We place several **cutoffs** evenly across the tail of the data;
-at each cutoff the model trains on everything up to it and is scored (mean absolute error) on the next
-``horizon_hours`` of held-out actuals - exactly how it will be used in production. Optuna minimises the
-mean error across cutoffs, so the chosen hyperparameters generalise across many forecast origins rather
-than one lucky split.
+arbitrary period. Instead we backtest over a **frozen set of delivery days** (the same
+:data:`eex_forecast.backtest_cutoffs.BACKTEST_CUTOFFS` every backtest tool uses). At each cutoff the model
+trains on everything strictly before that delivery day's local midnight and is scored (mean absolute
+error) on the next ``days`` delivery days of held-out actuals - exactly how it will be used in production.
+Optuna minimises the mean error across cutoffs, so the chosen hyperparameters generalise across many
+forecast origins rather than one lucky split. The delivery-day windows are DST-exact (see
+:mod:`eex_forecast.backtest_cutoffs`), so a fold spans whole 23/24/25-hour market days, not flat UTC hours.
 
 Features are built once over the full frame, then sliced per fold by timestamp - no future row ever
 enters a fold's training set. Each fold also reproduces the price model's serve-time lag handling, so
@@ -14,7 +16,7 @@ drops ``price_lag_168h`` from the far-horizon test rows that would not have it a
 :mod:`eex_forecast.model`; no-ops for the sub-models and for horizons within one week). Without this a
 backtest frame - which holds every actual - would feed the far horizon a lag no forecast has, flatter
 the lag's apparent worth, and hide the very train/serve gap ``train_nan`` fixes.
-:func:`walk_forward_cutoffs` and :func:`evaluate_params` are pure/deterministic and unit-tested.
+:func:`evaluate_params` is pure/deterministic and unit-tested.
 """
 
 from __future__ import annotations
@@ -31,6 +33,12 @@ import pandas as pd
 from optuna.samplers import TPESampler
 from xgboost import XGBRegressor
 
+from eex_forecast.backtest_cutoffs import (
+    BACKTEST_CUTOFFS,
+    DAY_AHEAD_DAYS,
+    cutoff_utc,
+    horizon_end_utc,
+)
 from eex_forecast.config import TUNING_DIR
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import (
@@ -63,47 +71,8 @@ class TuneResult:
     params: dict[str, Any]
     best_value: float
     n_folds: int
-    cutoffs: list[pd.Timestamp]
+    cutoffs: tuple[str, ...]  # the frozen delivery days this run scored (BACKTEST_CUTOFFS)
     report: dict[str, Any]
-
-
-def _to_utc(value: pd.Timestamp | str) -> pd.Timestamp:
-    ts = pd.Timestamp(value)
-    return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
-
-
-def walk_forward_cutoffs(
-    timestamps: pd.Series,
-    *,
-    horizon_hours: int,
-    n_cutoffs: int,
-    min_train_days: int = 120,
-    cutoff_start: pd.Timestamp | str | None = None,
-) -> list[pd.Timestamp]:
-    """Evenly-spaced backtest cutoffs across the valid tail of ``timestamps`` (oldest first).
-
-    The first cutoff leaves at least ``min_train_days`` of history to train on; the last leaves a full
-    ``horizon_hours`` of actuals to score against. ``cutoff_start`` raises the earliest cutoff to (at
-    least) that date, so tuning weights the recent market regime rather than years-old history.
-    """
-    times = pd.to_datetime(timestamps, utc=True).dropna().sort_values()
-    if times.empty:
-        raise ValueError("No timestamps to build cutoffs from.")
-    start = times.min() + pd.Timedelta(days=min_train_days)
-    if cutoff_start is not None:
-        start = max(start, _to_utc(cutoff_start))
-    end = times.max() - pd.Timedelta(hours=horizon_hours)
-    if end <= start:
-        raise ValueError(
-            "Not enough data for walk-forward tuning: need history after "
-            f"{start.date()} plus a {horizon_hours} h horizon "
-            f"(min_train_days={min_train_days}, cutoff_start={cutoff_start})."
-        )
-    if n_cutoffs <= 1:
-        return [end.floor("h")]
-    grid = np.linspace(start.value, end.value, num=n_cutoffs)
-    cutoffs = pd.DatetimeIndex(pd.to_datetime(grid, utc=True)).floor("h")
-    return sorted(dict.fromkeys(cutoffs))
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,67 +97,79 @@ def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> _Data:
     )
 
 
+def _score_fold(
+    spec: ModelSpec, data: _Data, params: dict[str, Any], delivery_day: str, days: int
+) -> dict[str, Any] | None:
+    """One fold: fit on rows strictly before ``delivery_day`` and score the ``days``-day window from it.
+
+    Returns the fold's MAE/RMSE (in MW / EUR) and its UTC window, or ``None`` when the fold is unusable
+    (no history, or no scored rows). Reproduces production's price-lag handling so the fold scores live
+    behaviour rather than a leak: train with the same serve-time gap (train_nan) and drop the lag from the
+    far-horizon test rows that would not have it at serve - both no-ops without a price lag and within a
+    week of the cutoff. The delivery-day window is DST-exact (23/24/25 h), not a flat ``days * 24`` hours.
+    """
+    start, end = cutoff_utc(delivery_day), horizon_end_utc(delivery_day, days)
+    train = (data.times < start) & data.fit_target.notna()
+    test = (data.times >= start) & (data.times < end) & data.actual.notna()
+    if int(train.sum()) < 24 or not bool(test.any()):
+        return None
+
+    y_train = data.fit_target[train]
+    if spec.clip_target_quantiles is not None:  # winsorise per fold (train-only) to avoid leakage
+        low, high = (y_train.quantile(q) for q in spec.clip_target_quantiles)
+        y_train = y_train.clip(lower=low, upper=high)
+    x_train = apply_train_nan_lag_mask(data.matrix[train])
+    x_test = apply_serve_unavailable_lag_mask(data.matrix[test], data.times[test], start)
+    booster = XGBRegressor(**params)
+    booster.fit(x_train, y_train)
+    prediction = booster.predict(x_test)
+    if data.capacity is not None:  # reverse the capacity scaling back to MW
+        prediction = prediction * data.capacity[test].to_numpy()
+    if spec.non_negative:
+        prediction = np.clip(prediction, 0.0, None)
+    error = data.actual[test].to_numpy() - prediction
+    test_times = data.times[test]
+    return {
+        "delivery_day": delivery_day,
+        "start_utc": test_times.min().isoformat(),
+        "end_utc": test_times.max().isoformat(),
+        "test_rows": int(test.sum()),
+        "mae": float(np.mean(np.abs(error))),
+        "rmse": float(np.sqrt(np.mean(error**2))),
+    }
+
+
 def _fold_metrics(
     spec: ModelSpec,
     data: _Data,
     params: dict[str, Any],
-    cutoffs: list[pd.Timestamp],
-    horizon_hours: int,
+    cutoffs: tuple[str, ...],
+    days: int,
 ) -> tuple[list[dict[str, Any]], float, float]:
     """Per-cutoff MAE/RMSE (in MW / EUR) for one param set, plus their means. One model fit per cutoff."""
-    horizon = pd.Timedelta(hours=horizon_hours)
-    folds: list[dict[str, Any]] = []
-    maes: list[float] = []
-    rmses: list[float] = []
-    for cutoff in cutoffs:
-        train = (data.times <= cutoff) & data.fit_target.notna()
-        test = (data.times > cutoff) & (data.times <= cutoff + horizon) & data.actual.notna()
-        if int(train.sum()) < 24 or not test.any():
-            continue
-        y_train = data.fit_target[train]
-        if (
-            spec.clip_target_quantiles is not None
-        ):  # winsorise per fold (train-only) to avoid leakage
-            low, high = (y_train.quantile(q) for q in spec.clip_target_quantiles)
-            y_train = y_train.clip(lower=low, upper=high)
-        # Reproduce production's price-lag handling so the fold scores live behaviour: train with the
-        # same serve-time gap (train_nan), and drop the lag from the far-horizon test rows that would
-        # not have it at serve. Both are no-ops without a price lag and for horizons within one week.
-        x_train = apply_train_nan_lag_mask(data.matrix[train])
-        x_test = apply_serve_unavailable_lag_mask(data.matrix[test], data.times[test], cutoff)
-        booster = XGBRegressor(**params)
-        booster.fit(x_train, y_train)
-        prediction = booster.predict(x_test)
-        if data.capacity is not None:  # reverse the capacity scaling back to MW
-            prediction = prediction * data.capacity[test].to_numpy()
-        if spec.non_negative:
-            prediction = np.clip(prediction, 0.0, None)
-        error = data.actual[test].to_numpy() - prediction
-        mae = float(np.mean(np.abs(error)))
-        rmse = float(np.sqrt(np.mean(error**2)))
-        maes.append(mae)
-        rmses.append(rmse)
-        folds.append(
-            {
-                "cutoff": cutoff.isoformat(),
-                "test_rows": int(test.sum()),
-                "mae": round(mae, 4),
-                "rmse": round(rmse, 4),
-            }
-        )
+    folds = [
+        fold for day in cutoffs if (fold := _score_fold(spec, data, params, day, days)) is not None
+    ]
     if not folds:
         raise ValueError("No usable walk-forward folds (too little data around the cutoffs).")
-    return folds, float(np.mean(maes)), float(np.mean(rmses))
+    rounded = [
+        {**fold, "mae": round(fold["mae"], 4), "rmse": round(fold["rmse"], 4)} for fold in folds
+    ]
+    return (
+        rounded,
+        float(np.mean([fold["mae"] for fold in folds])),
+        float(np.mean([fold["rmse"] for fold in folds])),
+    )
 
 
 def _score(
     spec: ModelSpec,
     data: _Data,
     params: dict[str, Any],
-    cutoffs: list[pd.Timestamp],
-    horizon_hours: int,
+    cutoffs: tuple[str, ...],
+    days: int,
 ) -> float:
-    _, mean_mae, _ = _fold_metrics(spec, data, params, cutoffs, horizon_hours)
+    _, mean_mae, _ = _fold_metrics(spec, data, params, cutoffs, days)
     return mean_mae
 
 
@@ -197,11 +178,15 @@ def evaluate_params(
     frame: pd.DataFrame,
     params: dict[str, Any],
     *,
-    cutoffs: list[pd.Timestamp],
-    horizon_hours: int,
+    days: int,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> float:
-    """Mean walk-forward MAE (MW / EUR) of ``params`` for ``spec`` across ``cutoffs`` (lower is better)."""
-    return _score(spec, _prepare(spec, frame), params, cutoffs, horizon_hours)
+    """Mean walk-forward MAE (MW / EUR) of ``params`` for ``spec`` across ``cutoffs`` (lower is better).
+
+    ``cutoffs`` defaults to the frozen :data:`BACKTEST_CUTOFFS`; it is an internal seam for tests to inject
+    dates that fall inside a small synthetic frame, not a production knob.
+    """
+    return _score(spec, _prepare(spec, frame), params, cutoffs, days)
 
 
 def walk_forward_metrics(
@@ -209,21 +194,21 @@ def walk_forward_metrics(
     frame: pd.DataFrame,
     params: dict[str, Any],
     *,
-    cutoffs: list[pd.Timestamp],
-    horizon_hours: int,
+    days: int,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> dict[str, Any]:
     """Full walk-forward result for one param set: mean MAE, mean RMSE, and the per-cutoff folds.
 
     The richer sibling of :func:`evaluate_params`; the aggregation and ablation A/B tools use it to
     compare strategies/feature sets on the same footing the tuner scores hyperparameters on.
     """
-    folds, mean_mae, mean_rmse = _fold_metrics(
-        spec, _prepare(spec, frame), params, cutoffs, horizon_hours
-    )
+    folds, mean_mae, mean_rmse = _fold_metrics(spec, _prepare(spec, frame), params, cutoffs, days)
     return {"mean_mae": mean_mae, "mean_rmse": mean_rmse, "folds": folds}
 
 
-_BASE_SEED = 42  # the first seed equals the production default, so a 1-seed run reproduces the old point
+_BASE_SEED = (
+    42  # the first seed equals the production default, so a 1-seed run reproduces the old point
+)
 
 
 def seed_list(n_seeds: int) -> list[int]:
@@ -238,9 +223,9 @@ def walk_forward_metrics_seeded(
     frame: pd.DataFrame,
     params: dict[str, Any],
     *,
-    cutoffs: list[pd.Timestamp],
-    horizon_hours: int,
+    days: int,
     seeds: list[int],
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> dict[str, Any]:
     """Repeat :func:`walk_forward_metrics` once per seed (XGBoost ``random_state``).
 
@@ -248,21 +233,25 @@ def walk_forward_metrics_seeded(
     strategy/feature delta of ~1 EUR/MWh can be noise. Refitting under several seeds and reporting the
     across-seed **mean and sample std** lets a comparison be weighed against that noise. Features are
     built once (via :func:`_prepare`) and only the fit is repeated. With one seed the std is 0 and the
-    mean is the single run - identical to the old behaviour.
+    mean is the single run. ``cutoffs`` defaults to the frozen :data:`BACKTEST_CUTOFFS` (a test seam).
     """
     data = _prepare(spec, frame)
+    multi = len(seeds) > 1
     per_mae: list[float] = []
     per_rmse: list[float] = []
     folds0: list[dict[str, Any]] = []
     for index, seed in enumerate(seeds):
         folds, mae, rmse = _fold_metrics(
-            spec, data, {**params, "random_state": int(seed)}, cutoffs, horizon_hours
+            spec, data, {**params, "random_state": int(seed)}, cutoffs, days
         )
         per_mae.append(mae)
         per_rmse.append(rmse)
         if index == 0:
             folds0 = folds
-    multi = len(seeds) > 1
+        if multi:  # per-seed heartbeat so a long multi-seed run is not silent (redundant for one seed)
+            logger.info(
+                "[%s] seed %d/%d | MAE %.3f | RMSE %.3f", spec.name, index + 1, len(seeds), mae, rmse
+            )
     return {
         "mean_mae": float(np.mean(per_mae)),
         "std_mae": float(np.std(per_mae, ddof=1)) if multi else 0.0,
@@ -295,36 +284,31 @@ def tune(
     frame: pd.DataFrame,
     *,
     n_trials: int,
-    n_cutoffs: int,
-    horizon_hours: int,
-    min_train_days: int = 120,
-    cutoff_start: pd.Timestamp | str | None = None,
+    days: int = DAY_AHEAD_DAYS,
     seed: int = 42,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> TuneResult:
-    """Run Optuna walk-forward tuning for ``spec`` and return the best complete hyperparameters."""
+    """Run Optuna walk-forward tuning for ``spec`` over the frozen cutoffs and return the best params.
+
+    ``days`` is the scored horizon in whole delivery days (default 1 = day-ahead). ``cutoffs`` defaults to
+    the frozen :data:`BACKTEST_CUTOFFS` and is an internal test seam, not a production knob.
+    """
     data = _prepare(spec, frame)
-    cutoffs = walk_forward_cutoffs(
-        frame[TIMESTAMP],
-        horizon_hours=horizon_hours,
-        n_cutoffs=n_cutoffs,
-        min_train_days=min_train_days,
-        cutoff_start=cutoff_start,
-    )
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     scope = f"[{spec.name}]"
     logger.info(
-        "%s tuning started: %d walk-forward cutoffs (%s .. %s), %d h horizon, %d trials",
+        "%s tuning started: %d frozen cutoffs (%s .. %s), %d-day horizon, %d trials",
         scope,
         len(cutoffs),
-        cutoffs[0].date(),
-        cutoffs[-1].date(),
-        horizon_hours,
+        cutoffs[0],
+        cutoffs[-1],
+        days,
         n_trials,
     )
     logger.info("%s features: %s", scope, ", ".join(data.matrix.columns))
 
     def objective(trial: optuna.Trial) -> float:
-        return _score(spec, data, suggest_params(trial), cutoffs, horizon_hours)
+        return _score(spec, data, suggest_params(trial), cutoffs, days)
 
     def log_trial(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
         value = "failed" if trial.value is None else f"{trial.value:.4f}"
@@ -347,7 +331,7 @@ def tune(
         n_trials,
     )
     # Re-score the winner to record its per-cutoff breakdown, and summarise every trial.
-    folds, best_mae, best_rmse = _fold_metrics(spec, data, best_params, cutoffs, horizon_hours)
+    folds, best_mae, best_rmse = _fold_metrics(spec, data, best_params, cutoffs, days)
     all_trials = [
         {
             "trial": trial.number,
@@ -361,12 +345,11 @@ def tune(
         "config": {
             "n_trials": n_trials,
             "n_cutoffs": len(cutoffs),
-            "min_train_days": min_train_days,
-            "horizon_hours": horizon_hours,
+            "days": days,
             "seed": seed,
         },
         "features": list(data.matrix.columns),
-        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
+        "cutoffs": list(cutoffs),
         "best_trial": {
             "trial": study.best_trial.number,
             "mean_mae": round(best_mae, 4),
