@@ -56,6 +56,7 @@ src/eex_forecast/
   tuning.py            # Optuna walk-forward hyperparameter tuning (shared backtest engine)
   aggregation.py       # A/B feature-aggregation strategies (eex analyze aggregation)
   ablation.py          # remove features and measure the loss (eex analyze ablation)
+  evaluation.py        # frozen-cutoff 24h MAE per model on a fixed day set (eex analyze eval)
   forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
   cli.py               # `eex` command-line interface
 ```
@@ -355,6 +356,29 @@ Two things decide whether the answer is trustworthy — read both:
 Two caveats apply to both tools: the score is the target model's own MAE (for a sub-model, not the
 downstream price impact), and because hyperparameters are held fixed a feature-rich variant may be
 under-served by them — **re-tune the winner** (`eex model tune --target <model>`) before adopting it.
+
+### Frozen-cutoff eval — the same days, every run
+
+Where `aggregation` and `ablation` place their cutoffs evenly across the tail of the data, `analyze eval`
+scores a **fixed, hand-picked set of delivery days** (report → `data/evaluation/`). The set is frozen in
+code, so a weather-anchor, feature, or hyperparameter change is measured against the *identical* days each
+time — the numbers move only because the model did, not because the sample shifted. The days are balanced
+on purpose: every calendar month, every weekday plus weekends, a handful of German holidays, and two plain
+weekdays chosen at the wind extremes (near-calm and the windiest day in the span), so both tails are tested
+rather than only average conditions.
+
+```bash
+eex analyze eval                            # 24 h MAE per model over the frozen days
+eex analyze eval --models price,wind --seeds 5   # a subset, averaged over seeds (mean +/- spread)
+```
+
+Each model reports MAE/RMSE in its natural unit (EUR/MWh for price, MW for the fundamentals), so only
+same-model runs compare — not price against a sub-model. Two scope notes, both inherent: **price is scored
+on the *actual* fundamentals**, so its MAE is the price model's own skill given perfect wind/solar/load,
+not the end-to-end pipeline — to see how an anchor/feature choice propagates into the fundamentals, read
+the **sub-models'** MAE. And only the **24 h** horizon is scored: the historical-forecast weather the
+sub-models read is near-actual (short lead), so a multi-day MAE would flatter itself against weather far
+more accurate than the real multi-day-lead forecast served live.
 
 ### Hyperparameter tuning
 
