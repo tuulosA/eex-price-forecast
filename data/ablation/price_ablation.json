@@ -1,0 +1,93 @@
+{
+  "model": "price",
+  "compared": "feature removal",
+  "run_at": "2026-07-25T09:34:12.692785+00:00",
+  "config": {
+    "n_cutoffs": 6,
+    "horizon_hours": 336,
+    "min_train_days": 120,
+    "seeds": [
+      42,
+      1055,
+      2068,
+      3081,
+      4094
+    ],
+    "params": {
+      "n_estimators": 600,
+      "max_depth": 4,
+      "learning_rate": 0.18258230439200238,
+      "subsample": 0.9100531293444458,
+      "colsample_bytree": 0.9757995766256756,
+      "min_child_weight": 18.001719658125328,
+      "reg_alpha": 0.24637685958997463,
+      "reg_lambda": 4.869640941520899,
+      "objective": "reg:squarederror",
+      "tree_method": "hist",
+      "random_state": 42,
+      "n_jobs": 0
+    }
+  },
+  "cutoffs": [
+    "2023-05-01T00:00:00+00:00",
+    "2023-12-23T14:00:00+00:00",
+    "2024-08-16T04:00:00+00:00",
+    "2025-04-09T18:00:00+00:00",
+    "2025-12-02T08:00:00+00:00",
+    "2026-07-26T23:00:00+00:00"
+  ],
+  "dropped": [
+    "wind_speed",
+    "temp_wind",
+    "temp_load",
+    "irr_load",
+    "irr_solar"
+  ],
+  "kept": [
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_holiday",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "month_sin",
+    "month_cos",
+    "price_lag_168h",
+    "wind",
+    "solar",
+    "load",
+    "nuclear_available_mw",
+    "ntc_imp_total",
+    "ntc_exp_total",
+    "nbr_wind_at",
+    "nbr_wind_ch",
+    "nbr_wind_cz",
+    "nbr_wind_dk",
+    "nbr_wind_fr",
+    "nbr_wind_nl",
+    "nbr_wind_pl"
+  ],
+  "full": {
+    "mean_mae": 13.913,
+    "mean_rmse": 19.0949,
+    "std_mae": 0.2899
+  },
+  "reduced": {
+    "mean_mae": 13.6832,
+    "mean_rmse": 18.9814,
+    "std_mae": 0.208
+  },
+  "mae_delta": -0.2297,
+  "delta_std": 0.307,
+  "decisive": false,
+  "per_seed_delta": [
+    0.0335,
+    -0.4938,
+    0.111,
+    -0.5786,
+    -0.2208
+  ]
+}
