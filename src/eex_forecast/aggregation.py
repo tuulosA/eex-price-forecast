@@ -39,18 +39,18 @@ from typing import Any
 
 import pandas as pd
 
-from eex_forecast.config import AGGREGATION_DIR, HORIZON_DAYS
+from eex_forecast.backtest_cutoffs import BACKTEST_CUTOFFS, DAY_AHEAD_DAYS
+from eex_forecast.config import AGGREGATION_DIR
 from eex_forecast.features import (
     KNOWN_STRATEGIES,
     NEIGHBOUR_STRATEGIES,
-    TIMESTAMP,
     WEATHER_AGG,
     fundamental_features_from,
     price_features_with_neighbours,
     weather_strategy_block,
 )
 from eex_forecast.model import REGISTRY, ModelSpec, load_params
-from eex_forecast.tuning import seed_list, walk_forward_cutoffs, walk_forward_metrics_seeded
+from eex_forecast.tuning import seed_list, walk_forward_metrics_seeded
 from eex_forecast.weather.point_search import load_points_config
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class AggregationResult:
 
     fundamental: str
     variants: list[dict[str, Any]]
-    cutoffs: list[pd.Timestamp]
+    cutoffs: tuple[str, ...]  # the frozen delivery days scored (BACKTEST_CUTOFFS)
     report: dict[str, Any]
 
     @property
@@ -121,45 +121,39 @@ def run_aggregation(
     *,
     strategies: tuple[str, ...] | None = None,
     params: dict[str, Any] | None = None,
-    n_cutoffs: int = 6,
-    horizon_hours: int = HORIZON_DAYS * 24,
-    min_train_days: int = 120,
-    cutoff_start: pd.Timestamp | str | None = None,
+    days: int = DAY_AHEAD_DAYS,
     n_regions: int = 3,
     capacity_scaling: bool = True,
     coords: dict[str, tuple[float, float]] | None = None,
     seeds: int = 1,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> AggregationResult:
     """Score each weather-aggregation ``strategy`` for ``fundamental`` by walk-forward MAE/RMSE.
 
+    Scored over the frozen :data:`BACKTEST_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`).
     ``strategies`` defaults to the fundamental's menu (see :data:`eex_forecast.features.WEATHER_AGG`).
     ``params`` defaults to the tuned hyperparameters (or built-in defaults); the same set is used for
     every strategy so the comparison isolates the feature choice. ``capacity_scaling`` toggles learning a
     capacity factor (default) versus raw MW - both scored in MW. ``coords`` (for ``regional``) defaults to
-    the fundamental's chosen points in ``config/weather_points.json``.
+    the fundamental's chosen points in ``config/weather_points.json``. ``cutoffs`` is an internal test seam.
     """
     if fundamental not in FUNDAMENTALS:
-        raise ValueError(f"Cannot aggregate '{fundamental}'. Choose one of {', '.join(FUNDAMENTALS)}.")
+        raise ValueError(
+            f"Cannot aggregate '{fundamental}'. Choose one of {', '.join(FUNDAMENTALS)}."
+        )
     strategies = strategies or WEATHER_AGG[fundamental].strategies
     if coords is None:
         coords = load_coords(fundamental)
     params = params or load_params(fundamental)
     seed_values = seed_list(seeds)
-    cutoffs = walk_forward_cutoffs(
-        frame[TIMESTAMP],
-        horizon_hours=horizon_hours,
-        n_cutoffs=n_cutoffs,
-        min_train_days=min_train_days,
-        cutoff_start=cutoff_start,
-    )
     logger.info(
-        "[aggregate:%s] %d strategies over %d cutoffs (%s .. %s), %d h horizon | capacity scaling %s",
+        "[aggregate:%s] %d strategies over %d frozen cutoffs (%s .. %s), %d-day horizon | capacity scaling %s",
         fundamental,
         len(strategies),
         len(cutoffs),
-        cutoffs[0].date(),
-        cutoffs[-1].date(),
-        horizon_hours,
+        cutoffs[0],
+        cutoffs[-1],
+        days,
         "on" if capacity_scaling else "off",
     )
 
@@ -174,7 +168,7 @@ def run_aggregation(
         )
         n_features = spec.build_features(frame).shape[1]
         metrics = walk_forward_metrics_seeded(
-            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
+            spec, frame, params, days=days, seeds=seed_values, cutoffs=cutoffs
         )
         variants.append(
             {
@@ -201,20 +195,21 @@ def run_aggregation(
     report: dict[str, Any] = {
         "config": {
             "n_cutoffs": len(cutoffs),
-            "horizon_hours": horizon_hours,
-            "min_train_days": min_train_days,
+            "days": days,
             "n_regions": n_regions,
             "capacity_scaling": capacity_scaling,
             "seeds": seed_values,
             "params": params,
         },
-        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
+        "cutoffs": list(cutoffs),
         "variants": variants,
     }
     return AggregationResult(fundamental, variants, cutoffs, report)
 
 
-def save_aggregation_report(result: AggregationResult, *, reports_dir: Path = AGGREGATION_DIR) -> Path:
+def save_aggregation_report(
+    result: AggregationResult, *, reports_dir: Path = AGGREGATION_DIR
+) -> Path:
     """Write the aggregation report to ``<fundamental>_aggregation.json`` (ranking + folds + config)."""
     payload = {
         "model": result.fundamental,
@@ -238,17 +233,16 @@ def run_neighbour_aggregation(
     *,
     strategies: tuple[str, ...] | None = None,
     params: dict[str, Any] | None = None,
-    n_cutoffs: int = 6,
-    horizon_hours: int = HORIZON_DAYS * 24,
-    min_train_days: int = 120,
-    cutoff_start: pd.Timestamp | str | None = None,
+    days: int = DAY_AHEAD_DAYS,
     seeds: int = 1,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> AggregationResult:
     """Score each neighbour-wind aggregation ``strategy`` by the **price** model's walk-forward MAE/RMSE.
 
-    ``strategies`` defaults to :data:`eex_forecast.features.NEIGHBOUR_STRATEGIES` (incl. the ``none``
-    baseline). ``params`` defaults to the tuned price hyperparameters; the same set is used for every
-    strategy so the comparison isolates the neighbour feature block. Errors are in EUR/MWh (price scale).
+    Scored over the frozen :data:`BACKTEST_CUTOFFS` at the day-ahead horizon. ``strategies`` defaults
+    to :data:`eex_forecast.features.NEIGHBOUR_STRATEGIES` (incl. the ``none`` baseline). ``params`` defaults
+    to the tuned price hyperparameters; the same set is used for every strategy so the comparison isolates
+    the neighbour feature block. Errors are in EUR/MWh (price scale). ``cutoffs`` is an internal test seam.
     """
     strategies = strategies or NEIGHBOUR_STRATEGIES
     unknown = set(strategies) - set(NEIGHBOUR_STRATEGIES)
@@ -260,20 +254,13 @@ def run_neighbour_aggregation(
     base = REGISTRY["price"]
     params = params or load_params("price")
     seed_values = seed_list(seeds)
-    cutoffs = walk_forward_cutoffs(
-        frame[TIMESTAMP],
-        horizon_hours=horizon_hours,
-        n_cutoffs=n_cutoffs,
-        min_train_days=min_train_days,
-        cutoff_start=cutoff_start,
-    )
     logger.info(
-        "[aggregate:neighbour] %d strategies over %d cutoffs (%s .. %s), %d h horizon",
+        "[aggregate:neighbour] %d strategies over %d frozen cutoffs (%s .. %s), %d-day horizon",
         len(strategies),
         len(cutoffs),
-        cutoffs[0].date(),
-        cutoffs[-1].date(),
-        horizon_hours,
+        cutoffs[0],
+        cutoffs[-1],
+        days,
     )
 
     variants: list[dict[str, Any]] = []
@@ -285,7 +272,7 @@ def run_neighbour_aggregation(
         )
         n_features = spec.build_features(frame).shape[1]
         metrics = walk_forward_metrics_seeded(
-            spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
+            spec, frame, params, days=days, seeds=seed_values, cutoffs=cutoffs
         )
         variants.append(
             {
@@ -310,12 +297,11 @@ def run_neighbour_aggregation(
     report: dict[str, Any] = {
         "config": {
             "n_cutoffs": len(cutoffs),
-            "horizon_hours": horizon_hours,
-            "min_train_days": min_train_days,
+            "days": days,
             "seeds": seed_values,
             "params": params,
         },
-        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
+        "cutoffs": list(cutoffs),
         "variants": variants,
     }
     return AggregationResult("neighbour", variants, cutoffs, report)

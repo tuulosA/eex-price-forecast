@@ -28,10 +28,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from eex_forecast.config import ABLATION_DIR, HORIZON_DAYS
-from eex_forecast.features import TIMESTAMP
+from eex_forecast.backtest_cutoffs import BACKTEST_CUTOFFS, DAY_AHEAD_DAYS
+from eex_forecast.config import ABLATION_DIR
 from eex_forecast.model import REGISTRY, FeatureBuilder, ModelSpec, load_params
-from eex_forecast.tuning import seed_list, walk_forward_cutoffs, walk_forward_metrics_seeded
+from eex_forecast.tuning import seed_list, walk_forward_metrics_seeded
 
 logger = logging.getLogger(__name__)
 
@@ -113,15 +113,16 @@ def run_ablation(
     dropped: list[str],
     *,
     params: dict[str, Any] | None = None,
-    n_cutoffs: int = 6,
-    horizon_hours: int = HORIZON_DAYS * 24,
-    min_train_days: int = 120,
+    days: int = DAY_AHEAD_DAYS,
     seeds: int = 1,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
 ) -> AblationResult:
     """Score ``spec``'s full feature set versus the set minus ``dropped`` (walk-forward MAE/RMSE).
 
-    With ``seeds > 1`` each side is refit under several XGBoost seeds and the delta is paired per seed,
-    so its run-to-run spread is reported alongside the mean - a delta within that spread is not a result.
+    Scored over the frozen :data:`BACKTEST_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`) - the
+    only horizon this backtest scores faithfully. With ``seeds > 1`` each side is refit under several XGBoost
+    seeds and the delta is paired per seed, so its run-to-run spread is reported alongside the mean - a delta
+    within that spread is not a result. ``cutoffs`` is an internal test seam.
     """
     names = feature_names(spec, frame)
     if not dropped:
@@ -132,12 +133,6 @@ def run_ablation(
 
     params = params or load_params(spec.name)
     seed_values = seed_list(seeds)
-    cutoffs = walk_forward_cutoffs(
-        frame[TIMESTAMP],
-        horizon_hours=horizon_hours,
-        n_cutoffs=n_cutoffs,
-        min_train_days=min_train_days,
-    )
     reduced_spec = replace(
         spec, name=f"{spec.name}-drop", build_features=_drop_builder(spec.build_features, dropped)
     )
@@ -152,10 +147,10 @@ def run_ablation(
     )
 
     full = walk_forward_metrics_seeded(
-        spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
+        spec, frame, params, days=days, seeds=seed_values, cutoffs=cutoffs
     )
     reduced = walk_forward_metrics_seeded(
-        reduced_spec, frame, params, cutoffs=cutoffs, horizon_hours=horizon_hours, seeds=seed_values
+        reduced_spec, frame, params, days=days, seeds=seed_values, cutoffs=cutoffs
     )
     per_seed_delta = [
         r - f for f, r in zip(full["per_seed_mae"], reduced["per_seed_mae"], strict=True)
@@ -175,12 +170,11 @@ def run_ablation(
     report: dict[str, Any] = {
         "config": {
             "n_cutoffs": len(cutoffs),
-            "horizon_hours": horizon_hours,
-            "min_train_days": min_train_days,
+            "days": days,
             "seeds": seed_values,
             "params": params,
         },
-        "cutoffs": [cutoff.isoformat() for cutoff in cutoffs],
+        "cutoffs": list(cutoffs),
         "dropped": dropped,
         "kept": remaining,
         "full": {

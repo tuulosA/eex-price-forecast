@@ -45,9 +45,11 @@ src/eex_forecast/
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
-  tuning.py            # Optuna walk-forward tuning; serve-faithful backtest engine + seed averaging (reused by aggregation + ablation)
+  backtest_cutoffs.py  # frozen cutoffs from config/backtest_cutoffs.yaml + DST delivery-day window helpers
+  tuning.py            # Optuna walk-forward tuning; serve-faithful backtest engine + seed averaging (reused by aggregation/ablation/evaluation)
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
+  evaluation.py        # frozen-cutoff 24h MAE per model, reporting over the shared engine (eex analyze eval)
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
@@ -99,7 +101,7 @@ tuned params to `config/hyperparams.json`.
 - **Docstrings explain *why*, not just *what*** — module headers are essays on rationale and gotchas.
   Match that density; a one-line docstring on a subtle function is under-documented here.
 - Strict typing (mypy `strict = true`); ruff rule set `E,F,W,I,B,UP,C4,N,SIM`, line length 100.
-- Prefer pure, unit-tested helpers (see `features.py`, `tuning.walk_forward_cutoffs`) over logic buried
+- Prefer pure, unit-tested helpers (see `features.py`, `backtest_cutoffs.load_cutoffs`) over logic buried
   in I/O or CLI code. Every `src` module has a matching `tests/test_*.py`.
 - All timestamps are **UTC**, hourly, ISO-8601; the DB primary key is the `timestamp` string.
 - Add a test alongside any behavioral change and keep `ruff`/`mypy`/`pytest` green before finishing.

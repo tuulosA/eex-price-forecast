@@ -48,9 +48,10 @@ _MIN_ROWS_FOR_EARLY_STOPPING = 500
 # reproduce the gap in training - nulling the lag on a random fraction of rows - so it learns the
 # missing-lag default and falls back to the fundamentals there instead of leaning on a lag it will not
 # have. Only the price model carries a price lag, so this is a no-op for the sub-models.
-_PRICE_LAG_HOURS = (
-    168  # the (only) price lag; present within this many hours of the issue, NaN beyond
-)
+# The single price lag that is NaN past D+7 at serve. Unpacked from features.PRICE_LAGS_HOURS (not
+# re-hardcoded) so the two never drift - and adding a second lag raises here, forcing this masking logic to
+# be revisited rather than silently no-op'ing (the guards below key off the column name derived here).
+(_PRICE_LAG_HOURS,) = features.PRICE_LAGS_HOURS
 _PRICE_LAG_COLUMN = f"price_lag_{_PRICE_LAG_HOURS}h"
 _TRAIN_NAN_LAG_FRACTION = 0.5  # D+8..D+14 share of the 14-day horizon lacking the lag at serve
 _TRAIN_NAN_LAG_SEED = 168  # fixed so retrains are reproducible
@@ -329,7 +330,8 @@ def apply_train_nan_lag_mask(matrix: pd.DataFrame) -> pd.DataFrame:
     mask = rng.random(len(matrix)) < _TRAIN_NAN_LAG_FRACTION
     out = matrix.copy()  # copy before nulling so the caller's frame is never mutated
     out.loc[out.index[mask], _PRICE_LAG_COLUMN] = np.nan
-    logger.info("[price] train_nan lag fix | nulled %d/%d training rows", int(mask.sum()), len(out))
+    # A per-fit internal detail (fires once per walk-forward fold too), so log at DEBUG - not INFO noise.
+    logger.debug("[price] train_nan lag fix | nulled %d/%d training rows", int(mask.sum()), len(out))
     return out
 
 

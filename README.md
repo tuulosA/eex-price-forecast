@@ -53,6 +53,7 @@ src/eex_forecast/
   backfill.py          # orchestrate ENTSO-E + weather backfills
   features.py          # calendar, price lag, weather aggregates, per-model feature builders
   model.py             # XGBoost registry (wind/solar/load/price): capacity scaling, early stopping, diagnostics
+  backtest_cutoffs.py  # the frozen backtest cutoffs (config/backtest_cutoffs.yaml) + DST window helpers
   tuning.py            # Optuna walk-forward hyperparameter tuning (shared backtest engine)
   aggregation.py       # A/B feature-aggregation strategies (eex analyze aggregation)
   ablation.py          # remove features and measure the loss (eex analyze ablation)
@@ -282,27 +283,42 @@ coupled is DE right now" signal — keeping the per-border detail in the databas
 
 ## Evaluating and tuning
 
-Three tools share one **walk-forward backtest engine** (`tuning`): they step a set of cutoffs through
-history and, at each, train on the past and score MAE/RMSE over the next `--horizon-hours` of held-out
-actuals — exactly how the model is used in production. The backtest reproduces the price model's serve
-behaviour faithfully (the weekly lag is trained with, and scored with, the same NaN gap it has past D+7
-live), so the numbers reflect real forecasting rather than a leak.
+Four tools — tuning, aggregation, ablation, and eval — share one **walk-forward backtest engine**
+(`tuning`): at each of a fixed set of cutoffs (see below) they train on everything before it and score
+MAE/RMSE over the delivery-day window from it — exactly how the model is used in production. The backtest
+reproduces the price model's serve behaviour faithfully (the weekly lag is trained with, and scored with,
+the same NaN gap it has past D+7 live), so the numbers reflect real forecasting rather than a leak.
+
+### Backtest cutoffs — one frozen set for every tool
+
+Every backtest tool — tuning, aggregation, ablation, and eval — scores the **same fixed set of delivery
+days**, listed in `config/backtest_cutoffs.yaml`. Freezing them (rather than generating evenly-spaced
+cutoffs per run) means a weather-anchor, feature, or hyperparameter change is always measured on the
+*identical* days, so the numbers move only because the model did — never because the sample shifted. The
+set is balanced on purpose: every calendar month, every weekday plus weekends, a few German public holidays,
+and two plain weekdays at the wind extremes (near-calm and the windiest day in the span). To change it, edit
+the YAML — there is deliberately **no `--cutoffs` or `--horizon` option**. Every tool scores the **day-ahead
+24 h** (D+1), the only horizon this backtest scores faithfully: the historical-forecast weather it reads is
+near-actual (short lead) and the price model sees the actual fundamentals, neither of which a real
+multi-day-lead forecast has, so a longer horizon would score the models against conditions that never exist
+at serve. Each fold trains on everything strictly before a delivery day's local midnight and scores the
+DST-exact 24 h window from it (23/24/25 h across a DST switch).
 
 ### Aggregation — comparing feature representations
 
 Each generation/load sub-model reduces its ranked per-point weather columns into model features. *How*
 matters — wind power is convex (~v³) in speed and capacity is concentrated in the north, so the plain
 national **mean** can discard spatial information a richer representation keeps. `analyze aggregation`
-A/Bs the strategies (report → `data/aggregation/`). Wind and load use **`raw`** (every per-point column);
-solar uses **`stats`**, reducing the existing irradiance points each hour to mean, sum, standard
-deviation, minimum, and maximum.
+A/Bs the strategies over the frozen cutoffs at the day-ahead horizon (report → `data/aggregation/`). Wind
+and load use **`raw`** (every per-point column); solar uses **`stats`**, reducing the existing irradiance
+points each hour to mean, sum, standard deviation, minimum, and maximum.
 
 ```bash
 eex analyze aggregation wind                # compare wind strategies
 eex analyze aggregation solar               # compare the adopted solar stats with other representations
 eex analyze aggregation load                # load (temperature has spatial structure)
 eex analyze aggregation neighbour           # how neighbour wind enters the PRICE model
-eex analyze aggregation wind --strategies mean,raw --cutoffs 8 --seeds 5
+eex analyze aggregation wind --strategies mean,raw --seeds 5
 ```
 
 Strategies: `mean`, `spread` (+ cross-point std), `stats` (mean + sum/std/min/max), `regional` (one mean
@@ -314,58 +330,41 @@ per latitude band, `--regions` sets how many), `raw` (every point), and — **wi
 ### Ablation — is a feature earning its keep?
 
 `analyze ablation` is ablation in the literal sense: remove chosen features and measure the loss, for any
-model (report → `data/ablation/`). Run without `--drop` for an interactive picker, or pass `--drop` for a
-scripted run. A negative delta means the removed features were, on net, dead weight.
+model (report → `data/ablation/`), over the frozen cutoffs at the day-ahead 24 h horizon. Run without
+`--drop` for an interactive picker, or pass `--drop` for a scripted run. A negative delta means the removed
+features were, on net, dead weight.
+
+One caveat, by construction: the genuinely **known-ahead** drivers (nuclear, NTC, calendar) will read as
+*marginal* here — day-ahead they mostly are. Their real value is carrying the far horizon in production,
+which this backtest cannot score (the weather it reads is near-actual and the fundamentals are actuals, so
+nothing decays the way it does at serve). Keep those features on principle — they are cheap and known for
+every delivery day — rather than letting a day-ahead delta decide their fate. Ablation is the right test for
+the **weather-derived and lag** features, where 24 h is faithful.
 
 ```bash
 eex analyze ablation --target price                                  # interactive picker
 eex analyze ablation --target price --drop ntc_imp_total,ntc_exp_total
 ```
 
-Two things decide whether the answer is trustworthy — read both:
+**Judge the delta against noise with `--seeds`.** A single walk-forward is one point estimate, and gradient
+boosting has real run-to-run variance — the full model's own MAE can swing ~1 EUR/MWh across seeds, so any
+smaller delta is probably noise. `--seeds 5` refits under several seeds and reports the mean ± spread with a
+**"clears / within seed noise"** verdict (default 1 for a quick look; `--seeds` works on `aggregation` too):
 
-- **The horizon changes the answer, so inspect at 24 h *and* 14 days.** A feature's worth is
-  horizon-dependent:
-  - **`--horizon-hours 24`** (day-ahead) is what the models are tuned for and the most valuable hours —
-    where a fresh signal like the weekly price lag earns its keep.
-  - **`--horizon-hours 336`** (the full 14-day curve, the current default) is where the near-term signals
-    fade and the **known-ahead** drivers (nuclear, NTC) matter most, because the fundamentals forecasts
-    have decayed by then.
-
-  The two can *disagree*, and the disagreement is the insight. `price_lag_168h` helps at 24 h but is dead
-  at 14 days (it is NaN past D+7 at serve, so it can only carry the near week). NTC is the mirror image —
-  marginal day-ahead, but it clearly earns its keep in the far horizon. A single-horizon read is half the
-  story.
-
-  ```bash
-  eex analyze ablation --target price --drop price_lag_168h --horizon-hours 24    # helps
-  eex analyze ablation --target price --drop price_lag_168h --horizon-hours 336   # dead weight
-  ```
-
-- **Judge the delta against noise with `--seeds`.** A single walk-forward is one point estimate, and
-  gradient boosting has real run-to-run variance — the full model's own MAE can swing ~1 EUR/MWh across
-  seeds, so any smaller delta is probably noise. `--seeds 5` refits under several seeds and reports the
-  mean ± spread with a **"clears / within seed noise"** verdict (default 1 for a quick look; `--seeds`
-  works on `aggregation` too):
-
-  ```bash
-  eex analyze ablation --target price --drop nuclear_available_mw --horizon-hours 24 --seeds 5
-  #   MAE delta -0.22 +/- 0.96 | within seed noise (inconclusive)   <- the single-run "-1.0" was noise
-  ```
+```bash
+eex analyze ablation --target price --drop nuclear_available_mw --seeds 5
+#   MAE delta -0.22 +/- 0.96 | within seed noise (inconclusive)   <- the single-run "-1.0" was noise
+```
 
 Two caveats apply to both tools: the score is the target model's own MAE (for a sub-model, not the
 downstream price impact), and because hyperparameters are held fixed a feature-rich variant may be
 under-served by them — **re-tune the winner** (`eex model tune --target <model>`) before adopting it.
 
-### Frozen-cutoff eval — the same days, every run
+### Eval — day-ahead MAE per model
 
-Where `aggregation` and `ablation` place their cutoffs evenly across the tail of the data, `analyze eval`
-scores a **fixed, hand-picked set of delivery days** (report → `data/evaluation/`). The set is frozen in
-code, so a weather-anchor, feature, or hyperparameter change is measured against the *identical* days each
-time — the numbers move only because the model did, not because the sample shifted. The days are balanced
-on purpose: every calendar month, every weekday plus weekends, a handful of German holidays, and two plain
-weekdays chosen at the wind extremes (near-calm and the windiest day in the span), so both tails are tested
-rather than only average conditions.
+`analyze eval` scores every model (the price model and the three sub-models) on the frozen cutoffs at the
+day-ahead 24 h horizon, and writes a per-model, per-day report (→ `data/evaluation/model_eval.json`) with a
+headline summary at the top. It is the quickest read on "did this change help?" across the whole stack.
 
 ```bash
 eex analyze eval                            # 24 h MAE per model over the frozen days
@@ -388,17 +387,13 @@ the best params merge into `config/hyperparams.json` per model, preserving the o
 then reads whatever is there, falling back to built-in defaults for any model not yet tuned.
 
 ```bash
-eex model tune --target wind                # defaults: 40 trials, 8 cutoffs, 24 h horizon, cutoffs from 2025-01-01
+eex model tune --target wind                # 40 trials over the frozen cutoffs at the 24 h horizon
 eex model tune --target price --trials 12   # a quicker first pass
-eex model tune --target price --horizon-hours 336   # optimise the whole 14-day curve instead of just D+1
-eex model tune --target wind --cutoff-start 2023-06-01   # widen the backtest window further back
 ```
 
-The horizon defaults to **24 h — the day-ahead product**: the settled, most-predictable, most-valuable
-hours. Tuning on the full 14-day frame instead averages in the near-unpredictable far tail and pulls the
-hyperparameters toward smooth, conservative settings that under-serve D+1 — pass `--horizon-hours 336`
-only if you deliberately want to optimise the whole curve. Cutoffs start at **`--cutoff-start` (default
-`2025-01-01`)** so tuning weights the recent market regime; each run is an **independent, seeded** study
+Tuning scores each trial on the **day-ahead 24 h** — the settled, most-predictable, most-valuable hours,
+and the only horizon this backtest scores faithfully (the same frozen cutoffs every backtest tool uses; edit
+`config/backtest_cutoffs.yaml` to change the day set). Each run is an **independent, seeded** study
 (reproducible, but not resumed). **Re-tune after any feature change** — a new feature set leaves the old
 params stale.
 
@@ -427,8 +422,6 @@ to disable file logging.
   components (distinct weather points, capacity factors, behaviour) rather than summing them.
 - **Per-border NTC** — feed the price model the per-border NTC columns, not just the import/export totals
   (the per-border detail is already stored; the week-ahead-over-month-ahead blend is in).
-- **Analysis defaults** — the `analyze` tools default to the 14-day horizon while the models tune at
-  24 h; a 24-h default (with far-horizon opt-in) would match what is optimised.
 
 All three cross-border drivers set out originally — [neighbour wind](#neighbour-wind),
 [nuclear](#nuclear-availability), and [transfer capacity](#transfer-capacity-ntc) — are in.

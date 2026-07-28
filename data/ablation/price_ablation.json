@@ -1,11 +1,10 @@
 {
   "model": "price",
   "compared": "feature removal",
-  "run_at": "2026-07-25T09:34:12.692785+00:00",
+  "run_at": "2026-07-28T18:34:13.584743+00:00",
   "config": {
-    "n_cutoffs": 6,
-    "horizon_hours": 336,
-    "min_train_days": 120,
+    "n_cutoffs": 22,
+    "days": 1,
     "seeds": [
       42,
       1055,
@@ -14,14 +13,14 @@
       4094
     ],
     "params": {
-      "n_estimators": 600,
-      "max_depth": 4,
-      "learning_rate": 0.18258230439200238,
-      "subsample": 0.9100531293444458,
-      "colsample_bytree": 0.9757995766256756,
-      "min_child_weight": 18.001719658125328,
-      "reg_alpha": 0.24637685958997463,
-      "reg_lambda": 4.869640941520899,
+      "n_estimators": 800,
+      "max_depth": 7,
+      "learning_rate": 0.021377060691266297,
+      "subsample": 0.694850346053771,
+      "colsample_bytree": 0.8781096435918635,
+      "min_child_weight": 9.21337413682262,
+      "reg_alpha": 0.041063417692297044,
+      "reg_lambda": 0.0017956312668970184,
       "objective": "reg:squarederror",
       "tree_method": "hist",
       "random_state": 42,
@@ -29,19 +28,31 @@
     }
   },
   "cutoffs": [
-    "2023-05-01T00:00:00+00:00",
-    "2023-12-23T14:00:00+00:00",
-    "2024-08-16T04:00:00+00:00",
-    "2025-04-09T18:00:00+00:00",
-    "2025-12-02T08:00:00+00:00",
-    "2026-07-26T23:00:00+00:00"
+    "2025-01-01",
+    "2025-02-17",
+    "2025-03-19",
+    "2025-04-17",
+    "2025-05-16",
+    "2025-06-14",
+    "2025-07-22",
+    "2025-08-17",
+    "2025-08-18",
+    "2025-09-18",
+    "2025-10-03",
+    "2025-10-24",
+    "2025-11-08",
+    "2025-11-19",
+    "2025-12-25",
+    "2026-01-23",
+    "2026-02-09",
+    "2026-03-15",
+    "2026-04-06",
+    "2026-05-21",
+    "2026-06-17",
+    "2026-07-07"
   ],
   "dropped": [
-    "wind_speed",
-    "temp_wind",
-    "temp_load",
-    "irr_load",
-    "irr_solar"
+    "price_lag_168h"
   ],
   "kept": [
     "hour",
@@ -55,7 +66,11 @@
     "dow_cos",
     "month_sin",
     "month_cos",
-    "price_lag_168h",
+    "wind_speed",
+    "temp_wind",
+    "temp_load",
+    "irr_load",
+    "irr_solar",
     "wind",
     "solar",
     "load",
@@ -71,23 +86,23 @@
     "nbr_wind_pl"
   ],
   "full": {
-    "mean_mae": 13.913,
-    "mean_rmse": 19.0949,
-    "std_mae": 0.2899
+    "mean_mae": 12.058,
+    "mean_rmse": 15.5007,
+    "std_mae": 0.1318
   },
   "reduced": {
-    "mean_mae": 13.6832,
-    "mean_rmse": 18.9814,
-    "std_mae": 0.208
+    "mean_mae": 12.343,
+    "mean_rmse": 15.7068,
+    "std_mae": 0.1059
   },
-  "mae_delta": -0.2297,
-  "delta_std": 0.307,
-  "decisive": false,
+  "mae_delta": 0.285,
+  "delta_std": 0.1274,
+  "decisive": true,
   "per_seed_delta": [
-    0.0335,
-    -0.4938,
-    0.111,
-    -0.5786,
-    -0.2208
+    0.2947,
+    0.147,
+    0.2435,
+    0.4916,
+    0.2482
   ]
 }
