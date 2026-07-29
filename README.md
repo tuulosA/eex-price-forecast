@@ -35,6 +35,10 @@ turns them — together with the cross-border drivers that move a coupled market
 Actuals and forecasts are stored in **separate columns** for every series, so predictions never
 overwrite measured values.
 
+All timestamps are stored in **UTC**, while calendar features are derived in the German market timezone
+(`Europe/Berlin`). This keeps hour, weekday, weekend, month, and public-holiday features aligned with
+German civil time across local-midnight and DST boundaries.
+
 ## Architecture
 
 ```

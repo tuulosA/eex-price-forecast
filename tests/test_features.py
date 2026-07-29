@@ -33,14 +33,52 @@ def test_calendar_features_flags_and_encodings() -> None:
                 "2025-01-01T00:00Z",
                 "2025-01-04T12:00Z",
                 "2025-06-16T08:00Z",
-            ]  # Wed(holiday), Sat, Mon
+            ]
         )
     )
     cal = calendar_features(times)
     assert cal["is_holiday"].tolist() == [1, 0, 0]  # New Year is a German public holiday
     assert cal["is_weekend"].tolist() == [0, 1, 0]  # 2025-01-04 is a Saturday
-    assert cal["hour"].tolist() == [0, 12, 8]
+    assert cal["hour"].tolist() == [1, 13, 10]  # CET in January, CEST in June
     assert (cal["hour_sin"].abs() <= 1.0).all() and (cal["month_cos"].abs() <= 1.0).all()
+
+
+def test_calendar_features_use_german_date_at_local_midnight() -> None:
+    times = pd.Series(
+        pd.to_datetime(
+            [
+                "2024-12-31T23:00Z",  # 2025-01-01 00:00 CET: Wednesday and New Year
+                "2025-01-03T23:00Z",  # 2025-01-04 00:00 CET: Saturday
+                "2025-06-30T22:00Z",  # 2025-07-01 00:00 CEST: Tuesday
+            ]
+        )
+    )
+
+    cal = calendar_features(times)
+
+    assert cal["hour"].tolist() == [0, 0, 0]
+    assert cal["day_of_week"].tolist() == [2, 5, 1]
+    assert cal["month"].tolist() == [1, 1, 7]
+    assert cal["is_weekend"].tolist() == [0, 1, 0]
+    assert cal["is_holiday"].tolist() == [1, 0, 0]
+
+
+def test_calendar_features_follow_berlin_dst_transitions() -> None:
+    times = pd.Series(
+        pd.to_datetime(
+            [
+                "2025-03-30T00:00Z",
+                "2025-03-30T01:00Z",
+                "2025-10-26T00:00Z",
+                "2025-10-26T01:00Z",
+            ]
+        )
+    )
+
+    cal = calendar_features(times)
+
+    assert cal["hour"].tolist() == [1, 3, 2, 2]  # spring skips 02:00; autumn repeats 02:00
+    assert cal["is_weekend"].tolist() == [1, 1, 1, 1]
 
 
 def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataFrame) -> None:

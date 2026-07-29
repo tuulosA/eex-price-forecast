@@ -63,6 +63,10 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
 - **Actual vs. forecast columns are separate** (`db/schema.py::TARGET_COLUMNS`). A forecast run must
   never overwrite a measured `*_actual_*` column. `upsert` only writes non-null values, which keeps the
   ENTSO-E series and per-point weather columns composing into the same rows without clobbering.
+- **Store timestamps in UTC; derive calendars in German market time.** `features.calendar_features`
+  converts its temporary timestamp view to `Europe/Berlin` before extracting hour, day, month, weekend,
+  and public-holiday fields. Do not move database timestamps away from UTC or regress the feature block
+  to UTC calendar semantics; local-midnight and DST boundaries would be mislabeled.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
 - **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values

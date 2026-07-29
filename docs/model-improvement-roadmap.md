@@ -15,7 +15,7 @@ Last updated: **2026-07-29**
 
 1. **Improve solar first.** In the oracle diagnostic, substituting only the solar forecast increased
    downstream price MAE by **1.779 EUR/MWh**, much more than wind or load.
-2. Improve load calendar semantics and thermal-memory features.
+2. Improve load thermal-memory and exceptional-day features.
 3. Revisit wind geography and eventually separate onshore/offshore generation.
 4. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
    objectives after the feature work.
@@ -28,6 +28,7 @@ Last updated: **2026-07-29**
 - `eex analyze oracle` measures the isolated and combined downstream price effect of the three
   fundamental forecasts.
 - Eval/oracle emit one progress heartbeat per completed cutoff.
+- Calendar features now use German market-local time while timestamps remain stored in UTC.
 - The existing `model_eval.json` schema was retained.
 
 ### Deferred decisions
@@ -267,19 +268,24 @@ Germany's PV fleet changes quickly, while ENTSO-E installed capacity is an annua
 
 Report residual bias by month/year and actual capacity-factor bin, separately from shape error.
 
-### 2. Load calendar semantics and thermal memory
+### 2. Load thermal memory and exceptional days
 
-#### Use German market-local calendar features
+#### German market-local calendar features
 
-Keep database timestamps in UTC, but derive these features after conversion to `Europe/Berlin`:
+**Status: completed 2026-07-29 as a shared correctness fix.**
+
+Database timestamps remain UTC, but `calendar_features` converts them to `Europe/Berlin` before deriving:
 
 - hour and cyclical hour;
 - day of week and cyclical day;
+- month and cyclical month;
 - weekend;
 - public-holiday date.
 
-The current UTC calendar shifts the German load cycle by one or two hours and can assign the wrong local
-date around UTC evening hours.
+The previous UTC-derived fields shifted German civil time by one/two hours and could assign the wrong
+date around local midnight. Because the calendar block is shared, the correction affects wind, solar,
+load, and price. Regression tests cover winter/summer offsets, local date boundaries, and both DST
+transitions. All four persisted models must be retrained before the next live forecast.
 
 #### Add compact thermal-memory features
 
@@ -523,8 +529,8 @@ not urgent because the darkness rule changed historical solar MAE by only about 
 
 1. **Completed:** end-to-end price evaluation.
 2. **Completed:** oracle-substitution diagnostics.
-3. **Next:** solar irradiance/geometry/calibration experiments.
-4. Berlin-local calendar features for load.
+3. **Completed:** German market-local calendar correction for all four models.
+4. **Next:** solar irradiance/geometry/calibration experiments.
 5. Compact lagged/rolling temperature features.
 6. Diverse wind-anchor selection.
 7. Separate onshore/offshore wind.
@@ -579,3 +585,4 @@ Before changing a production feature/model:
 - Deferred end-to-end price tuning/ablation/aggregation until fold forecasts can be cached efficiently.
 - Recorded that frozen-cutoff evaluation already has rolling-origin semantics.
 - Added training-history learning curves and grouped interpretation diagnostics to the later experiments.
+- Corrected the shared calendar block to derive German civil-time features without changing UTC storage.
