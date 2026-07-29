@@ -46,10 +46,10 @@ def load_cutoffs(path: Path = BACKTEST_CUTOFFS_PATH) -> tuple[str, ...]:
 BACKTEST_CUTOFFS: tuple[str, ...] = load_cutoffs()
 
 # The only horizon every backtest tool scores: the day-ahead delivery day (D+1). This backtest is only
-# faithful at 24 h - the historical-forecast weather it reads is near-actual (short lead) and the price
-# model sees the actual fundamentals, both of which a real multi-day-lead forecast never has, so a longer
-# horizon would score the models against conditions that do not exist at serve. Adopt a longer horizon only
-# once lead-time-faithful forecast weather (real N-day-ahead forecasts) is available.
+# faithful at 24 h because the historical-forecast weather it reads is near-actual (short lead), unlike the
+# increasingly uncertain weather available at real multi-day lead times. A longer horizon would therefore
+# score the models against conditions that do not exist at serve. Adopt one only once lead-time-faithful
+# historical weather forecasts (real N-day-ahead forecasts) are available.
 DAY_AHEAD_DAYS = 1
 
 
