@@ -14,7 +14,9 @@ Last updated: **2026-07-29**
 ### Current direction
 
 1. **Improve solar first.** In the oracle diagnostic, substituting only the solar forecast increased
-   downstream price MAE by **1.939 EUR/MWh**, much more than wind or load.
+   downstream price MAE by **1.859 EUR/MWh**, much more than wind or load. Geometry and richer
+   irradiance/cloud inputs are now adopted; the remaining evidence points to seasonal/capacity-factor
+   calibration and solar geography, not night-time handling.
 2. Improve load thermal-memory and exceptional-day features.
 3. Revisit wind geography and eventually separate onshore/offshore generation.
 4. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
@@ -31,6 +33,8 @@ Last updated: **2026-07-29**
 - Calendar features now use German market-local time while timestamps remain stored in UTC.
 - Preceding-hour Open-Meteo radiation is now aligned to ENTSO-E delivery intervals by timestamp.
 - All prediction/scoring paths now share capacity reversal, clipping, and solar-darkness post-processing.
+- `eex analyze solar-errors` now slices production-faithful daylight errors by Berlin-local hour,
+  season, actual capacity factor, and delivery day.
 - The existing `model_eval.json` schema was retained.
 
 ### Deferred decisions
@@ -46,6 +50,9 @@ Committed reports:
 
 - [End-to-end model evaluation](../data/evaluation/model_eval.json)
 - [Oracle substitutions](../data/evaluation/oracle_substitution.json)
+- [Solar error slices](../data/analysis/solar_error_slices.json)
+- [Solar geometry/clear-sky experiment](../data/analysis/solar_feature_experiment.json)
+- [Solar irradiance/cloud experiment](../data/analysis/solar_irradiance_experiment.json)
 - Aggregation: [wind](../data/aggregation/wind_aggregation.json),
   [solar](../data/aggregation/solar_aggregation.json),
   [load](../data/aggregation/load_aggregation.json), and
@@ -64,22 +71,22 @@ The corrected and retuned pipeline was evaluated with one seed over all 22 froze
 | Model | MAE | RMSE | Unit |
 |---|---:|---:|---|
 | Wind | 2,540.680 | 3,097.944 | MW |
-| Solar | 1,301.493 | 2,161.326 | MW |
+| Solar | 1,169.164 | 1,940.718 | MW |
 | Load | 1,488.821 | 1,746.757 | MW |
-| Price | 13.027 | 16.708 | EUR/MWh |
+| Price | 12.931 | 16.652 | EUR/MWh |
 
-Compared with the immediately preceding committed report:
+Compared with the immediately preceding corrected report:
 
 | Model | Previous MAE | Current MAE | MAE change | RMSE change |
 |---|---:|---:|---:|---:|
 | Wind | 2,540.680 | 2,540.680 | 0.000 (0.00%) | 0.000 (0.00%) |
-| Solar | 1,400.841 | 1,301.493 | -99.348 (-7.09%) | -213.339 (-8.98%) |
-| Load | 1,505.246 | 1,488.821 | -16.425 (-1.09%) | -25.273 (-1.43%) |
-| Price | 13.389 | 13.027 | -0.362 (-2.70%) | -0.457 (-2.66%) |
+| Solar | 1,301.493 | 1,169.164 | -132.329 (-10.17%) | -220.608 (-10.21%) |
+| Load | 1,488.821 | 1,488.821 | 0.000 (0.00%) | 0.000 (0.00%) |
+| Price | 13.027 | 12.931 | -0.096 (-0.74%) | -0.056 (-0.34%) |
 
-The solar mean improvement is substantial but not broad across every day: 11 cutoffs improved and 11
-worsened, with a median MAE change of +46 MW. Large improvements on difficult 2026 solar days drove the
-lower overall mean. Load improved on 13 of 22 cutoffs and price on 12 of 22.
+The new solar inputs produce a large sub-model improvement and a smaller but correctly directed
+end-to-end price gain. This difference is expected: price impact depends on when and in which market
+regime an MW error occurs, not only on its average absolute size.
 
 `std_mae = 0` in this report means only one XGBoost seed was evaluated; it does not mean there is no
 seed-to-seed uncertainty.
@@ -89,17 +96,17 @@ night-time solar now reaches zero and the evening decline behaves as intended.
 
 ### Refreshed tuning and report integrity
 
-The retunes selected lower-MAE trials than their preceding committed runs:
+The latest tuning/report progression is:
 
 | Target | Previous tuned MAE | Current tuned MAE | Change |
 |---|---:|---:|---:|
-| Solar | 1,388.151 MW | 1,301.493 MW | -86.658 MW (-6.24%) |
+| Solar | 1,301.493 MW | 1,169.164 MW | -132.329 MW (-10.17%) |
 | Load | 1,505.246 MW | 1,488.821 MW | -16.425 MW (-1.09%) |
 | Price, actual fundamentals | 11.794 EUR/MWh | 11.631 EUR/MWh | -0.164 EUR/MWh (-1.39%) |
 
 The generated JSON reports are internally consistent:
 
-- each selected trial is the minimum-MAE trial in its tuning report;
+- each selected trial or incumbent is the minimum-MAE candidate in its tuning report;
 - `config/hyperparams.json` exactly matches the selected solar, load, and price parameters;
 - tuning, eval, and oracle use the same 22 cutoffs and seed;
 - solar/load tuning scores exactly match their end-to-end eval sub-model scores;
@@ -121,8 +128,8 @@ Keep the old evaluator values as a historical reference:
 
 The legacy price MAE was conditional on perfect wind, solar, and load and predates the calendar,
 radiation-alignment, and retuning work. In the current corrected report, the comparable `all_actual`
-oracle score is **11.631 EUR/MWh** and the production-like `forecast_all` score is **13.027 EUR/MWh**.
-The current fundamental-forecast penalty is therefore **1.396 EUR/MWh**.
+oracle score is **11.631 EUR/MWh** and the production-like `forecast_all` score is **12.931 EUR/MWh**.
+The current fundamental-forecast penalty is therefore **1.300 EUR/MWh**.
 
 ### Known limits of the baseline
 
@@ -143,28 +150,28 @@ the price model sees:
 |---|---:|---:|---:|
 | All actual | 11.631 | 15.116 | +0.000 EUR/MWh |
 | Forecast wind only | 11.844 | 15.552 | +0.213 EUR/MWh |
-| Forecast solar only | 13.570 | 17.247 | +1.939 EUR/MWh |
+| Forecast solar only | 13.490 | 17.141 | +1.859 EUR/MWh |
 | Forecast load only | 11.426 | 14.920 | -0.205 EUR/MWh |
-| Forecast all | 13.027 | 16.708 | +1.396 EUR/MWh |
+| Forecast all | 12.931 | 16.652 | +1.300 EUR/MWh |
 
 Interpretation:
 
-- **Solar is the clearest price-relevant priority.** It was harmful on 15 of 22 cutoffs, with a +1.020
-  median cutoff delta and +1.939 mean delta.
+- **Solar remains the clearest price-relevant priority.** It was harmful on 16 of 22 cutoffs, with a
+  +0.630 median cutoff delta and +1.859 mean delta.
 - Wind's mean delta was only +0.213 EUR/MWh and its median was +0.024; it worsened 11 cutoffs and
   improved 11.
 - Load's mean delta was -0.205 EUR/MWh; it worsened 10 cutoffs and improved 12. This does not make an
   inaccurate load forecast desirable; smoothing or error compensation may help the imperfect price
   model on some days.
-- The isolated deltas sum to +1.948 EUR/MWh, while `forecast_all` adds +1.396. The approximately
-  **-0.552 EUR/MWh interaction** shows that errors currently compensate and do not add linearly.
+- The isolated deltas sum to +1.868 EUR/MWh, while `forecast_all` adds +1.300. The approximately
+  **-0.568 EUR/MWh interaction** shows that errors currently compensate and do not add linearly.
 - Wind/load effects are small enough to require multi-seed confirmation before strong conclusions.
 
-Solar's own MW MAE improved while its isolated oracle price penalty increased from +1.544 to +1.939
-EUR/MWh. This is not contradictory: MW MAE weights hours uniformly, whereas price impact depends on the
-timing, direction, and market regime of each error. The price model and its irradiance features were also
-retuned/corrected in the same batch, so this oracle change cannot be attributed to the solar model alone.
-The full forecast chain nevertheless improved price MAE by 0.362 EUR/MWh.
+The richer solar inputs reduced solar MAE by 132 MW, its isolated oracle penalty by 0.080 EUR/MWh, and
+the full-chain price MAE by 0.096 EUR/MWh. The price model's `all_actual` score remained exactly 11.631,
+confirming that the comparison changed only the forecast supplied by the solar sub-model. The smaller
+downstream gain is not contradictory: MW MAE weights hours uniformly, whereas price impact depends on
+the timing, direction, and market regime of each error.
 
 ## What existing experiments show
 
@@ -191,6 +198,99 @@ After interval alignment, shared post-processing, and retuning, solar MAE fell f
 worsened—means the next solar experiment should examine delivery-hour bias and the difficult individual
 days, not rely only on the lower mean. Solar errors remain concentrated in daylight, so richer physical
 inputs and calibration are more promising than rearranging the same GHI points again.
+
+#### Diagnose daylight error regimes
+
+**Status: completed 2026-07-29.**
+
+`eex analyze solar-errors` fits only the solar model over the same frozen D+1 cutoffs and retains its
+hourly predictions before aggregation. Detailed slices exclude physically dark rows, while the dark
+summary remains a night-time sanity check. Signed error is forecast minus actual.
+
+The first one-seed report found:
+
+| Scope | Rows | MAE | Mean error |
+|---|---:|---:|---:|
+| All hours | 528 | 1,301 MW | +354 MW |
+| Daylight | 289 | 2,364 MW | +661 MW |
+| Dark | 239 | 17 MW | -17 MW |
+
+Dark-row forecasts were exactly zero; the small dark MAE comes from tiny positive measured generation.
+There is no evidence that another night-time rule deserves priority.
+
+The useful daylight patterns are:
+
+- MAE is highest around 13:00–15:00 Berlin time (approximately 3.7–4.1 GW), while mean
+  overprediction reaches approximately +1.0 GW at 15:00–16:00.
+- Spring has the largest seasonal MAE (3.76 GW, +1.10 GW bias); summer also overpredicts
+  (+1.23 GW), while winter underpredicts (-0.91 GW).
+- Actual capacity factors of 20–40% are overpredicted by 1.78 GW on average. The 40–60% range has the
+  highest MAE (4.27 GW) but changes sign to a 1.42 GW underprediction.
+- Individual days vary strongly, so a single global multiplicative calibration would likely improve one
+  regime while harming another.
+
+This supported adding solar geometry and richer irradiance/cloud information before trying a blunt output
+scale. Both controlled experiments are now complete; their results are recorded below.
+
+#### Add solar geometry and clear-sky features
+
+**Status: completed and adopted 2026-07-29.**
+
+The five-seed frozen-cutoff experiment held the existing hyperparameters fixed:
+
+| Variant | MAE (MW) | Delta vs baseline | Features |
+|---|---:|---:|---:|
+| GHI/calendar baseline | 1,309.180 | +0.000 | 16 |
+| Solar elevation | 1,284.534 | -24.646 | 17 |
+| Clear-sky GHI | 1,285.740 | -23.440 | 17 |
+| Elevation + zenith cosine + clear-sky GHI | 1,278.067 | -31.113 | 19 |
+| Geometry + clear-sky index | 1,277.816 | -31.364 | 20 |
+
+The full three-feature geometry block clearly beats the old baseline. The clear-sky index improves it by
+only 0.251 MW, far below seed variation, so it was not adopted.
+
+#### Add irradiance components and cloud cover
+
+**Status: completed and adopted 2026-07-29.**
+
+Direct, diffuse, DNI, cloud cover, and representative 35-degree south-facing GTI were verified as
+populated on both Open-Meteo historical and live ECMWF endpoints, then backfilled at the existing 20
+solar points. Radiation receives the same preceding-hour alignment as GHI; cloud cover is instantaneous.
+The completed backfill contains 31,344 fully populated hourly rows for every one of the 20 points in
+each auxiliary role, covering the available 2023-to-current weather window without partial point blocks.
+
+The final five-seed comparison used the adopted geometry model as its baseline:
+
+| Variant | MAE (MW) | Delta vs baseline | RMSE (MW) | Features |
+|---|---:|---:|---:|---:|
+| Geometry + GHI | 1,278.067 | +0.000 | 2,123.537 | 19 |
+| + direct/diffuse/DNI/cloud | **1,174.106** | **-103.961** | **1,948.560** | 39 |
+| + direct/diffuse/DNI/cloud/GTI | 1,176.199 | -101.868 | 1,965.449 | 44 |
+
+The 104 MW gain is much larger than the approximately 5 MW seed spread and improves RMSE as well.
+Adding GTI slightly worsened both MAE and RMSE while adding five features, so production uses the leaner
+39-feature `radiation_cloud` variant. Open-Meteo derives ECMWF direct/diffuse and GTI from available
+radiation rather than providing independent native ECMWF fields; empirically, cloud cover and the
+physically shaped radiation components still give XGBoost a useful representation.
+
+The production retune scored the previous configured parameters as an incumbent before 20 fresh Optuna
+trials. The incumbent achieved **1,169.164 MW** for the primary seed and was retained; the best fresh
+candidate reached 1,178.400 MW. This is a valid outcome: the old configuration transferred well to the
+new representation, and none of the finite new samples justified replacing it.
+
+The refreshed five-seed error slices confirm that the improvement is in the relevant daylight rows
+(the previous diagnostic used one seed, so the rounded comparison is directional rather than paired):
+
+| Scope | Previous MAE | Current MAE | Current mean error |
+|---|---:|---:|---:|
+| All hours | 1,301 MW | 1,174 MW | +431 MW |
+| Daylight | 2,364 MW | 2,131 MW | +801 MW |
+| Dark | 17 MW | 17 MW | -17 MW |
+
+The richer inputs reduced daylight MAE by 233 MW without disturbing the night-time constraint. Bias did
+not improve: spring is +1.23 GW, summer +1.31 GW, and the 20-40% actual-capacity-factor bin is +1.99 GW.
+The next solar work should therefore address regime-dependent calibration or geography, not add another
+darkness rule.
 
 ### Wind
 
@@ -284,29 +384,6 @@ eex analyze aggregation solar --strategies spread,stats --seeds 5
 
 Adopt spread only if it clears seed noise and remains better after retuning. A 4.4 MW one-seed delta is
 not sufficient evidence.
-
-#### Add richer irradiance inputs
-
-Candidate variables:
-
-- global tilted irradiance (GTI) at a representative panel tilt/azimuth;
-- direct normal irradiance (DNI);
-- diffuse horizontal irradiance (DHI);
-- cloud cover;
-- clear-sky radiation;
-- solar elevation/zenith;
-- clear-sky index (`GHI / clear-sky GHI`).
-
-Suggested A/B sequence:
-
-```text
-baseline: GHI statistics
-variant:  GHI statistics + direct/diffuse + solar elevation
-variant:  representative GTI statistics + solar elevation
-```
-
-Use the same ECMWF model and variable contract in historical/live requests. Verify availability on both
-endpoints before a full backfill.
 
 #### Revisit solar geography
 
@@ -600,12 +677,16 @@ choosing the booster iteration. Every reported metric and experiment score uses 
 3. **Completed:** German market-local calendar correction for all four models.
 4. **Completed:** preceding-hour radiation alignment to ENTSO-E delivery intervals.
 5. **Completed:** prediction post-processing parity across every scoring path.
-6. **Next:** solar irradiance/geometry/calibration experiments.
-7. Compact lagged/rolling temperature features.
-8. Diverse wind-anchor selection.
-9. Separate onshore/offshore wind.
-10. Training-history learning curves and recency weighting.
-11. Robust objectives, interpretation diagnostics, and ensembles.
+6. **Completed:** daylight solar error slicing by hour, season, capacity factor, and cutoff.
+7. **Completed:** solar elevation and clear-sky radiation/index experiment.
+8. **Completed:** solar GTI/direct/diffuse/DNI/cloud experiment; adopted radiation components + cloud.
+9. **Next:** solar seasonal/capacity-factor calibration and capacity-drift experiments.
+10. Solar anchor diversity or PV-capacity-weighted geography.
+11. Compact lagged/rolling temperature features.
+12. Diverse wind-anchor selection.
+13. Separate onshore/offshore wind.
+14. Training-history learning curves and recency weighting.
+15. Robust objectives, interpretation diagnostics, and ensembles.
 
 Deferred:
 
@@ -666,3 +747,18 @@ Before changing a production feature/model:
 - Retained solar as the highest-priority sub-model: despite lower MW error, its isolated price penalty
   increased to +1.939 EUR/MWh and was harmful on 15 of 22 cutoffs.
 - Visually confirmed the corrected night-time solar behavior in a live forecast plot.
+- Added production-faithful row-level walk-forward predictions and `eex analyze solar-errors`.
+- Confirmed that dark-row solar forecasts are zero and redirected solar work toward the daylight
+  midday/afternoon bias, seasonal calibration, and medium/high capacity-factor regimes.
+- Added deterministic solar elevation, zenith cosine, and clear-sky GHI after a five-seed experiment
+  improved solar MAE by 31 MW; rejected the statistically negligible clear-sky-index addition.
+- Verified historical/live endpoint coverage and backfilled GTI, direct/diffuse/DNI, and cloud cover at
+  the existing solar points.
+- Adopted direct/diffuse/DNI/cloud statistics after a five-seed experiment improved MAE by 104 MW and
+  RMSE by 175 MW over the geometry baseline; rejected GTI as redundant.
+- Made tuning score the configured parameters as an incumbent, preventing a finite fresh Optuna sample
+  from overwriting a better known configuration on the same frozen cutoffs.
+- Kept solar-only weather roles out of the price model through an explicit allow-list; the oracle's
+  unchanged 11.631 EUR/MWh `all_actual` score verifies that the final comparison isolates solar.
+- Regenerated the end-to-end and oracle reports: solar MAE improved by 132 MW, end-to-end price MAE by
+  0.096 EUR/MWh, and the isolated solar penalty by 0.080 EUR/MWh.
