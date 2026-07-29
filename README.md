@@ -66,6 +66,23 @@ The geometry / candidate logic is pure Python (point-in-ring) — **no GIS/shape
 price model consumes the sub-models' forecasts as its fundamentals, so the chain runs
 weather → wind/solar/load → price.
 
+### When fundamentals are actuals versus forecasts
+
+Historical wind, solar, and load actuals have two legitimate roles: they are the MW targets that train
+and score their respective sub-models, and they are the clean historical fundamental inputs used to train
+the price model. At live inference those future actuals do not exist, so the price model receives the three
+sub-model forecasts through the actual-or-forecast coalesce in `features.fundamentals`.
+
+The backtest tools preserve that distinction:
+
+- tuning, aggregation, and ablation score one selected model; when that model is price, its historical
+  test rows contain actual fundamentals, so the result is conditional price-model skill;
+- `eex analyze eval` hides held-out fundamental actuals and runs all three sub-models first, so its price
+  MAE is the end-to-end production-like score;
+- `eex analyze oracle` deliberately switches between actual and forecast fundamentals in matched scenarios
+  to measure each sub-model's downstream price effect. `all_actual` is diagnostic only; `forecast_all`
+  reproduces the headline eval scenario.
+
 ## Quickstart
 
 ### Install
@@ -299,11 +316,14 @@ cutoffs per run) means a weather-anchor, feature, or hyperparameter change is al
 set is balanced on purpose: every calendar month, every weekday plus weekends, a few German public holidays,
 and two plain weekdays at the wind extremes (near-calm and the windiest day in the span). To change it, edit
 the YAML — there is deliberately **no `--cutoffs` or `--horizon` option**. Every tool scores the **day-ahead
-24 h** (D+1), the only horizon this backtest scores faithfully: the historical-forecast weather it reads is
-near-actual (short lead), unlike the increasingly uncertain weather available at real multi-day lead times.
-A longer horizon would therefore score against conditions that do not exist at serve. Each fold trains on
-everything strictly before a delivery day's local midnight and scores the DST-exact delivery-day window
-from it (23/24/25 h across a DST switch).
+24 h** (D+1), the most defensible horizon for this backtest. One known source of modest optimism remains:
+the Historical Forecast API stitches the short, most accurate first hours of successive weather-model runs,
+rather than preserving the older run that was available at the real D+1 issue time. ECMWF is generally
+already strong one to two days out, so this does not invalidate same-model comparisons, but absolute MAEs
+may be slightly better than live. The mismatch becomes materially larger at multi-day leads, so a longer
+horizon would score against conditions that do not exist at serve. Each fold trains on everything strictly
+before a delivery day's local midnight and scores the DST-exact delivery-day window from it (23/24/25 h
+across a DST switch).
 
 ### Aggregation — comparing feature representations
 
@@ -376,8 +396,8 @@ eex analyze eval --seeds 5                  # complete chain, averaged over seed
 
 Each model reports MAE/RMSE in its natural unit (EUR/MWh for price, MW for the fundamentals), so only
 same-model runs compare — not price against a sub-model. Only the **24 h** horizon is scored: the
-historical-forecast weather the sub-models read is near-actual (short lead), so a multi-day MAE would
-flatter itself against weather far more accurate than the real multi-day-lead forecast served live.
+historical-forecast weather the sub-models read is near-actual (short lead). This is a modest optimistic
+bias at D+1 and a much larger mismatch at multi-day leads.
 
 ### Oracle substitutions — attribute downstream price error
 
@@ -460,7 +480,9 @@ All three cross-border drivers set out originally — [neighbour wind](#neighbou
 - [Open-Meteo](https://open-meteo.com/) — [ECMWF Weather Forecast API](https://open-meteo.com/en/docs/ecmwf-api)
   for forward weather and the [Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api)
   for archived ECMWF IFS forecasts used as training history. The project does not use ERA5 or other
-  reanalysis weather, keeping the training and serving distributions on the same forecast model.
+  reanalysis weather, keeping training and serving on the same forecast model. The historical endpoint
+  nevertheless stitches short-lead run segments, so it does not reproduce the exact forecast lead available
+  at a past issue time; this is the documented source of modest optimism in D+1 MAE.
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) — country land polygons.
 - [Marine Regions](https://www.marineregions.org/) — EEZ / maritime polygons (offshore points).
 
