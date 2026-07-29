@@ -1,6 +1,6 @@
 {
   "model": "price",
-  "tuned_at": "2026-07-28T17:15:02.877448+00:00",
+  "tuned_at": "2026-07-29T16:08:50.043089+00:00",
   "config": {
     "n_trials": 20,
     "n_cutoffs": 22,
@@ -64,18 +64,18 @@
     "2026-07-07"
   ],
   "best_trial": {
-    "trial": 16,
-    "mean_mae": 12.0101,
-    "mean_rmse": 15.3813,
+    "trial": 13,
+    "mean_mae": 11.7944,
+    "mean_rmse": 15.2902,
     "params": {
-      "n_estimators": 800,
-      "max_depth": 7,
-      "learning_rate": 0.021377060691266297,
-      "subsample": 0.694850346053771,
-      "colsample_bytree": 0.8781096435918635,
-      "min_child_weight": 9.21337413682262,
-      "reg_alpha": 0.041063417692297044,
-      "reg_lambda": 0.0017956312668970184,
+      "n_estimators": 750,
+      "max_depth": 5,
+      "learning_rate": 0.04228348415340421,
+      "subsample": 0.7856463716102745,
+      "colsample_bytree": 0.7886369489536518,
+      "min_child_weight": 10.784437866397917,
+      "reg_alpha": 0.056561467651267516,
+      "reg_lambda": 0.0010235094578850737,
       "objective": "reg:squarederror",
       "tree_method": "hist",
       "random_state": 42,
@@ -87,183 +87,183 @@
         "start_utc": "2024-12-31T23:00:00+00:00",
         "end_utc": "2025-01-01T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 7.4831,
-        "rmse": 9.9548
+        "mae": 4.5719,
+        "rmse": 6.7065
       },
       {
         "delivery_day": "2025-02-17",
         "start_utc": "2025-02-16T23:00:00+00:00",
         "end_utc": "2025-02-17T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 8.9925,
-        "rmse": 11.8231
+        "mae": 8.0324,
+        "rmse": 11.044
       },
       {
         "delivery_day": "2025-03-19",
         "start_utc": "2025-03-18T23:00:00+00:00",
         "end_utc": "2025-03-19T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 9.8092,
-        "rmse": 13.0628
+        "mae": 10.3825,
+        "rmse": 14.662
       },
       {
         "delivery_day": "2025-04-17",
         "start_utc": "2025-04-16T22:00:00+00:00",
         "end_utc": "2025-04-17T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 7.173,
-        "rmse": 8.7596
+        "mae": 6.5911,
+        "rmse": 8.5551
       },
       {
         "delivery_day": "2025-05-16",
         "start_utc": "2025-05-15T22:00:00+00:00",
         "end_utc": "2025-05-16T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 11.5372,
-        "rmse": 14.7939
+        "mae": 13.4528,
+        "rmse": 16.7281
       },
       {
         "delivery_day": "2025-06-14",
         "start_utc": "2025-06-13T22:00:00+00:00",
         "end_utc": "2025-06-14T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 12.3218,
-        "rmse": 14.9026
+        "mae": 13.8691,
+        "rmse": 16.4326
       },
       {
         "delivery_day": "2025-07-22",
         "start_utc": "2025-07-21T22:00:00+00:00",
         "end_utc": "2025-07-22T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 7.41,
-        "rmse": 10.0575
+        "mae": 8.1835,
+        "rmse": 11.8222
       },
       {
         "delivery_day": "2025-08-17",
         "start_utc": "2025-08-16T22:00:00+00:00",
         "end_utc": "2025-08-17T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 6.731,
-        "rmse": 9.4297
+        "mae": 6.3409,
+        "rmse": 8.1583
       },
       {
         "delivery_day": "2025-08-18",
         "start_utc": "2025-08-17T22:00:00+00:00",
         "end_utc": "2025-08-18T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 15.8489,
-        "rmse": 21.6104
+        "mae": 14.4228,
+        "rmse": 20.4006
       },
       {
         "delivery_day": "2025-09-18",
         "start_utc": "2025-09-17T22:00:00+00:00",
         "end_utc": "2025-09-18T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 13.2735,
-        "rmse": 15.2259
+        "mae": 14.0556,
+        "rmse": 16.418
       },
       {
         "delivery_day": "2025-10-03",
         "start_utc": "2025-10-02T22:00:00+00:00",
         "end_utc": "2025-10-03T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 15.8185,
-        "rmse": 19.2388
+        "mae": 18.3909,
+        "rmse": 22.5394
       },
       {
         "delivery_day": "2025-10-24",
         "start_utc": "2025-10-23T22:00:00+00:00",
         "end_utc": "2025-10-24T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 16.6153,
-        "rmse": 20.3737
+        "mae": 15.7282,
+        "rmse": 19.9215
       },
       {
         "delivery_day": "2025-11-08",
         "start_utc": "2025-11-07T23:00:00+00:00",
         "end_utc": "2025-11-08T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 11.0846,
-        "rmse": 15.1781
+        "mae": 12.2756,
+        "rmse": 17.5594
       },
       {
         "delivery_day": "2025-11-19",
         "start_utc": "2025-11-18T23:00:00+00:00",
         "end_utc": "2025-11-19T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 9.882,
-        "rmse": 11.8944
+        "mae": 5.6399,
+        "rmse": 6.7854
       },
       {
         "delivery_day": "2025-12-25",
         "start_utc": "2025-12-24T23:00:00+00:00",
         "end_utc": "2025-12-25T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 12.4968,
-        "rmse": 15.8309
+        "mae": 9.9824,
+        "rmse": 11.4872
       },
       {
         "delivery_day": "2026-01-23",
         "start_utc": "2026-01-22T23:00:00+00:00",
         "end_utc": "2026-01-23T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 7.5245,
-        "rmse": 10.2778
+        "mae": 7.882,
+        "rmse": 10.1712
       },
       {
         "delivery_day": "2026-02-09",
         "start_utc": "2026-02-08T23:00:00+00:00",
         "end_utc": "2026-02-09T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 10.9098,
-        "rmse": 15.3117
+        "mae": 11.1519,
+        "rmse": 16.9259
       },
       {
         "delivery_day": "2026-03-15",
         "start_utc": "2026-03-14T23:00:00+00:00",
         "end_utc": "2026-03-15T22:00:00+00:00",
         "test_rows": 24,
-        "mae": 12.2454,
-        "rmse": 17.9276
+        "mae": 13.3161,
+        "rmse": 17.6033
       },
       {
         "delivery_day": "2026-04-06",
         "start_utc": "2026-04-05T22:00:00+00:00",
         "end_utc": "2026-04-06T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 21.6905,
-        "rmse": 27.4273
+        "mae": 20.4381,
+        "rmse": 26.3728
       },
       {
         "delivery_day": "2026-05-21",
         "start_utc": "2026-05-20T22:00:00+00:00",
         "end_utc": "2026-05-21T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 16.5919,
-        "rmse": 19.9791
+        "mae": 17.8595,
+        "rmse": 20.6832
       },
       {
         "delivery_day": "2026-06-17",
         "start_utc": "2026-06-16T22:00:00+00:00",
         "end_utc": "2026-06-17T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 16.7548,
-        "rmse": 21.8921
+        "mae": 16.1932,
+        "rmse": 22.8503
       },
       {
         "delivery_day": "2026-07-07",
         "start_utc": "2026-07-06T22:00:00+00:00",
         "end_utc": "2026-07-07T21:00:00+00:00",
         "test_rows": 24,
-        "mae": 12.027,
-        "rmse": 13.4373
+        "mae": 10.7174,
+        "rmse": 12.5585
       }
     ]
   },
   "all_trials": [
     {
       "trial": 0,
-      "mean_mae": 13.2193,
+      "mean_mae": 12.4539,
       "params": {
         "n_estimators": 450,
         "max_depth": 9,
@@ -281,7 +281,7 @@
     },
     {
       "trial": 1,
-      "mean_mae": 12.5265,
+      "mean_mae": 12.3661,
       "params": {
         "n_estimators": 650,
         "max_depth": 7,
@@ -299,7 +299,7 @@
     },
     {
       "trial": 2,
-      "mean_mae": 12.2936,
+      "mean_mae": 12.2024,
       "params": {
         "n_estimators": 400,
         "max_depth": 6,
@@ -317,7 +317,7 @@
     },
     {
       "trial": 3,
-      "mean_mae": 12.2399,
+      "mean_mae": 12.1003,
       "params": {
         "n_estimators": 500,
         "max_depth": 8,
@@ -335,7 +335,7 @@
     },
     {
       "trial": 4,
-      "mean_mae": 13.4403,
+      "mean_mae": 13.5416,
       "params": {
         "n_estimators": 200,
         "max_depth": 9,
@@ -353,7 +353,7 @@
     },
     {
       "trial": 5,
-      "mean_mae": 15.3402,
+      "mean_mae": 15.2038,
       "params": {
         "n_estimators": 250,
         "max_depth": 6,
@@ -371,7 +371,7 @@
     },
     {
       "trial": 6,
-      "mean_mae": 13.7422,
+      "mean_mae": 13.9583,
       "params": {
         "n_estimators": 600,
         "max_depth": 4,
@@ -389,7 +389,7 @@
     },
     {
       "trial": 7,
-      "mean_mae": 17.1902,
+      "mean_mae": 16.9207,
       "params": {
         "n_estimators": 250,
         "max_depth": 4,
@@ -407,7 +407,7 @@
     },
     {
       "trial": 8,
-      "mean_mae": 13.0397,
+      "mean_mae": 12.9931,
       "params": {
         "n_estimators": 400,
         "max_depth": 6,
@@ -425,7 +425,7 @@
     },
     {
       "trial": 9,
-      "mean_mae": 12.6234,
+      "mean_mae": 12.6324,
       "params": {
         "n_estimators": 200,
         "max_depth": 8,
@@ -443,7 +443,7 @@
     },
     {
       "trial": 10,
-      "mean_mae": 13.6928,
+      "mean_mae": 13.3003,
       "params": {
         "n_estimators": 900,
         "max_depth": 3,
@@ -461,7 +461,7 @@
     },
     {
       "trial": 11,
-      "mean_mae": 12.1264,
+      "mean_mae": 12.1681,
       "params": {
         "n_estimators": 500,
         "max_depth": 6,
@@ -479,7 +479,7 @@
     },
     {
       "trial": 12,
-      "mean_mae": 12.126,
+      "mean_mae": 12.4758,
       "params": {
         "n_estimators": 600,
         "max_depth": 7,
@@ -497,16 +497,16 @@
     },
     {
       "trial": 13,
-      "mean_mae": 12.0356,
+      "mean_mae": 11.7944,
       "params": {
         "n_estimators": 750,
         "max_depth": 5,
-        "learning_rate": 0.03973097638607533,
-        "subsample": 0.7371197153065265,
-        "colsample_bytree": 0.7864816397178762,
-        "min_child_weight": 9.674323776368292,
-        "reg_alpha": 0.0884230260328824,
-        "reg_lambda": 0.0010254586974045524,
+        "learning_rate": 0.04228348415340421,
+        "subsample": 0.7856463716102745,
+        "colsample_bytree": 0.7886369489536518,
+        "min_child_weight": 10.784437866397917,
+        "reg_alpha": 0.056561467651267516,
+        "reg_lambda": 0.0010235094578850737,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
@@ -515,16 +515,16 @@
     },
     {
       "trial": 14,
-      "mean_mae": 12.525,
+      "mean_mae": 12.6555,
       "params": {
-        "n_estimators": 800,
-        "max_depth": 5,
-        "learning_rate": 0.048945507854661806,
-        "subsample": 0.6638123593227387,
-        "colsample_bytree": 0.7774224976922272,
-        "min_child_weight": 11.659624005314658,
-        "reg_alpha": 0.07054382978969141,
-        "reg_lambda": 0.0010153393413796243,
+        "n_estimators": 850,
+        "max_depth": 4,
+        "learning_rate": 0.05217591393143717,
+        "subsample": 0.8220097372059565,
+        "colsample_bytree": 0.7792714067509792,
+        "min_child_weight": 13.206512967000975,
+        "reg_alpha": 0.06782059986380558,
+        "reg_lambda": 0.012300678739987365,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
@@ -533,16 +533,16 @@
     },
     {
       "trial": 15,
-      "mean_mae": 12.1588,
+      "mean_mae": 12.3459,
       "params": {
-        "n_estimators": 700,
+        "n_estimators": 750,
         "max_depth": 5,
-        "learning_rate": 0.053335174222032634,
-        "subsample": 0.8070046013439327,
+        "learning_rate": 0.017619168251940945,
+        "subsample": 0.6662225125541511,
         "colsample_bytree": 0.8896251144197834,
-        "min_child_weight": 14.390107393612883,
-        "reg_alpha": 0.10118930595933351,
-        "reg_lambda": 0.01417872560462162,
+        "min_child_weight": 13.088700927214255,
+        "reg_alpha": 0.44369124423312817,
+        "reg_lambda": 0.0010225447419866366,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
@@ -551,16 +551,16 @@
     },
     {
       "trial": 16,
-      "mean_mae": 12.0101,
+      "mean_mae": 12.0992,
       "params": {
-        "n_estimators": 800,
-        "max_depth": 7,
-        "learning_rate": 0.021377060691266297,
-        "subsample": 0.694850346053771,
-        "colsample_bytree": 0.8781096435918635,
-        "min_child_weight": 9.21337413682262,
-        "reg_alpha": 0.041063417692297044,
-        "reg_lambda": 0.0017956312668970184,
+        "n_estimators": 750,
+        "max_depth": 8,
+        "learning_rate": 0.04752597114532086,
+        "subsample": 0.8437434619910311,
+        "colsample_bytree": 0.755852808366696,
+        "min_child_weight": 10.40283496506422,
+        "reg_alpha": 0.03295821432209118,
+        "reg_lambda": 0.005052110839316544,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
@@ -569,16 +569,16 @@
     },
     {
       "trial": 17,
-      "mean_mae": 13.194,
+      "mean_mae": 13.2294,
       "params": {
-        "n_estimators": 800,
+        "n_estimators": 750,
         "max_depth": 3,
-        "learning_rate": 0.05222441298528349,
-        "subsample": 0.6708544093099231,
-        "colsample_bytree": 0.9932157318407357,
-        "min_child_weight": 11.632701968838886,
-        "reg_alpha": 0.00409296027170337,
-        "reg_lambda": 0.01082126437463271,
+        "learning_rate": 0.05393194710902654,
+        "subsample": 0.8563995051443705,
+        "colsample_bytree": 0.7242757678791986,
+        "min_child_weight": 10.703369422201144,
+        "reg_alpha": 0.003139952585743662,
+        "reg_lambda": 0.2503590977010445,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
@@ -587,16 +587,16 @@
     },
     {
       "trial": 18,
-      "mean_mae": 12.4223,
+      "mean_mae": 12.2017,
       "params": {
-        "n_estimators": 900,
-        "max_depth": 5,
-        "learning_rate": 0.018303686676460783,
-        "subsample": 0.6057385288041915,
-        "colsample_bytree": 0.8775962607574506,
-        "min_child_weight": 15.693952928597103,
-        "reg_alpha": 0.03294086360350509,
-        "reg_lambda": 0.002789469981104472,
+        "n_estimators": 750,
+        "max_depth": 8,
+        "learning_rate": 0.05187201382641445,
+        "subsample": 0.7360446211189697,
+        "colsample_bytree": 0.774439933428912,
+        "min_child_weight": 15.809923695982963,
+        "reg_alpha": 0.010106912234462565,
+        "reg_lambda": 0.014858861125420826,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
@@ -605,16 +605,16 @@
     },
     {
       "trial": 19,
-      "mean_mae": 12.5012,
+      "mean_mae": 12.5568,
       "params": {
-        "n_estimators": 750,
-        "max_depth": 7,
-        "learning_rate": 0.07774047065766909,
-        "subsample": 0.677084267316284,
-        "colsample_bytree": 0.7623311438614361,
+        "n_estimators": 850,
+        "max_depth": 5,
+        "learning_rate": 0.09385051943510758,
+        "subsample": 0.8650658502499968,
+        "colsample_bytree": 0.6725163005566686,
         "min_child_weight": 10.527683293024964,
-        "reg_alpha": 0.007125775228900825,
-        "reg_lambda": 0.0022945430578750975,
+        "reg_alpha": 0.05016150805017865,
+        "reg_lambda": 0.002979633960307929,
         "objective": "reg:squarederror",
         "tree_method": "hist",
         "random_state": 42,
