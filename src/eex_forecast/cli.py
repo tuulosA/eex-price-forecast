@@ -15,7 +15,7 @@ Command groups:
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
-- eex analyze eval: backtest the price and sub-models on the frozen cutoffs and report per-model MAE.
+- eex analyze eval: end-to-end backtest the sub-models -> price chain on the frozen cutoffs.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
@@ -672,32 +672,24 @@ def analyze_ablation(
 
 @analyze_app.command("eval")
 def analyze_eval(
-    models: Annotated[
-        str, typer.Option(help="Comma-separated models to score (or 'all').")
-    ] = "all",
     seeds: _SeedsOpt = 1,
 ) -> None:
-    """Backtest the price and sub-models on the frozen cutoffs and report per-model 24h MAE.
+    """Backtest the complete sub-models -> price pipeline and report per-model 24h MAE.
 
     The cutoffs are the shared, fixed, month/weekday/weekend/holiday- and wind-balanced delivery days in
     config/backtest_cutoffs.yaml, so every run scores the identical days and different anchors / features /
     params compare directly. Errors are in each model's natural unit (EUR/MWh for price, MW for the
     fundamentals) - only same-model runs compare, not price against a sub-model. Pass --seeds >1 to average
-    over XGBoost seeds. Note: price is scored on the *actual* fundamentals (its own skill, not the
-    end-to-end pipeline); for anchor/feature propagation read the sub-models' MAE.
+    over XGBoost seeds. Every fold forecasts wind, solar, and load first, then supplies those forecasts -
+    never the held-out actuals - to the price model.
     """
-    selected = (
-        list(ALL_MODELS)
-        if models.strip().lower() == "all"
-        else [name.strip() for name in models.split(",") if name.strip()]
-    )
     with connect(get_settings().db_path) as conn:
         frame = read_frame(conn)
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
     try:
-        result = evaluation.run_evaluation(frame, models=tuple(selected), seeds=seeds)
+        result = evaluation.run_evaluation(frame, seeds=seeds)
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)

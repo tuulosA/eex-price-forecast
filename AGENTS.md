@@ -46,10 +46,10 @@ src/eex_forecast/
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
   backtest_cutoffs.py  # frozen cutoffs from config/backtest_cutoffs.yaml + DST delivery-day window helpers
-  tuning.py            # Optuna walk-forward tuning; serve-faithful backtest engine + seed averaging (reused by aggregation/ablation/evaluation)
+  tuning.py            # Optuna walk-forward tuning; single-model backtest engine + seed averaging (reused by aggregation/ablation)
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
-  evaluation.py        # frozen-cutoff 24h MAE per model, reporting over the shared engine (eex analyze eval)
+  evaluation.py        # frozen-cutoff end-to-end sub-models -> price 24h MAE (eex analyze eval)
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)

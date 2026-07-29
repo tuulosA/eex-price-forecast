@@ -57,7 +57,7 @@ src/eex_forecast/
   tuning.py            # Optuna walk-forward hyperparameter tuning (shared backtest engine)
   aggregation.py       # A/B feature-aggregation strategies (eex analyze aggregation)
   ablation.py          # remove features and measure the loss (eex analyze ablation)
-  evaluation.py        # frozen-cutoff 24h MAE per model on a fixed day set (eex analyze eval)
+  evaluation.py        # frozen-cutoff end-to-end 24h pipeline MAE (eex analyze eval)
   forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
   cli.py               # `eex` command-line interface
 ```
@@ -283,11 +283,12 @@ coupled is DE right now" signal — keeping the per-border detail in the databas
 
 ## Evaluating and tuning
 
-Four tools — tuning, aggregation, ablation, and eval — share one **walk-forward backtest engine**
-(`tuning`): at each of a fixed set of cutoffs (see below) they train on everything before it and score
-MAE/RMSE over the delivery-day window from it — exactly how the model is used in production. The backtest
-reproduces the price model's serve behaviour faithfully (the weekly lag is trained with, and scored with,
-the same NaN gap it has past D+7 live), so the numbers reflect real forecasting rather than a leak.
+Four tools — tuning, aggregation, ablation, and eval — follow the same **walk-forward backtest**
+design: at each of a fixed set of cutoffs (see below) they train on everything before it and score MAE/RMSE
+over the delivery-day window from it. Tuning, aggregation, and ablation share the single-model engine in
+`tuning`; eval runs the complete dependency chain so wind, solar, and load are forecast before price. The
+backtests reproduce the price model's serve-time weekly-lag availability, so the numbers reflect real
+forecasting rather than a leak.
 
 ### Backtest cutoffs — one frozen set for every tool
 
@@ -299,10 +300,10 @@ set is balanced on purpose: every calendar month, every weekday plus weekends, a
 and two plain weekdays at the wind extremes (near-calm and the windiest day in the span). To change it, edit
 the YAML — there is deliberately **no `--cutoffs` or `--horizon` option**. Every tool scores the **day-ahead
 24 h** (D+1), the only horizon this backtest scores faithfully: the historical-forecast weather it reads is
-near-actual (short lead) and the price model sees the actual fundamentals, neither of which a real
-multi-day-lead forecast has, so a longer horizon would score the models against conditions that never exist
-at serve. Each fold trains on everything strictly before a delivery day's local midnight and scores the
-DST-exact 24 h window from it (23/24/25 h across a DST switch).
+near-actual (short lead), unlike the increasingly uncertain weather available at real multi-day lead times.
+A longer horizon would therefore score against conditions that do not exist at serve. Each fold trains on
+everything strictly before a delivery day's local midnight and scores the DST-exact delivery-day window
+from it (23/24/25 h across a DST switch).
 
 ### Aggregation — comparing feature representations
 
@@ -360,24 +361,23 @@ Two caveats apply to both tools: the score is the target model's own MAE (for a 
 downstream price impact), and because hyperparameters are held fixed a feature-rich variant may be
 under-served by them — **re-tune the winner** (`eex model tune --target <model>`) before adopting it.
 
-### Eval — day-ahead MAE per model
+### Eval — end-to-end day-ahead MAE
 
-`analyze eval` scores every model (the price model and the three sub-models) on the frozen cutoffs at the
-day-ahead 24 h horizon, and writes a per-model, per-day report (→ `data/evaluation/model_eval.json`) with a
-headline summary at the top. It is the quickest read on "did this change help?" across the whole stack.
+`analyze eval` runs the complete forecast chain on every frozen cutoff: each fold first trains and forecasts
+wind, solar, and load, hides their held-out actuals, and then gives only those forecasts to the price model.
+It writes the existing per-model, per-day report (→ `data/evaluation/model_eval.json`) with a headline
+summary at the top. The price MAE is therefore the end-to-end pipeline error, while the three fundamental
+MAEs show where its inputs succeeded or failed.
 
 ```bash
 eex analyze eval                            # 24 h MAE per model over the frozen days
-eex analyze eval --models price,wind --seeds 5   # a subset, averaged over seeds (mean +/- spread)
+eex analyze eval --seeds 5                  # complete chain, averaged over seeds (mean +/- spread)
 ```
 
 Each model reports MAE/RMSE in its natural unit (EUR/MWh for price, MW for the fundamentals), so only
-same-model runs compare — not price against a sub-model. Two scope notes, both inherent: **price is scored
-on the *actual* fundamentals**, so its MAE is the price model's own skill given perfect wind/solar/load,
-not the end-to-end pipeline — to see how an anchor/feature choice propagates into the fundamentals, read
-the **sub-models'** MAE. And only the **24 h** horizon is scored: the historical-forecast weather the
-sub-models read is near-actual (short lead), so a multi-day MAE would flatter itself against weather far
-more accurate than the real multi-day-lead forecast served live.
+same-model runs compare — not price against a sub-model. Only the **24 h** horizon is scored: the
+historical-forecast weather the sub-models read is near-actual (short lead), so a multi-day MAE would
+flatter itself against weather far more accurate than the real multi-day-lead forecast served live.
 
 ### Hyperparameter tuning
 
