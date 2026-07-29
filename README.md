@@ -339,7 +339,9 @@ matters — wind power is convex (~v³) in speed and capacity is concentrated in
 national **mean** can discard spatial information a richer representation keeps. `analyze aggregation`
 A/Bs the strategies over the frozen cutoffs at the day-ahead horizon (report → `data/aggregation/`). Wind
 and load use **`raw`** (every per-point column); solar uses **`stats`**, reducing the existing irradiance
-points each hour to mean, sum, standard deviation, minimum, and maximum.
+points each hour to mean, sum, standard deviation, minimum, and maximum. Solar aggregation variants keep
+its adopted geometry and direct/diffuse/DNI/cloud features fixed, changing only how the primary GHI
+points are represented.
 
 ```bash
 eex analyze aggregation wind                # compare wind strategies

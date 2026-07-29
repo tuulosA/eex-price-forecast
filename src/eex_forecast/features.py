@@ -498,7 +498,47 @@ def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
     reduced it by another 104 MW. GTI added five redundant features and slightly worsened MAE, so it
     remains available to the experiment command but is not part of production.
     """
-    return solar_features_with_auxiliary_weather(frame, roles=SOLAR_PRODUCTION_WEATHER_ROLES)
+    return solar_features_with_aggregation(frame, strategy="stats")
+
+
+def _solar_auxiliary_blocks(frame: pd.DataFrame, roles: Sequence[str]) -> list[pd.DataFrame]:
+    """Spatial-statistic blocks for validated solar auxiliary roles."""
+    unknown = set(roles) - set(SOLAR_AUXILIARY_WEATHER_ROLES)
+    if unknown:
+        raise ValueError(f"Unknown solar auxiliary weather roles: {', '.join(sorted(unknown))}.")
+    return [
+        _primary_block(_weather_role_points(frame, role), role, "stats", {}, 3) for role in roles
+    ]
+
+
+def solar_features_with_aggregation(
+    frame: pd.DataFrame,
+    *,
+    strategy: str,
+    coords: dict[str, tuple[float, float]] | None = None,
+    n_regions: int = 3,
+) -> pd.DataFrame:
+    """Production solar features with only the primary GHI aggregation varied.
+
+    Geometry and the adopted direct/diffuse/DNI/cloud blocks remain byte-identical to production. This
+    is the builder used by ``eex analyze aggregation solar`` so that its A/B changes exactly one modelling
+    decision instead of silently reverting to the old calendar-plus-GHI feature set.
+    """
+    return pd.concat(
+        [
+            calendar_features(frame[TIMESTAMP]),
+            weather_strategy_block(
+                frame,
+                WEATHER_AGG["solar"],
+                strategy,
+                coords=coords,
+                n_regions=n_regions,
+            ),
+            solar_geometry_features(frame[TIMESTAMP]),
+            *_solar_auxiliary_blocks(frame, SOLAR_PRODUCTION_WEATHER_ROLES),
+        ],
+        axis=1,
+    )
 
 
 def solar_features_with_auxiliary_weather(
@@ -510,13 +550,9 @@ def solar_features_with_auxiliary_weather(
     Keeping this parameterised preserves the controlled GTI/direct/diffuse/cloud experiment variants
     independently of the production builder.
     """
-    unknown = set(roles) - set(SOLAR_AUXILIARY_WEATHER_ROLES)
-    if unknown:
-        raise ValueError(f"Unknown solar auxiliary weather roles: {', '.join(sorted(unknown))}.")
-    blocks = [
-        _primary_block(_weather_role_points(frame, role), role, "stats", {}, 3) for role in roles
-    ]
-    return pd.concat([solar_features_with_geometry(frame), *blocks], axis=1)
+    return pd.concat(
+        [solar_features_with_geometry(frame), *_solar_auxiliary_blocks(frame, roles)], axis=1
+    )
 
 
 def load_features(frame: pd.DataFrame) -> pd.DataFrame:

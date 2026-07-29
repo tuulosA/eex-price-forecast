@@ -181,14 +181,15 @@ Aggregation result:
 
 | Representation | MAE (MW) |
 |---|---:|
-| Spread | 1,383.5 |
-| Statistics | 1,387.9 |
-| Raw points | 1,462.2 |
-| Mean | 1,504.6 |
-| Regional means | 1,555.8 |
+| Statistics | 1,169.2 |
+| Spread | 1,320.9 |
+| Mean | 1,324.8 |
+| Raw points | 1,329.5 |
+| Regional means | 1,360.8 |
 
-The 4.4 MW spread-versus-statistics difference is too small to trust from one seed. Spatial variation
-itself is valuable: removing irradiance std/min/max worsened MAE by approximately `126 ± 3 MW`.
+This comparison now retains the adopted geometry and direct/diffuse/DNI/cloud blocks in every variant,
+changing only the primary GHI aggregation. Statistics wins by 152 MW over spread and exactly reproduces
+the 39-feature production solar model's 1,169.164 MW score.
 
 In the earlier, pre-alignment comparison, the darkness constraint changed historical MAE by only about
 +4 MW. Its purpose is physical plausibility, not backtest optimization.
@@ -376,14 +377,13 @@ evening-only correlation improved from 0.9472 to 0.9839.
 
 #### Confirm the current aggregation
 
-Run:
+**Status: completed 2026-07-29.**
 
-```bash
-eex analyze aggregation solar --strategies spread,stats --seeds 5
-```
-
-Adopt spread only if it clears seed noise and remains better after retuning. A 4.4 MW one-seed delta is
-not sufficient evidence.
+The original generic aggregation builder had become stale after the solar physics work: it varied GHI
+but also dropped geometry and all new auxiliary roles. Solar now uses a dedicated builder that holds
+those production blocks fixed. A regression test verifies that the `stats` variant exactly matches
+`solar_features`, including feature order and values. The corrected full command selects `stats` at
+1,169.164 MW versus 1,320.896 MW for spread; the old 4.4 MW pre-auxiliary comparison is superseded.
 
 #### Revisit solar geography
 
@@ -762,3 +762,5 @@ Before changing a production feature/model:
   unchanged 11.631 EUR/MWh `all_actual` score verifies that the final comparison isolates solar.
 - Regenerated the end-to-end and oracle reports: solar MAE improved by 132 MW, end-to-end price MAE by
   0.096 EUR/MWh, and the isolated solar penalty by 0.080 EUR/MWh.
+- Restored production parity for `eex analyze aggregation solar`: every variant retains geometry and
+  radiation/cloud auxiliaries, and the adopted `stats` variant exactly matches solar tuning/eval.

@@ -12,10 +12,12 @@ from tests.conftest import make_timeseries
 
 from eex_forecast.aggregation import (
     AggregationResult,
+    _variant_spec,
     load_coords,
     run_aggregation,
     save_aggregation_report,
 )
+from eex_forecast.features import solar_features
 
 TINY = {
     "n_estimators": 15,
@@ -72,6 +74,37 @@ def test_run_aggregation_solar_and_load() -> None:
         assert result.fundamental == fundamental
         assert {v["strategy"] for v in result.variants} == {"mean", "raw"}
         assert all(np.isfinite(v["mean_mae"]) and v["mean_mae"] >= 0 for v in result.variants)
+
+
+def test_solar_stats_variant_exactly_matches_production_features() -> None:
+    frame = make_timeseries(periods=48)
+    irradiance = frame["ghi_de01"]
+    frame = frame.assign(
+        direct_ghi_de01=irradiance * 0.7,
+        diffuse_ghi_de01=irradiance * 0.3,
+        dni_ghi_de01=irradiance * 0.9,
+        cloud_ghi_de01=np.linspace(0.0, 100.0, len(frame)),
+    )
+    spec = _variant_spec(
+        "solar",
+        "stats",
+        coords={"ghi_de01": (51.0, 10.5)},
+        n_regions=3,
+        capacity_scaling=True,
+    )
+
+    variant = spec.build_features(frame)
+    production = solar_features(frame)
+
+    assert list(variant.columns) == list(production.columns)
+    pd.testing.assert_frame_equal(variant, production)
+    assert {
+        "solar_elevation_deg",
+        "direct_solar",
+        "diffuse_solar",
+        "dni_solar",
+        "cloud_solar",
+    } <= set(variant)
 
 
 def test_run_aggregation_without_capacity_scaling() -> None:
