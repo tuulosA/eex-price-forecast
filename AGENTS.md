@@ -79,6 +79,10 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   alongside GHI and deterministic geometry. GTI is fetched for reproducible experiments but was not
   adopted. Historical and live Open-Meteo calls must request the same variables; adding a solar
   auxiliary requires forecast-coverage checks and preceding-hour alignment when it is radiation.
+- **Solar aggregation varies only GHI.** `aggregation._variant_spec` routes solar through
+  `features.solar_features_with_aggregation`, retaining production geometry and
+  direct/diffuse/DNI/cloud statistics. The `stats` variant must exactly equal `solar_features`; keep the
+  feature-parity regression test when changing either builder.
 - **New sub-model weather roles do not implicitly enter price.** `WEATHER_AGGREGATES` is the registry
   used by feature helpers, while `PRICE_WEATHER_ROLES` is the explicit original price weather block.
   Keep `_price_base` on that allow-list so a sub-model experiment cannot silently change price features

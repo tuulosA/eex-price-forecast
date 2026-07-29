@@ -47,6 +47,7 @@ from eex_forecast.features import (
     WEATHER_AGG,
     fundamental_features_from,
     price_features_with_neighbours,
+    solar_features_with_aggregation,
     weather_strategy_block,
 )
 from eex_forecast.model import REGISTRY, ModelSpec, load_params
@@ -107,10 +108,20 @@ def _variant_spec(
         coords=coords,
         n_regions=n_regions,
     )
+    feature_builder = (
+        partial(
+            solar_features_with_aggregation,
+            strategy=strategy,
+            coords=coords,
+            n_regions=n_regions,
+        )
+        if fundamental == "solar"
+        else fundamental_features_from(weather_builder)
+    )
     return replace(
         base,
         name=f"{fundamental}:{strategy}",
-        build_features=fundamental_features_from(weather_builder),
+        build_features=feature_builder,
         capacity_column=base.capacity_column if capacity_scaling else None,
     )
 
