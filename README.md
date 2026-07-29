@@ -57,7 +57,7 @@ src/eex_forecast/
   tuning.py            # Optuna walk-forward hyperparameter tuning (shared backtest engine)
   aggregation.py       # A/B feature-aggregation strategies (eex analyze aggregation)
   ablation.py          # remove features and measure the loss (eex analyze ablation)
-  evaluation.py        # frozen-cutoff end-to-end 24h pipeline MAE (eex analyze eval)
+  evaluation.py        # end-to-end eval + oracle-substitution price diagnostics
   forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
   cli.py               # `eex` command-line interface
 ```
@@ -378,6 +378,31 @@ Each model reports MAE/RMSE in its natural unit (EUR/MWh for price, MW for the f
 same-model runs compare — not price against a sub-model. Only the **24 h** horizon is scored: the
 historical-forecast weather the sub-models read is near-actual (short lead), so a multi-day MAE would
 flatter itself against weather far more accurate than the real multi-day-lead forecast served live.
+
+### Oracle substitutions — attribute downstream price error
+
+`analyze oracle` is a separate diagnostic for deciding which fundamental model is most valuable to
+improve. Each cutoff fits one common model chain, then scores price under five matched scenarios:
+
+- all actual fundamentals (the impossible oracle reference);
+- forecast wind only;
+- forecast solar only;
+- forecast load only;
+- forecast all three (identical to the headline eval's price scenario).
+
+The reported signed MAE delta from `all_actual` measures each forecast fundamental's isolated downstream
+price effect. A positive delta worsens price MAE; a negative delta means the forecast happened to help
+relative to the actual input on those cutoffs. The deltas need not add up because the price model is
+nonlinear and fundamental errors can interact; `forecast_all` remains the production-relevant scenario.
+
+```bash
+eex analyze oracle                        # report -> data/evaluation/oracle_substitution.json
+eex analyze oracle --seeds 5              # paired delta mean +/- seed spread
+```
+
+Both `eval` and `oracle` log one progress heartbeat after every completed cutoff, including the seed,
+cutoff number, delivery day, and interim MAEs/deltas. A normal 22-cutoff run therefore remains visibly
+active while the four models are repeatedly fitted.
 
 ### Hyperparameter tuning
 

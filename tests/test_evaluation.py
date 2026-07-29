@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 
 import numpy as np
@@ -9,7 +10,12 @@ import pandas as pd
 import pytest
 
 from eex_forecast.backtest_cutoffs import cutoff_utc, horizon_end_utc
-from eex_forecast.evaluation import EVAL_HORIZON_DAYS, run_evaluation
+from eex_forecast.evaluation import (
+    EVAL_HORIZON_DAYS,
+    ORACLE_SCENARIOS,
+    run_evaluation,
+    run_oracle_diagnostics,
+)
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY, SUBMODELS
 
@@ -53,13 +59,16 @@ def test_eval_horizon_is_one_day() -> None:
     assert EVAL_HORIZON_DAYS == 1
 
 
-def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape() -> None:
-    result = run_evaluation(
-        _hourly_frame("2024-01-01", "2024-05-01"),
-        params_by_model=FAST_PARAMS,
-        seeds=1,
-        cutoffs=CUTOFFS,
-    )
+def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.INFO, logger="eex_forecast.evaluation"):
+        result = run_evaluation(
+            _hourly_frame("2024-01-01", "2024-05-01"),
+            params_by_model=FAST_PARAMS,
+            seeds=1,
+            cutoffs=CUTOFFS,
+        )
 
     assert [evaluation.model for evaluation in result.models] == list(ALL_MODELS)
     assert list(result.report) == ["horizon", "days", "summary", "config", "models"]
@@ -72,6 +81,7 @@ def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape() -> No
         assert {"delivery_day", "start_utc", "end_utc", "test_rows", "mae", "rmse"} == set(
             evaluation.folds[0]
         )
+    assert "[eval] seed 1/1 | cutoff 2/2 2024-04-01 complete" in caplog.text
 
 
 def test_price_fold_hides_actual_fundamentals_and_uses_fresh_forecasts(
@@ -91,11 +101,12 @@ def test_price_fold_hides_actual_fundamentals_and_uses_fresh_forecasts(
         window = (times >= start) & (times < end)
         actuals = [REGISTRY[name].target_column for name in SUBMODELS]
         forecasts = [REGISTRY[name].forecast_column for name in SUBMODELS]
-        checks.append(
-            bool(candidate.loc[window, actuals].isna().all().all())
-            and bool(candidate.loc[window, forecasts].notna().all().all())
-            and bool((candidate.loc[window, forecasts] != 999_999.0).all().all())
-        )
+        all_actuals_hidden = bool(candidate.loc[window, actuals].isna().all().all())
+        if all_actuals_hidden:
+            checks.append(
+                bool(candidate.loc[window, forecasts].notna().all().all())
+                and bool((candidate.loc[window, forecasts] != 999_999.0).all().all())
+            )
         return original.build_features(candidate)
 
     monkeypatch.setitem(
@@ -111,6 +122,41 @@ def test_price_fold_hides_actual_fundamentals_and_uses_fresh_forecasts(
     )
 
     assert checks and all(checks)
+
+
+def test_oracle_scenarios_are_matched_and_forecast_all_reproduces_eval(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    frame = _hourly_frame("2024-01-01", "2024-03-03")
+    cutoffs = (CUTOFFS[0],)
+    standard = run_evaluation(
+        frame,
+        params_by_model=FAST_PARAMS,
+        seeds=1,
+        cutoffs=cutoffs,
+    )
+    with caplog.at_level(logging.INFO, logger="eex_forecast.evaluation"):
+        oracle = run_oracle_diagnostics(
+            frame,
+            params_by_model=FAST_PARAMS,
+            seeds=1,
+            cutoffs=cutoffs,
+        )
+
+    assert [result.scenario for result in oracle.scenarios] == list(ORACLE_SCENARIOS)
+    assert oracle.report["reference_scenario"] == "all_actual"
+    assert list(oracle.report["summary"]) == list(ORACLE_SCENARIOS)
+    by_scenario = {result.scenario: result for result in oracle.scenarios}
+    assert by_scenario["forecast_all"].mean_mae == pytest.approx(
+        next(result.mean_mae for result in standard.models if result.model == "price")
+    )
+    reference_fold = by_scenario["all_actual"].folds[0]
+    assert reference_fold["delta_mae"] == 0.0
+    for result in oracle.scenarios:
+        fold = result.folds[0]
+        assert fold["test_rows"] == reference_fold["test_rows"]
+        assert fold["delta_mae"] == pytest.approx(fold["mae"] - reference_fold["mae"], abs=1e-4)
+    assert "[oracle] seed 1/1 | cutoff 1/1 2024-03-01 complete" in caplog.text
 
 
 def test_run_evaluation_scores_a_dst_exact_delivery_day() -> None:
