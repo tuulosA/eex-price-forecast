@@ -65,6 +65,13 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   ENTSO-E series and per-point weather columns composing into the same rows without clobbering.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
+- **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values
+  are their sub-model targets and the price model's historical training inputs. The single-model tools
+  (tuning, aggregation, ablation) therefore score price conditional on actual fundamentals. End-to-end
+  `eex analyze eval` instead fits/forecasts all sub-models, hides their held-out actuals, and gives price
+  only fresh forecasts. `eex analyze oracle` reuses one fitted fold and switches matched held-out inputs:
+  `all_actual`, each forecast alone, and `forecast_all`. Only `forecast_all` is production-like; the other
+  scenarios diagnose downstream contribution and may have signed/non-additive MAE deltas.
 - **Capacity scaling** for wind/solar: the model learns a *capacity factor* (target ÷ installed
   capacity) and multiplies the prediction back by capacity, so it stays calibrated as the fleet grows.
   Any code that scores or compares predictions to actuals must reverse the scaling first — see
@@ -76,6 +83,12 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   (`model.apply_train_nan_lag_mask`) and nulls `price_lag_168h` on far-horizon test rows that would not
   have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
   horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
+- **D+1 weather backtests have a modest optimistic bias.** Open-Meteo's Historical Forecast API stitches
+  the short first hours of successive ECMWF runs, not the older coherent run available at the real issue
+  time. ECMWF is usually already strong one to two days out, so frozen-cutoff feature/model comparisons
+  remain useful, but their absolute MAEs may be slightly better than live. The mismatch grows materially
+  at D+3/D+4 and beyond; this is why the current tools deliberately score only the 24 h delivery day and
+  make no multi-day accuracy claim.
 - **Backfill window asymmetry** (`backfill.py`): ENTSO-E fetches through **D+2** (to capture tomorrow's
   already-cleared day-ahead prices), but the Open-Meteo *archive* stops at **today** (it 400s on a future
   `end_date`). These are two separate helpers (`_default_end` vs `_weather_end`) — keep them distinct.
