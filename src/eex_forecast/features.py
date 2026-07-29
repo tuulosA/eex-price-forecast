@@ -30,6 +30,7 @@ import pandas as pd
 
 from eex_forecast.config import (
     AREA_CODE,
+    MARKET_TIMEZONE,
     NTC_EXPORT_PREFIX,
     NTC_IMPORT_PREFIX,
     NUCLEAR_COLUMN,
@@ -87,18 +88,25 @@ def _german_holiday_flag(timestamps: pd.Series) -> pd.Series:
 
 
 def calendar_features(timestamps: pd.Series) -> pd.DataFrame:
-    """Deterministic calendar features from a timestamp series (cyclical encodings + flags)."""
-    ts = pd.to_datetime(timestamps, utc=True)
-    hour = ts.dt.hour
-    day_of_week = ts.dt.dayofweek
-    month = ts.dt.month
+    """German market-local calendar features, retaining the input rows' original index.
+
+    Database timestamps are UTC by design, but electricity demand, solar generation, holidays, and the
+    delivery-day convention follow German civil time. Deriving the calendar directly in UTC shifts the
+    daily cycle by one/two hours and mislabels dates around local midnight. Convert only for feature
+    extraction so storage and timestamp alignment remain UTC and DST-safe.
+    """
+    utc = pd.to_datetime(timestamps, utc=True)
+    market = utc.dt.tz_convert(MARKET_TIMEZONE)
+    hour = market.dt.hour
+    day_of_week = market.dt.dayofweek
+    month = market.dt.month
     return pd.DataFrame(
         {
             "hour": hour,
             "day_of_week": day_of_week,
             "month": month,
             "is_weekend": (day_of_week >= 5).astype("int64"),
-            "is_holiday": _german_holiday_flag(ts),
+            "is_holiday": _german_holiday_flag(market),
             "hour_sin": np.sin(2 * np.pi * hour / 24),
             "hour_cos": np.cos(2 * np.pi * hour / 24),
             "dow_sin": np.sin(2 * np.pi * day_of_week / 7),
@@ -106,7 +114,7 @@ def calendar_features(timestamps: pd.Series) -> pd.DataFrame:
             "month_sin": np.sin(2 * np.pi * month / 12),
             "month_cos": np.cos(2 * np.pi * month / 12),
         },
-        index=ts.index,
+        index=market.index,
     )
 
 
