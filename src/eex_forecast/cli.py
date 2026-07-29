@@ -15,6 +15,9 @@ Command groups:
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
+- eex analyze solar-errors: slice production-faithful solar errors by daylight regime.
+- eex analyze solar-features: A/B deterministic solar geometry and clear-sky features.
+- eex analyze solar-irradiance: A/B GTI/direct/diffuse/DNI/cloud solar inputs.
 - eex analyze eval: end-to-end backtest the sub-models -> price chain on the frozen cutoffs.
 - eex analyze oracle: diagnose each sub-model's downstream price effect with actual substitutions.
 - eex model train: train the generation sub-models and the price model.
@@ -32,7 +35,7 @@ from typing import Annotated
 
 import typer
 
-from eex_forecast import ablation, aggregation, evaluation, tuning
+from eex_forecast import ablation, aggregation, evaluation, solar_analysis, tuning
 from eex_forecast import backfill as backfill_ops
 from eex_forecast import forecast as forecast_ops
 from eex_forecast import model as model_ops
@@ -518,8 +521,8 @@ def _strategies_default(fundamental: str) -> str:
     return ",".join(WEATHER_AGG[fundamental].strategies)
 
 
-# Every backtest tool (tuning / aggregation / ablation / eval) scores the frozen delivery days in
-# config/backtest_cutoffs.yaml at the day-ahead 24 h horizon - the only horizon this backtest scores
+# Every backtest tool (tuning / aggregation / ablation / solar analysis / eval) scores the frozen days
+# in config/backtest_cutoffs.yaml at the day-ahead 24 h horizon - the only horizon this backtest scores
 # faithfully. There is no cutoff or horizon option: edit the YAML to change the set.
 _SeedsOpt = Annotated[
     int, typer.Option(help="XGBoost seeds to average over; >1 reports mean +/- spread.")
@@ -671,6 +674,137 @@ def analyze_ablation(
     typer.echo(f"  dropping {verdict} | report -> {path}")
 
 
+@analyze_app.command("solar-errors")
+def analyze_solar_errors(
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Slice production-faithful D+1 solar errors by hour, season, and actual capacity factor.
+
+    Night-time rows remain in the summary as a physical sanity check, but detailed slices use daylight
+    rows only so already-correct zero nights cannot dilute the errors that matter to the price model.
+    Signed error is forecast minus actual: positive means solar is overpredicted.
+    """
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    try:
+        result = solar_analysis.run_solar_error_analysis(frame, seeds=seeds)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    path = solar_analysis.save_solar_error_report(result)
+    summary = result.report["summary"]
+
+    typer.echo(
+        f"Solar error slices "
+        f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"{result.report['horizon']}):"
+    )
+    for label in ("all_hours", "daylight", "dark"):
+        metrics = summary[label]
+        typer.echo(
+            f"  {label:<9} MAE {metrics['mae_mw']:.3f} MW | "
+            f"bias {metrics['mean_error_mw']:+.3f} MW | {metrics['rows']} rows"
+        )
+
+    hours = result.report["daylight_slices"]["market_hour"]
+    highest = max(hours, key=lambda item: item["mean_error_mw"])
+    lowest = min(hours, key=lambda item: item["mean_error_mw"])
+    typer.echo(
+        f"  hourly bias range: "
+        f"{lowest['market_hour']:02d}:00 {lowest['mean_error_mw']:+.1f} MW | "
+        f"{highest['market_hour']:02d}:00 {highest['mean_error_mw']:+.1f} MW"
+    )
+    typer.echo(f"  report -> {path}")
+
+
+@analyze_app.command("solar-features")
+def analyze_solar_features(
+    variants: Annotated[
+        str,
+        typer.Option(
+            help="Comma-separated variants: baseline,elevation,clear_sky_ghi,"
+            "geometry,geometry_clear_sky."
+        ),
+    ] = ",".join(solar_analysis.SOLAR_FEATURE_VARIANTS),
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """A/B solar elevation and clear-sky-index features on the frozen D+1 cutoffs.
+
+    The current tuned hyperparameters are held fixed for a controlled first screen. Retune the winner
+    before adopting it as the production solar feature builder.
+    """
+    selected = tuple(item.strip() for item in variants.split(",") if item.strip())
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    try:
+        result = solar_analysis.run_solar_feature_experiment(frame, variants=selected, seeds=seeds)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    path = solar_analysis.save_solar_feature_report(result)
+
+    typer.echo(
+        f"Solar physics feature A/B "
+        f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"{result.report['horizon']}; baseline params, not retuned):"
+    )
+    for variant in result.variants:
+        typer.echo(
+            f"  {variant['variant']:<18} MAE {variant['mean_mae']:.3f} MW "
+            f"| delta {variant['mae_delta_vs_baseline']:+.3f} "
+            f"| RMSE {variant['mean_rmse']:.3f} | {variant['n_features']} features"
+        )
+    typer.echo(f"  best: {result.best_variant} | report -> {path}")
+
+
+@analyze_app.command("solar-irradiance")
+def analyze_solar_irradiance(
+    variants: Annotated[
+        str,
+        typer.Option(
+            help="Comma-separated variants: baseline,gti,direct_diffuse,cloud,gti_cloud,"
+            "radiation_cloud,all."
+        ),
+    ] = ",".join(solar_analysis.SOLAR_IRRADIANCE_VARIANTS),
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """A/B fetched solar radiation/cloud feature families on the frozen D+1 cutoffs.
+
+    First backfill the new columns with ``eex backfill weather --start <date> --role solar``. The current
+    tuned hyperparameters are held fixed for screening; retune a credible winner before adoption.
+    """
+    selected = tuple(item.strip() for item in variants.split(",") if item.strip())
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    try:
+        result = solar_analysis.run_solar_irradiance_experiment(
+            frame, variants=selected, seeds=seeds
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    path = solar_analysis.save_solar_irradiance_report(result)
+
+    typer.echo(
+        f"Solar irradiance feature A/B "
+        f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"{result.report['horizon']}; baseline params, not retuned):"
+    )
+    for variant in result.variants:
+        typer.echo(
+            f"  {variant['variant']:<18} MAE {variant['mean_mae']:.3f} MW "
+            f"| delta {variant['mae_delta_vs_baseline']:+.3f} "
+            f"| RMSE {variant['mean_rmse']:.3f} | {variant['n_features']} features"
+        )
+    typer.echo(f"  best: {result.best_variant} | report -> {path}")
+
+
 @analyze_app.command("eval")
 def analyze_eval(
     seeds: _SeedsOpt = 1,
@@ -784,7 +918,12 @@ def model_tune(
         frame = read_frame(conn)
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
-    result = tuning.tune(REGISTRY[target.value], frame, n_trials=trials)
+    result = tuning.tune(
+        REGISTRY[target.value],
+        frame,
+        n_trials=trials,
+        incumbent_params=model_ops.load_params(target.value),
+    )
     params_path = model_ops.save_params(target.value, result.params)
     report_path = tuning.save_tuning_report(target.value, result)
     typer.echo(

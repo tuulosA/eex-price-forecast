@@ -1,36 +1,16 @@
 {
-  "run_at": "2026-07-29T19:13:57.673016+00:00",
+  "run_at": "2026-07-29T18:42:33.039345+00:00",
+  "model": "solar",
+  "compared": "GTI, direct/diffuse/DNI, and cloud-cover features",
   "horizon": "24h",
-  "days": 1,
-  "summary": {
-    "wind": {
-      "mae": 2540.6795,
-      "rmse": 3097.944,
-      "std_mae": 0.0,
-      "unit": "MW"
-    },
-    "solar": {
-      "mae": 1169.1639,
-      "rmse": 1940.7179,
-      "std_mae": 0.0,
-      "unit": "MW"
-    },
-    "load": {
-      "mae": 1488.8207,
-      "rmse": 1746.7566,
-      "std_mae": 0.0,
-      "unit": "MW"
-    },
-    "price": {
-      "mae": 12.9306,
-      "rmse": 16.6518,
-      "std_mae": 0.0,
-      "unit": "EUR/MWh"
-    }
-  },
+  "best_variant": "radiation_cloud",
   "config": {
     "seeds": [
-      42
+      42,
+      1055,
+      2068,
+      3081,
+      4094
     ],
     "n_cutoffs": 22,
     "cutoffs": [
@@ -56,202 +36,71 @@
       "2026-05-21",
       "2026-06-17",
       "2026-07-07"
-    ]
-  },
-  "models": [
-    {
-      "model": "wind",
-      "unit": "MW",
-      "mean_mae": 2540.6795,
-      "std_mae": 0.0,
-      "mean_rmse": 3097.944,
-      "n_cutoffs": 22,
-      "folds": [
-        {
-          "delivery_day": "2025-01-01",
-          "start_utc": "2024-12-31T23:00:00+00:00",
-          "end_utc": "2025-01-01T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 5396.6331,
-          "rmse": 6422.6402
-        },
-        {
-          "delivery_day": "2025-02-17",
-          "start_utc": "2025-02-16T23:00:00+00:00",
-          "end_utc": "2025-02-17T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1250.7044,
-          "rmse": 1622.9504
-        },
-        {
-          "delivery_day": "2025-03-19",
-          "start_utc": "2025-03-18T23:00:00+00:00",
-          "end_utc": "2025-03-19T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2788.906,
-          "rmse": 3602.6956
-        },
-        {
-          "delivery_day": "2025-04-17",
-          "start_utc": "2025-04-16T22:00:00+00:00",
-          "end_utc": "2025-04-17T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1789.9643,
-          "rmse": 2480.088
-        },
-        {
-          "delivery_day": "2025-05-16",
-          "start_utc": "2025-05-15T22:00:00+00:00",
-          "end_utc": "2025-05-16T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2369.1264,
-          "rmse": 2675.7276
-        },
-        {
-          "delivery_day": "2025-06-14",
-          "start_utc": "2025-06-13T22:00:00+00:00",
-          "end_utc": "2025-06-14T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2918.6885,
-          "rmse": 3515.5054
-        },
-        {
-          "delivery_day": "2025-07-22",
-          "start_utc": "2025-07-21T22:00:00+00:00",
-          "end_utc": "2025-07-22T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2167.7095,
-          "rmse": 2509.2911
-        },
-        {
-          "delivery_day": "2025-08-17",
-          "start_utc": "2025-08-16T22:00:00+00:00",
-          "end_utc": "2025-08-17T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1539.0587,
-          "rmse": 1842.2519
-        },
-        {
-          "delivery_day": "2025-08-18",
-          "start_utc": "2025-08-17T22:00:00+00:00",
-          "end_utc": "2025-08-18T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 779.3754,
-          "rmse": 933.9999
-        },
-        {
-          "delivery_day": "2025-09-18",
-          "start_utc": "2025-09-17T22:00:00+00:00",
-          "end_utc": "2025-09-18T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2483.5296,
-          "rmse": 2696.9364
-        },
-        {
-          "delivery_day": "2025-10-03",
-          "start_utc": "2025-10-02T22:00:00+00:00",
-          "end_utc": "2025-10-03T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1385.8301,
-          "rmse": 1775.076
-        },
-        {
-          "delivery_day": "2025-10-24",
-          "start_utc": "2025-10-23T22:00:00+00:00",
-          "end_utc": "2025-10-24T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2321.0204,
-          "rmse": 2875.1515
-        },
-        {
-          "delivery_day": "2025-11-08",
-          "start_utc": "2025-11-07T23:00:00+00:00",
-          "end_utc": "2025-11-08T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1109.8749,
-          "rmse": 1413.2624
-        },
-        {
-          "delivery_day": "2025-11-19",
-          "start_utc": "2025-11-18T23:00:00+00:00",
-          "end_utc": "2025-11-19T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2907.0326,
-          "rmse": 3182.2306
-        },
-        {
-          "delivery_day": "2025-12-25",
-          "start_utc": "2025-12-24T23:00:00+00:00",
-          "end_utc": "2025-12-25T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1404.72,
-          "rmse": 1707.4602
-        },
-        {
-          "delivery_day": "2026-01-23",
-          "start_utc": "2026-01-22T23:00:00+00:00",
-          "end_utc": "2026-01-23T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1483.2191,
-          "rmse": 2040.3454
-        },
-        {
-          "delivery_day": "2026-02-09",
-          "start_utc": "2026-02-08T23:00:00+00:00",
-          "end_utc": "2026-02-09T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2210.2478,
-          "rmse": 3032.4697
-        },
-        {
-          "delivery_day": "2026-03-15",
-          "start_utc": "2026-03-14T23:00:00+00:00",
-          "end_utc": "2026-03-15T22:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1616.9239,
-          "rmse": 1885.245
-        },
-        {
-          "delivery_day": "2026-04-06",
-          "start_utc": "2026-04-05T22:00:00+00:00",
-          "end_utc": "2026-04-06T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 7030.8235,
-          "rmse": 9160.6669
-        },
-        {
-          "delivery_day": "2026-05-21",
-          "start_utc": "2026-05-20T22:00:00+00:00",
-          "end_utc": "2026-05-21T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 2203.3151,
-          "rmse": 2541.7186
-        },
-        {
-          "delivery_day": "2026-06-17",
-          "start_utc": "2026-06-16T22:00:00+00:00",
-          "end_utc": "2026-06-17T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 1712.2499,
-          "rmse": 2342.6096
-        },
-        {
-          "delivery_day": "2026-07-07",
-          "start_utc": "2026-07-06T22:00:00+00:00",
-          "end_utc": "2026-07-07T21:00:00+00:00",
-          "test_rows": 24,
-          "mae": 7025.9958,
-          "rmse": 7896.4458
-        }
-      ]
+    ],
+    "params": {
+      "n_estimators": 300,
+      "max_depth": 7,
+      "learning_rate": 0.010673179760209477,
+      "subsample": 0.6662225125541511,
+      "colsample_bytree": 0.6185797583220249,
+      "min_child_weight": 15.406248723248392,
+      "reg_alpha": 0.010457444245943309,
+      "reg_lambda": 1.0138114683601502,
+      "objective": "reg:squarederror",
+      "tree_method": "hist",
+      "random_state": 42,
+      "n_jobs": 0
     },
+    "retuned": false
+  },
+  "variants": [
     {
-      "model": "solar",
-      "unit": "MW",
-      "mean_mae": 1169.1639,
-      "std_mae": 0.0,
-      "mean_rmse": 1940.7179,
-      "n_cutoffs": 22,
+      "variant": "radiation_cloud",
+      "features": [
+        "hour",
+        "day_of_week",
+        "month",
+        "is_weekend",
+        "is_holiday",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        "month_sin",
+        "month_cos",
+        "irr_solar",
+        "irr_solar_sum",
+        "irr_solar_std",
+        "irr_solar_min",
+        "irr_solar_max",
+        "solar_elevation_deg",
+        "solar_zenith_cos",
+        "clear_sky_ghi",
+        "direct_solar",
+        "direct_solar_sum",
+        "direct_solar_std",
+        "direct_solar_min",
+        "direct_solar_max",
+        "diffuse_solar",
+        "diffuse_solar_sum",
+        "diffuse_solar_std",
+        "diffuse_solar_min",
+        "diffuse_solar_max",
+        "dni_solar",
+        "dni_solar_sum",
+        "dni_solar_std",
+        "dni_solar_min",
+        "dni_solar_max",
+        "cloud_solar",
+        "cloud_solar_sum",
+        "cloud_solar_std",
+        "cloud_solar_min",
+        "cloud_solar_max"
+      ],
+      "n_features": 39,
+      "mean_mae": 1174.1057,
+      "std_mae": 4.743,
+      "mean_rmse": 1948.5601,
       "folds": [
         {
           "delivery_day": "2025-01-01",
@@ -429,379 +278,447 @@
           "mae": 2996.8197,
           "rmse": 4865.8126
         }
-      ]
+      ],
+      "mae_delta_vs_baseline": -103.9611
     },
     {
-      "model": "load",
-      "unit": "MW",
-      "mean_mae": 1488.8207,
-      "std_mae": 0.0,
-      "mean_rmse": 1746.7566,
-      "n_cutoffs": 22,
+      "variant": "all",
+      "features": [
+        "hour",
+        "day_of_week",
+        "month",
+        "is_weekend",
+        "is_holiday",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        "month_sin",
+        "month_cos",
+        "irr_solar",
+        "irr_solar_sum",
+        "irr_solar_std",
+        "irr_solar_min",
+        "irr_solar_max",
+        "solar_elevation_deg",
+        "solar_zenith_cos",
+        "clear_sky_ghi",
+        "gti_solar",
+        "gti_solar_sum",
+        "gti_solar_std",
+        "gti_solar_min",
+        "gti_solar_max",
+        "direct_solar",
+        "direct_solar_sum",
+        "direct_solar_std",
+        "direct_solar_min",
+        "direct_solar_max",
+        "diffuse_solar",
+        "diffuse_solar_sum",
+        "diffuse_solar_std",
+        "diffuse_solar_min",
+        "diffuse_solar_max",
+        "dni_solar",
+        "dni_solar_sum",
+        "dni_solar_std",
+        "dni_solar_min",
+        "dni_solar_max",
+        "cloud_solar",
+        "cloud_solar_sum",
+        "cloud_solar_std",
+        "cloud_solar_min",
+        "cloud_solar_max"
+      ],
+      "n_features": 44,
+      "mean_mae": 1176.1986,
+      "std_mae": 3.4802,
+      "mean_rmse": 1965.4487,
       "folds": [
         {
           "delivery_day": "2025-01-01",
           "start_utc": "2024-12-31T23:00:00+00:00",
           "end_utc": "2025-01-01T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 2291.1937,
-          "rmse": 2690.483
+          "mae": 156.4199,
+          "rmse": 327.8598
         },
         {
           "delivery_day": "2025-02-17",
           "start_utc": "2025-02-16T23:00:00+00:00",
           "end_utc": "2025-02-17T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 1866.5486,
-          "rmse": 2208.2204
+          "mae": 1297.9265,
+          "rmse": 2615.9212
         },
         {
           "delivery_day": "2025-03-19",
           "start_utc": "2025-03-18T23:00:00+00:00",
           "end_utc": "2025-03-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 1071.8759,
-          "rmse": 1331.9444
+          "mae": 874.0477,
+          "rmse": 1418.6823
         },
         {
           "delivery_day": "2025-04-17",
           "start_utc": "2025-04-16T22:00:00+00:00",
           "end_utc": "2025-04-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1243.6427,
-          "rmse": 1358.9856
+          "mae": 5039.1912,
+          "rmse": 8008.623
         },
         {
           "delivery_day": "2025-05-16",
           "start_utc": "2025-05-15T22:00:00+00:00",
           "end_utc": "2025-05-16T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1161.3627,
-          "rmse": 1429.4696
+          "mae": 2158.0242,
+          "rmse": 3607.1046
         },
         {
           "delivery_day": "2025-06-14",
           "start_utc": "2025-06-13T22:00:00+00:00",
           "end_utc": "2025-06-14T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 981.0765,
-          "rmse": 1131.5762
+          "mae": 1515.9394,
+          "rmse": 2506.0936
         },
         {
           "delivery_day": "2025-07-22",
           "start_utc": "2025-07-21T22:00:00+00:00",
           "end_utc": "2025-07-22T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 944.4397,
-          "rmse": 1081.7503
+          "mae": 1451.4783,
+          "rmse": 2196.9597
         },
         {
           "delivery_day": "2025-08-17",
           "start_utc": "2025-08-16T22:00:00+00:00",
           "end_utc": "2025-08-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1074.8482,
-          "rmse": 1309.2055
+          "mae": 867.6143,
+          "rmse": 1396.4891
         },
         {
           "delivery_day": "2025-08-18",
           "start_utc": "2025-08-17T22:00:00+00:00",
           "end_utc": "2025-08-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1037.1922,
-          "rmse": 1297.758
+          "mae": 1141.3344,
+          "rmse": 1790.3815
         },
         {
           "delivery_day": "2025-09-18",
           "start_utc": "2025-09-17T22:00:00+00:00",
           "end_utc": "2025-09-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 970.2222,
-          "rmse": 1123.193
+          "mae": 674.7535,
+          "rmse": 1239.788
         },
         {
           "delivery_day": "2025-10-03",
           "start_utc": "2025-10-02T22:00:00+00:00",
           "end_utc": "2025-10-03T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1418.969,
-          "rmse": 1691.5839
+          "mae": 941.7441,
+          "rmse": 1593.1995
         },
         {
           "delivery_day": "2025-10-24",
           "start_utc": "2025-10-23T22:00:00+00:00",
           "end_utc": "2025-10-24T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 2754.1913,
-          "rmse": 3028.7213
+          "mae": 460.9815,
+          "rmse": 943.888
         },
         {
           "delivery_day": "2025-11-08",
           "start_utc": "2025-11-07T23:00:00+00:00",
           "end_utc": "2025-11-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 1402.5318,
-          "rmse": 1510.6069
+          "mae": 215.0157,
+          "rmse": 390.2761
         },
         {
           "delivery_day": "2025-11-19",
           "start_utc": "2025-11-18T23:00:00+00:00",
           "end_utc": "2025-11-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 961.885,
-          "rmse": 1188.5908
+          "mae": 239.5251,
+          "rmse": 427.1915
         },
         {
           "delivery_day": "2025-12-25",
           "start_utc": "2025-12-24T23:00:00+00:00",
           "end_utc": "2025-12-25T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 2124.1259,
-          "rmse": 2744.9243
+          "mae": 646.7968,
+          "rmse": 1355.9736
         },
         {
           "delivery_day": "2026-01-23",
           "start_utc": "2026-01-22T23:00:00+00:00",
           "end_utc": "2026-01-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 1622.8318,
-          "rmse": 1923.1776
+          "mae": 252.1354,
+          "rmse": 537.7515
         },
         {
           "delivery_day": "2026-02-09",
           "start_utc": "2026-02-08T23:00:00+00:00",
           "end_utc": "2026-02-09T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 1214.2642,
-          "rmse": 1373.1252
+          "mae": 149.225,
+          "rmse": 291.5146
         },
         {
           "delivery_day": "2026-03-15",
           "start_utc": "2026-03-14T23:00:00+00:00",
           "end_utc": "2026-03-15T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 911.6705,
-          "rmse": 1126.8125
+          "mae": 565.7248,
+          "rmse": 958.0266
         },
         {
           "delivery_day": "2026-04-06",
           "start_utc": "2026-04-05T22:00:00+00:00",
           "end_utc": "2026-04-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 2542.6187,
-          "rmse": 2885.1356
+          "mae": 1844.316,
+          "rmse": 3110.3568
         },
         {
           "delivery_day": "2026-05-21",
           "start_utc": "2026-05-20T22:00:00+00:00",
           "end_utc": "2026-05-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1752.4723,
-          "rmse": 1968.5108
+          "mae": 1558.7038,
+          "rmse": 2357.5263
         },
         {
           "delivery_day": "2026-06-17",
           "start_utc": "2026-06-16T22:00:00+00:00",
           "end_utc": "2026-06-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1962.4907,
-          "rmse": 2146.0577
+          "mae": 979.3951,
+          "rmse": 1365.7569
         },
         {
           "delivery_day": "2026-07-07",
           "start_utc": "2026-07-06T22:00:00+00:00",
           "end_utc": "2026-07-07T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 1443.602,
-          "rmse": 1878.8124
+          "mae": 2890.8376,
+          "rmse": 4828.7575
         }
-      ]
+      ],
+      "mae_delta_vs_baseline": -101.8682
     },
     {
-      "model": "price",
-      "unit": "EUR/MWh",
-      "mean_mae": 12.9306,
-      "std_mae": 0.0,
-      "mean_rmse": 16.6518,
-      "n_cutoffs": 22,
+      "variant": "baseline",
+      "features": [
+        "hour",
+        "day_of_week",
+        "month",
+        "is_weekend",
+        "is_holiday",
+        "hour_sin",
+        "hour_cos",
+        "dow_sin",
+        "dow_cos",
+        "month_sin",
+        "month_cos",
+        "irr_solar",
+        "irr_solar_sum",
+        "irr_solar_std",
+        "irr_solar_min",
+        "irr_solar_max",
+        "solar_elevation_deg",
+        "solar_zenith_cos",
+        "clear_sky_ghi"
+      ],
+      "n_features": 19,
+      "mean_mae": 1278.0668,
+      "std_mae": 5.2852,
+      "mean_rmse": 2123.5367,
       "folds": [
         {
           "delivery_day": "2025-01-01",
           "start_utc": "2024-12-31T23:00:00+00:00",
           "end_utc": "2025-01-01T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 4.1171,
-          "rmse": 5.2221
+          "mae": 135.3656,
+          "rmse": 246.2517
         },
         {
           "delivery_day": "2025-02-17",
           "start_utc": "2025-02-16T23:00:00+00:00",
           "end_utc": "2025-02-17T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.413,
-          "rmse": 23.0654
+          "mae": 1334.8304,
+          "rmse": 2748.921
         },
         {
           "delivery_day": "2025-03-19",
           "start_utc": "2025-03-18T23:00:00+00:00",
           "end_utc": "2025-03-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 23.4344,
-          "rmse": 29.3919
+          "mae": 1642.6814,
+          "rmse": 2643.8287
         },
         {
           "delivery_day": "2025-04-17",
           "start_utc": "2025-04-16T22:00:00+00:00",
           "end_utc": "2025-04-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.7011,
-          "rmse": 26.9438
+          "mae": 4749.4968,
+          "rmse": 7459.7567
         },
         {
           "delivery_day": "2025-05-16",
           "start_utc": "2025-05-15T22:00:00+00:00",
           "end_utc": "2025-05-16T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.3064,
-          "rmse": 24.4662
+          "mae": 2078.0335,
+          "rmse": 3416.615
         },
         {
           "delivery_day": "2025-06-14",
           "start_utc": "2025-06-13T22:00:00+00:00",
           "end_utc": "2025-06-14T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.9006,
-          "rmse": 14.7675
+          "mae": 1373.1835,
+          "rmse": 2255.8296
         },
         {
           "delivery_day": "2025-07-22",
           "start_utc": "2025-07-21T22:00:00+00:00",
           "end_utc": "2025-07-22T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.5277,
-          "rmse": 10.6831
+          "mae": 1453.853,
+          "rmse": 2140.4031
         },
         {
           "delivery_day": "2025-08-17",
           "start_utc": "2025-08-16T22:00:00+00:00",
           "end_utc": "2025-08-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.13,
-          "rmse": 8.1984
+          "mae": 1142.4104,
+          "rmse": 1953.8817
         },
         {
           "delivery_day": "2025-08-18",
           "start_utc": "2025-08-17T22:00:00+00:00",
           "end_utc": "2025-08-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.9232,
-          "rmse": 14.8156
+          "mae": 1472.5732,
+          "rmse": 2300.4448
         },
         {
           "delivery_day": "2025-09-18",
           "start_utc": "2025-09-17T22:00:00+00:00",
           "end_utc": "2025-09-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.8428,
-          "rmse": 17.4117
+          "mae": 308.6976,
+          "rmse": 519.7724
         },
         {
           "delivery_day": "2025-10-03",
           "start_utc": "2025-10-02T22:00:00+00:00",
           "end_utc": "2025-10-03T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 18.2732,
-          "rmse": 21.99
+          "mae": 757.3913,
+          "rmse": 1347.1872
         },
         {
           "delivery_day": "2025-10-24",
           "start_utc": "2025-10-23T22:00:00+00:00",
           "end_utc": "2025-10-24T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 11.417,
-          "rmse": 14.1671
+          "mae": 471.5876,
+          "rmse": 1010.5198
         },
         {
           "delivery_day": "2025-11-08",
           "start_utc": "2025-11-07T23:00:00+00:00",
           "end_utc": "2025-11-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 5.3851,
-          "rmse": 6.5143
+          "mae": 231.3829,
+          "rmse": 435.3483
         },
         {
           "delivery_day": "2025-11-19",
           "start_utc": "2025-11-18T23:00:00+00:00",
           "end_utc": "2025-11-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.6857,
-          "rmse": 9.334
+          "mae": 272.118,
+          "rmse": 477.9914
         },
         {
           "delivery_day": "2025-12-25",
           "start_utc": "2025-12-24T23:00:00+00:00",
           "end_utc": "2025-12-25T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.847,
-          "rmse": 9.736
+          "mae": 773.5141,
+          "rmse": 1545.39
         },
         {
           "delivery_day": "2026-01-23",
           "start_utc": "2026-01-22T23:00:00+00:00",
           "end_utc": "2026-01-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.0706,
-          "rmse": 9.1293
+          "mae": 246.733,
+          "rmse": 456.366
         },
         {
           "delivery_day": "2026-02-09",
           "start_utc": "2026-02-08T23:00:00+00:00",
           "end_utc": "2026-02-09T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.608,
-          "rmse": 21.8525
+          "mae": 166.2335,
+          "rmse": 279.914
         },
         {
           "delivery_day": "2026-03-15",
           "start_utc": "2026-03-14T23:00:00+00:00",
           "end_utc": "2026-03-15T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.5759,
-          "rmse": 20.9237
+          "mae": 506.8659,
+          "rmse": 841.4307
         },
         {
           "delivery_day": "2026-04-06",
           "start_utc": "2026-04-05T22:00:00+00:00",
           "end_utc": "2026-04-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.5567,
-          "rmse": 23.0713
+          "mae": 1992.5279,
+          "rmse": 3365.5797
         },
         {
           "delivery_day": "2026-05-21",
           "start_utc": "2026-05-20T22:00:00+00:00",
           "end_utc": "2026-05-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 20.6173,
-          "rmse": 24.0665
+          "mae": 2104.1367,
+          "rmse": 3273.7394
         },
         {
           "delivery_day": "2026-06-17",
           "start_utc": "2026-06-16T22:00:00+00:00",
           "end_utc": "2026-06-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.2804,
-          "rmse": 20.1016
+          "mae": 1510.2629,
+          "rmse": 2107.1422
         },
         {
           "delivery_day": "2026-07-07",
           "start_utc": "2026-07-06T22:00:00+00:00",
           "end_utc": "2026-07-07T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.8593,
-          "rmse": 10.4881
+          "mae": 3375.1064,
+          "rmse": 5832.5921
         }
-      ]
+      ],
+      "mae_delta_vs_baseline": 0.0
     }
   ]
 }
