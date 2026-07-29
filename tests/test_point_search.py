@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from eex_forecast.weather.candidates import Candidate
+from eex_forecast.weather.openmeteo import SHORTWAVE_RADIATION
 from eex_forecast.weather.point_search import (
     NEIGHBOUR_WIND_ROLE,
     ROLES,
@@ -75,6 +76,34 @@ def test_rank_and_select(tmp_path: Path) -> None:
     config_path = save_points("wind", selected, path=tmp_path / "weather_points.json")
     loaded = load_points_config(config_path)
     assert loaded["wind"] == selected
+
+
+def test_rank_candidates_aligns_preceding_hour_solar_radiation() -> None:
+    delivery = _hourly(np.sin(np.arange(500) * 0.1) * 300 + 400)
+    target = delivery.copy()
+    candidate = Candidate("de_land_001", 52.0, 10.0, "land")
+
+    def fake_fetch(
+        lat: float, lon: float, *, start: object, end: object, variables: Sequence[str]
+    ) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "timestamp": delivery.index + pd.Timedelta(hours=1),
+                variables[0]: delivery.to_numpy(),
+            }
+        )
+
+    scores = rank_candidates(
+        [candidate],
+        target,
+        variable=SHORTWAVE_RADIATION,
+        start="2025-01-01",
+        end="2025-01-22",
+        history_fetcher=fake_fetch,
+    )
+
+    assert scores[0].best_lag_hours == 0
+    assert scores[0].pearson > 0.999
 
 
 def test_load_points_config_missing_returns_empty(tmp_path: Path) -> None:

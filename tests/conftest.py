@@ -42,17 +42,21 @@ def make_timeseries(
     index = pd.date_range(start, periods=periods, freq="h", tz="UTC")
     n = len(index)
     hour = index.hour.to_numpy()
+    preceding_hour = (index - pd.Timedelta(hours=1)).hour.to_numpy()
     day_of_year = index.dayofyear.to_numpy()
     step = np.arange(n)
 
     wind_speed = 6 + 3 * np.sin(2 * np.pi * step / 72) + rng.normal(0, 1, n)
-    irradiance = np.clip(np.sin((hour - 6) / 12 * np.pi), 0, None) * 800
+    delivery_irradiance = np.clip(np.sin((hour - 6) / 12 * np.pi), 0, None) * 800
+    # Open-Meteo stamps radiation at the end of its averaging interval: the value at t describes
+    # t-1..t, while the synthetic ENTSO-E target at t describes delivery interval t..t+1.
+    stored_irradiance = np.clip(np.sin((preceding_hour - 6) / 12 * np.pi), 0, None) * 800
     temperature = (
         10 + 8 * np.sin(2 * np.pi * day_of_year / 365) + 3 * np.sin((hour - 3) / 24 * 2 * np.pi)
     )
 
     wind_gen = np.clip(np.clip(wind_speed, 0, None) ** 3 * 18, 0, 60000) + rng.normal(0, 400, n)
-    solar_gen = irradiance * 45 + rng.normal(0, 150, n)
+    solar_gen = delivery_irradiance * 45 + rng.normal(0, 150, n)
     load = (
         50000
         + 8000 * np.sin((hour - 6) / 24 * 2 * np.pi)
@@ -74,8 +78,8 @@ def make_timeseries(
             "ws_de02": wind_speed + rng.normal(0, 0.5, n),
             "t_ws_de01": temperature,
             "t_de01": temperature,
-            "ghi_t_de01": irradiance,
-            "ghi_de01": irradiance,
+            "ghi_t_de01": stored_irradiance,
+            "ghi_de01": stored_irradiance,
         }
     )
 

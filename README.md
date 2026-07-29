@@ -385,6 +385,11 @@ Two caveats apply to both tools: the score is the target model's own MAE (for a 
 downstream price impact), and because hyperparameters are held fixed a feature-rich variant may be
 under-served by them — **re-tune the winner** (`eex model tune --target <model>`) before adopting it.
 
+Live prediction, training holdout metrics, tuning, aggregation, ablation, eval, and oracle all use the
+same prediction post-processing contract: capacity-factor reversal, non-negative clipping, and the
+solar-darkness constraint. Solar experiments therefore score the prediction that would actually be
+deployed, rather than an unclamped raw XGBoost output.
+
 ### Eval — end-to-end day-ahead MAE
 
 `analyze eval` runs the complete forecast chain on every frozen cutoff: each fold first trains and forecasts
@@ -499,6 +504,11 @@ from archived and live ECMWF IFS forecasts to avoid a train/serve mismatch. Open
 IFS wind at 100 m but does not expose temperature at 100 m; its nearby hub-height temperature fields
 (80/120 m) are unsupported and return null for this model on both endpoints. The populated 2 m series
 is therefore used as the consistent air-density proxy alongside 100 m wind.
+
+Open-Meteo's hourly radiation is a **preceding-hour mean**: the value stamped 21:00 describes
+20:00–21:00. ENTSO-E targets use the delivery interval's start timestamp, so feature construction pairs
+the 20:00 target with radiation stamped 21:00. Raw weather remains stored under Open-Meteo's original
+timestamp; the one-hour alignment is a timestamp lookup in the feature layer, not a database rewrite.
 
 ## License
 

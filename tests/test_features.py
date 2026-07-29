@@ -87,7 +87,31 @@ def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataF
     # wind_speed is the mean of ws_de01 and ws_de02; t_ws_de / t_de stay distinct features.
     expected = timeseries_frame[["ws_de01", "ws_de02"]].mean(axis=1)
     pd.testing.assert_series_equal(means["wind_speed"], expected, check_names=False)
+    # Radiation stamped at t + 1 describes the delivery interval beginning at t.
+    pd.testing.assert_series_equal(
+        means["irr_solar"], timeseries_frame["ghi_de01"].shift(-1), check_names=False
+    )
     assert weather_means(timeseries_frame, ["wind_speed"]).columns.tolist() == ["wind_speed"]
+
+
+def test_radiation_alignment_uses_timestamps_not_row_positions() -> None:
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2025-01-01T00:00Z", "2025-01-01T02:00Z", "2025-01-01T01:00Z"]
+            ),
+            "ghi_de01": [10.0, 30.0, 20.0],
+            "ghi_t_de01": [1.0, 3.0, 2.0],
+            "t_de01": [5.0, 7.0, 6.0],
+        }
+    )
+
+    means = weather_means(frame, ["irr_solar", "irr_load"])
+
+    assert means["irr_solar"].iloc[0] == 20.0  # 00:00 delivery uses GHI stamped 01:00
+    assert np.isnan(means["irr_solar"].iloc[1])  # no 03:00 row; do not borrow adjacent row 01:00
+    assert means["irr_solar"].iloc[2] == 30.0  # 01:00 delivery uses GHI stamped 02:00
+    assert np.allclose(means["irr_load"], [2.0, np.nan, 3.0], equal_nan=True)
 
 
 def test_price_lags_look_back_by_hours() -> None:
@@ -133,7 +157,7 @@ def test_default_fundamental_builders_use_adopted_strategies(
         "irr_solar_max",
     } <= set(solar.columns)
     assert "ghi_de01" not in solar.columns
-    solar_points = timeseries_frame[["ghi_de01", "ghi_de02"]]
+    solar_points = timeseries_frame[["ghi_de01", "ghi_de02"]].shift(-1)
     pd.testing.assert_series_equal(solar["irr_solar"], solar_points.mean(axis=1), check_names=False)
     pd.testing.assert_series_equal(
         solar["irr_solar_max"], solar_points.max(axis=1), check_names=False
@@ -141,6 +165,9 @@ def test_default_fundamental_builders_use_adopted_strategies(
     load = load_features(timeseries_frame)
     assert {"t_de01", "ghi_t_de01"} <= set(load.columns)
     assert "temp_load" not in load.columns
+    pd.testing.assert_series_equal(
+        load["ghi_t_de01"], timeseries_frame["ghi_t_de01"].shift(-1), check_names=False
+    )
 
 
 def test_weather_strategy_cube_adds_convex_aggregate(timeseries_frame: pd.DataFrame) -> None:

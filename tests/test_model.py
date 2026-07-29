@@ -19,6 +19,7 @@ from eex_forecast.model import (
     apply_train_nan_lag_mask,
     capacity_scaled,
     load_params,
+    postprocess_predictions,
     save_params,
     train,
 )
@@ -123,13 +124,26 @@ def test_capacity_model_predicts_in_mw(timeseries_frame: pd.DataFrame) -> None:
     assert (predictions >= 0).all()
 
 
+def test_postprocess_predictions_applies_capacity_clamp_and_solar_darkness() -> None:
+    features = pd.DataFrame({"irr_solar_max": [0.0, 10.0, 20.0]})
+    capacity = pd.Series([100_000.0, 100_000.0, 100_000.0])
+
+    prediction = postprocess_predictions(
+        REGISTRY["solar"],
+        np.array([0.01, 0.02, -0.01]),
+        features,
+        capacity=capacity,
+    )
+
+    assert prediction.tolist() == [0.0, 2_000.0, 0.0]
+
+
 def test_solar_prediction_is_zero_when_all_irradiance_points_are_dark(
     timeseries_frame: pd.DataFrame,
 ) -> None:
     trained = train(REGISTRY["solar"], timeseries_frame, params=TINY)
     predictions = trained.predict(timeseries_frame)
-    irradiance = timeseries_frame.filter(regex=r"^ghi_de\d+$")
-    dark = irradiance.max(axis=1) <= 0.0
+    dark = REGISTRY["solar"].build_features(timeseries_frame)["irr_solar_max"] <= 0.0
     assert dark.any() and (~dark).any()
     assert (predictions[dark] == 0.0).all()
     assert (predictions[~dark] > 0.0).any()  # daylight predictions remain model-driven
