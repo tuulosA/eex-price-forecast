@@ -21,14 +21,16 @@ turns them — together with the cross-border drivers that move a coupled market
    reaches **across the border**, ranking each interconnected neighbour's wind points against **German
    price** (see [Neighbour wind](#neighbour-wind)).
 2. **Backfill into SQLite.** DE day-ahead prices and wind / solar / load actuals from ENTSO-E; hourly
-   weather (100 m wind, 2 m temperature, shortwave radiation) from Open-Meteo at the chosen points; and
-   the known-ahead cross-border drivers (French nuclear availability, interconnector transfer capacity).
+   weather (100 m wind, 2 m temperature, irradiance components, and cloud cover) from Open-Meteo at the
+   chosen points; and the known-ahead cross-border drivers (French nuclear availability, interconnector
+   transfer capacity).
 3. **Two-stage forecast.** Three XGBoost **generation sub-models** forecast wind, solar, and load from
    the weather; the **price model** then forecasts the day-ahead price from those fundamentals plus
    calendar, the weekly price lag, weather aggregates, and the cross-border drivers. Wind and solar are
    learned as a fraction of **installed capacity** (from ENTSO-E) so they stay calibrated as the fleet
-   grows. Solar irradiance is summarized across the selected points by mean/sum/std/min/max, with a
-   physical zero-generation constraint when every point is dark. Fitting uses **early stopping** with
+   grows. Solar GHI, direct/diffuse/DNI, and cloud cover are summarized across the selected points by
+   mean/sum/std/min/max and combined with deterministic solar geometry, with a physical zero-generation
+   constraint when every point is dark. Fitting uses **early stopping** with
    residual **diagnostics** (Durbin-Watson, ACF); hyperparameters are **Optuna**-tuned by walk-forward
    backtest.
 
@@ -62,6 +64,7 @@ src/eex_forecast/
   aggregation.py       # A/B feature-aggregation strategies (eex analyze aggregation)
   ablation.py          # remove features and measure the loss (eex analyze ablation)
   evaluation.py        # end-to-end eval + oracle-substitution price diagnostics
+  solar_analysis.py    # solar error slices + controlled physics/irradiance feature experiments
   forecast.py          # the forecast pipeline (weather -> sub-models -> price -> CSV/plot)
   cli.py               # `eex` command-line interface
 ```
@@ -433,6 +436,27 @@ Both `eval` and `oracle` log one progress heartbeat after every completed cutoff
 cutoff number, delivery day, and interim MAEs/deltas. A normal 22-cutoff run therefore remains visibly
 active while the four models are repeatedly fitted.
 
+### Solar error slices — locate daylight weaknesses
+
+`analyze solar-errors` runs the tuned solar model over the same frozen D+1 cutoffs and writes
+`data/analysis/solar_error_slices.json`. It reports all-hours, daylight, and dark summaries, then slices
+daylight rows by Berlin-local delivery hour, meteorological season, actual capacity-factor range, and
+delivery day. Night remains a physical sanity check but does not dilute the detailed daylight analysis.
+
+Signed error is **forecast minus actual**: positive means overprediction and negative means
+underprediction. The command fits only solar, so it is much faster than the complete end-to-end evaluator.
+
+```bash
+eex analyze solar-errors                  # one production seed
+eex analyze solar-errors --seeds 5        # mean slices plus across-seed MAE spread
+eex analyze solar-features --seeds 5      # elevation / clear-sky controlled comparison
+eex analyze solar-irradiance --seeds 5    # GTI / components / cloud controlled comparison
+```
+
+The feature experiments hold the current XGBoost parameters fixed so variants differ only in their input
+columns. Their reports are written to `data/analysis/solar_feature_experiment.json` and
+`data/analysis/solar_irradiance_experiment.json`; retune the adopted winner afterward.
+
 ### Hyperparameter tuning
 
 `eex model tune` runs an **Optuna** (TPE) search over the XGBoost hyperparameters, scoring each trial by
@@ -448,8 +472,10 @@ eex model tune --target price --trials 12   # a quicker first pass
 Tuning scores each trial on the **day-ahead 24 h** — the settled, most-predictable, most-valuable hours,
 and the only horizon this backtest scores faithfully (the same frozen cutoffs every backtest tool uses; edit
 `config/backtest_cutoffs.yaml` to change the day set). Each run is an **independent, seeded** study
-(reproducible, but not resumed). **Re-tune after any feature change** — a new feature set leaves the old
-params stale.
+(reproducible, but not resumed). The currently configured parameters are scored once as an incumbent
+before the fresh trials and kept if none beats them, so a short retune cannot silently replace a proven
+configuration with a worse sample. **Re-tune after any feature change** — a new feature set leaves the
+old params stale.
 
 ## Development
 
@@ -496,14 +522,21 @@ All three cross-border drivers set out originally — [neighbour wind](#neighbou
 - [Marine Regions](https://www.marineregions.org/) — EEZ / maritime polygons (offshore points).
 
 **Weather variables.** Open-Meteo is queried for `wind_speed_100m` (wind), `temperature_2m` (load), and
-`shortwave_radiation` (solar). Two auxiliary variables are fetched at an existing role's coordinates with
-**no separate ranking**: each wind point also fetches `temperature_2m` (`t_ws_*`) as an air-density proxy,
-and each load point also fetches `shortwave_radiation` (`ghi_t_*`) as a load driver (daylight activity,
-behind-the-meter solar). Temperature is taken at **2 m even for wind points**, using the same variable
-from archived and live ECMWF IFS forecasts to avoid a train/serve mismatch. Open-Meteo exposes ECMWF
-IFS wind at 100 m but does not expose temperature at 100 m; its nearby hub-height temperature fields
-(80/120 m) are unsupported and return null for this model on both endpoints. The populated 2 m series
-is therefore used as the consistent air-density proxy alongside 100 m wind.
+`shortwave_radiation` (solar). Auxiliary variables are fetched at an existing role's coordinates with
+**no separate ranking**: each wind point also fetches `temperature_2m` (`t_ws_*`) as an air-density proxy;
+each load point fetches `shortwave_radiation` (`ghi_t_*`) as a load driver (daylight activity,
+behind-the-meter solar); and each solar point fetches direct radiation, diffuse radiation, DNI, cloud
+cover, and GTI. Production uses the first four auxiliary solar roles; GTI remains available for the
+controlled experiment but was excluded because it added features without improving the five-seed
+backtest. Open-Meteo derives ECMWF direct/diffuse radiation and GTI rather than exposing independent
+native ECMWF fields, so these are physically shaped transformations of the forecast rather than new
+observations.
+
+Temperature is taken at **2 m even for wind points**, using the same variable from archived and live
+ECMWF IFS forecasts to avoid a train/serve mismatch. Open-Meteo exposes ECMWF IFS wind at 100 m but does
+not expose temperature at 100 m; its nearby hub-height temperature fields (80/120 m) are unsupported and
+return null for this model on both endpoints. The populated 2 m series is therefore used as the
+consistent air-density proxy alongside 100 m wind.
 
 Open-Meteo's hourly radiation is a **preceding-hour mean**: the value stamped 21:00 describes
 20:00–21:00. ENTSO-E targets use the delivery interval's start timestamp, so feature construction pairs

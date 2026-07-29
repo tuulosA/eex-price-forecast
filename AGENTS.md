@@ -50,6 +50,7 @@ src/eex_forecast/
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
   evaluation.py        # end-to-end 24h eval + oracle-substitution price diagnostics
+  solar_analysis.py    # solar error slices + physics/irradiance feature A/B commands
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
@@ -67,12 +68,21 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   converts its temporary timestamp view to `Europe/Berlin` before extracting hour, day, month, weekend,
   and public-holiday fields. Do not move database timestamps away from UTC or regress the feature block
   to UTC calendar semantics; local-midnight and DST boundaries would be mislabeled.
-- **Align preceding-hour radiation to delivery intervals.** Open-Meteo stamps `shortwave_radiation` at
-  the end of its averaging interval, while ENTSO-E targets are stamped at the interval start.
-  `features._weather_role_points` therefore gives target row `t` the GHI stored at `t + 1 h`, using a
-  timestamp lookup rather than a row shift. Keep the raw DB source timestamps unchanged, preserve this
-  alignment in production/analysis builders and point ranking, and reserve the following weather hour
-  when deciding forecast coverage.
+- **Align preceding-hour radiation to delivery intervals.** Open-Meteo stamps GHI, GTI, direct,
+  diffuse, and DNI at the end of their averaging interval, while ENTSO-E targets are stamped at the
+  interval start. `features._weather_role_points` therefore gives target row `t` the radiation stored at
+  `t + 1 h`, using a timestamp lookup rather than a row shift. Keep the raw DB source timestamps
+  unchanged, preserve this alignment in production/analysis builders and point ranking, and reserve the
+  following weather hour when deciding forecast coverage.
+- **Solar's auxiliary weather contract is part of production.** The adopted builder uses direct,
+  diffuse, and direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
+  alongside GHI and deterministic geometry. GTI is fetched for reproducible experiments but was not
+  adopted. Historical and live Open-Meteo calls must request the same variables; adding a solar
+  auxiliary requires forecast-coverage checks and preceding-hour alignment when it is radiation.
+- **New sub-model weather roles do not implicitly enter price.** `WEATHER_AGGREGATES` is the registry
+  used by feature helpers, while `PRICE_WEATHER_ROLES` is the explicit original price weather block.
+  Keep `_price_base` on that allow-list so a sub-model experiment cannot silently change price features
+  and confound an end-to-end/oracle comparison.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
 - **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values
@@ -95,6 +105,9 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   (`model.apply_train_nan_lag_mask`) and nulls `price_lag_168h` on far-horizon test rows that would not
   have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
   horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
+- **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
+  parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
+  better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
 - **D+1 weather backtests have a modest optimistic bias.** Open-Meteo's Historical Forecast API stitches
   the short first hours of successive ECMWF runs, not the older coherent run available at the real issue
   time. ECMWF is usually already strong one to two days out, so frozen-cutoff feature/model comparisons
