@@ -129,6 +129,26 @@ def test_weather_coverage_reserves_following_hour_for_radiation_alignment() -> N
     assert _weather_coverage_end(frame, pd.Series(times), now) == times[1]
 
 
+def test_weather_coverage_requires_adopted_solar_auxiliaries() -> None:
+    now = pd.Timestamp("2026-08-01 00:00", tz="UTC")
+    times = pd.date_range(now, periods=5, freq="h", tz="UTC")
+    complete = [1.0, 2.0, 3.0, 4.0, np.nan]
+    frame = pd.DataFrame(
+        {
+            "timestamp": times,
+            "ws_de01": complete,
+            "ghi_de01": complete,
+            "direct_ghi_de01": complete,
+            "diffuse_ghi_de01": complete,
+            "dni_ghi_de01": complete,
+            "cloud_ghi_de01": [1.0, 2.0, np.nan, np.nan, np.nan],
+        }
+    )
+
+    # Cloud cover is instantaneous and runs out first, so it limits the adopted production feature set.
+    assert _weather_coverage_end(frame, pd.Series(times), now) == times[1]
+
+
 def test_weather_limited_end_drops_incomplete_final_market_day() -> None:
     requested = pd.Timestamp("2026-08-11 22:00", tz="UTC")
     # Weather ending at 15:00 CEST makes August 11 incomplete, so cut at its 00:00 CEST boundary.

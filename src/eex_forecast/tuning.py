@@ -88,6 +88,17 @@ class _Data:
     times: pd.Series
 
 
+@dataclass(frozen=True, slots=True)
+class _FoldPrediction:
+    """Natural-unit predictions and their matched observations for one walk-forward fold."""
+
+    delivery_day: str
+    times: pd.Series
+    actual: pd.Series
+    prediction: pd.Series
+    capacity: pd.Series | None
+
+
 def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> _Data:
     return _Data(
         matrix=spec.build_features(frame),
@@ -98,16 +109,15 @@ def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> _Data:
     )
 
 
-def _score_fold(
+def _predict_fold(
     spec: ModelSpec, data: _Data, params: dict[str, Any], delivery_day: str, days: int
-) -> dict[str, Any] | None:
-    """One fold: fit on rows strictly before ``delivery_day`` and score the ``days``-day window from it.
+) -> _FoldPrediction | None:
+    """Fit one walk-forward fold and return its deployed natural-unit predictions.
 
-    Returns the fold's MAE/RMSE (in MW / EUR) and its UTC window, or ``None`` when the fold is unusable
-    (no history, or no scored rows). Reproduces production's price-lag handling so the fold scores live
-    behaviour rather than a leak: train with the same serve-time gap (train_nan) and drop the lag from the
-    far-horizon test rows that would not have it at serve - both no-ops without a price lag and within a
-    week of the cutoff. The delivery-day window is DST-exact (23/24/25 h), not a flat ``days * 24`` hours.
+    This is the common row-level contract beneath metric scoring and diagnostics. It reproduces
+    production's price-lag handling and prediction post-processing, including capacity reversal and the
+    solar-darkness constraint. Returning the rows before reducing them to MAE lets diagnostics slice the
+    exact same predictions without maintaining a parallel backtest implementation.
     """
     start, end = cutoff_utc(delivery_day), horizon_end_utc(delivery_day, days)
     train = (data.times < start) & data.fit_target.notna()
@@ -128,14 +138,30 @@ def _score_fold(
         booster.predict(x_test),
         x_test,
         capacity=data.capacity[test] if data.capacity is not None else None,
-    ).to_numpy()
-    error = data.actual[test].to_numpy() - prediction
-    test_times = data.times[test]
+    )
+    return _FoldPrediction(
+        delivery_day=delivery_day,
+        times=data.times[test],
+        actual=data.actual[test],
+        prediction=prediction,
+        capacity=data.capacity[test] if data.capacity is not None else None,
+    )
+
+
+def _score_fold(
+    spec: ModelSpec, data: _Data, params: dict[str, Any], delivery_day: str, days: int
+) -> dict[str, Any] | None:
+    """Fit and score one delivery-day fold, returning natural-unit MAE/RMSE and its UTC window."""
+    fold = _predict_fold(spec, data, params, delivery_day, days)
+    if fold is None:
+        return None
+
+    error = fold.actual.to_numpy() - fold.prediction.to_numpy()
     return {
         "delivery_day": delivery_day,
-        "start_utc": test_times.min().isoformat(),
-        "end_utc": test_times.max().isoformat(),
-        "test_rows": int(test.sum()),
+        "start_utc": fold.times.min().isoformat(),
+        "end_utc": fold.times.max().isoformat(),
+        "test_rows": len(fold.times),
         "mae": float(np.mean(np.abs(error))),
         "rmse": float(np.sqrt(np.mean(error**2))),
     }
@@ -208,6 +234,41 @@ def walk_forward_metrics(
     return {"mean_mae": mean_mae, "mean_rmse": mean_rmse, "folds": folds}
 
 
+def walk_forward_predictions(
+    spec: ModelSpec,
+    frame: pd.DataFrame,
+    params: dict[str, Any],
+    *,
+    days: int,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+) -> pd.DataFrame:
+    """Return matched actual/prediction rows from the production-faithful walk-forward engine.
+
+    The output has one row per scored timestamp and cutoff, with predictions in the model's natural unit.
+    Capacity is included for capacity-scaled models so diagnostics can derive actual capacity-factor
+    ranges. This is intentionally a reporting seam, not a second evaluator: :func:`_score_fold` reduces
+    the same internal fold predictions to the MAE/RMSE used by tuning, aggregation, and ablation.
+    """
+    data = _prepare(spec, frame)
+    rows: list[pd.DataFrame] = []
+    for delivery_day in cutoffs:
+        fold = _predict_fold(spec, data, params, delivery_day, days)
+        if fold is None:
+            continue
+        values: dict[str, Any] = {
+            "delivery_day": delivery_day,
+            TIMESTAMP: fold.times.to_numpy(),
+            "actual": fold.actual.to_numpy(),
+            "prediction": fold.prediction.to_numpy(),
+        }
+        if fold.capacity is not None:
+            values["capacity"] = fold.capacity.to_numpy()
+        rows.append(pd.DataFrame(values))
+    if not rows:
+        raise ValueError("No usable walk-forward folds (too little data around the cutoffs).")
+    return pd.concat(rows, ignore_index=True)
+
+
 _BASE_SEED = (
     42  # the first seed equals the production default, so a 1-seed run reproduces the old point
 )
@@ -250,9 +311,16 @@ def walk_forward_metrics_seeded(
         per_rmse.append(rmse)
         if index == 0:
             folds0 = folds
-        if multi:  # per-seed heartbeat so a long multi-seed run is not silent (redundant for one seed)
+        if (
+            multi
+        ):  # per-seed heartbeat so a long multi-seed run is not silent (redundant for one seed)
             logger.info(
-                "[%s] seed %d/%d | MAE %.3f | RMSE %.3f", spec.name, index + 1, len(seeds), mae, rmse
+                "[%s] seed %d/%d | MAE %.3f | RMSE %.3f",
+                spec.name,
+                index + 1,
+                len(seeds),
+                mae,
+                rmse,
             )
     return {
         "mean_mae": float(np.mean(per_mae)),
@@ -286,6 +354,7 @@ def tune(
     frame: pd.DataFrame,
     *,
     n_trials: int,
+    incumbent_params: dict[str, Any] | None = None,
     days: int = DAY_AHEAD_DAYS,
     seed: int = 42,
     cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
@@ -294,6 +363,12 @@ def tune(
 
     ``days`` is the scored horizon in whole delivery days (default 1 = day-ahead). ``cutoffs`` defaults to
     the frozen :data:`BACKTEST_CUTOFFS` and is an internal test seam, not a production knob.
+
+    When ``incumbent_params`` is supplied, it is scored once outside the Optuna search and competes with
+    its ``n_trials`` fresh candidates. This makes a retune monotonic on the matched backtest: a new feature
+    set can keep a configuration that already transfers well instead of overwriting it merely because a
+    small fresh search missed it. Scoring outside Optuna also supports defaults just beyond the search
+    bounds, such as zero L1 regularisation.
     """
     data = _prepare(spec, frame)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -322,19 +397,49 @@ def tune(
             "%s   trial %d/%d: MAE %s (best %s)", scope, trial.number + 1, n_trials, value, best
         )
 
+    incumbent_candidate = (
+        {**incumbent_params, **FIXED_PARAMS} if incumbent_params is not None else None
+    )
+    incumbent_score = (
+        _score(spec, data, incumbent_candidate, cutoffs, days)
+        if incumbent_candidate is not None
+        else None
+    )
+    if incumbent_score is not None:
+        logger.info("%s   incumbent: MAE %.4f", scope, incumbent_score)
+
     study = optuna.create_study(direction="minimize", sampler=TPESampler(seed=seed))
     study.optimize(objective, n_trials=n_trials, gc_after_trial=True, callbacks=[log_trial])
     best_params = {**study.best_params, **FIXED_PARAMS}
+    best_value = float(study.best_value)
+    best_trial: int | str = study.best_trial.number
+    if (
+        incumbent_candidate is not None
+        and incumbent_score is not None
+        and incumbent_score <= best_value
+    ):
+        best_params = incumbent_candidate
+        best_value = incumbent_score
+        best_trial = "incumbent"
     logger.info(
         "%s tuned: best mean MAE %.4f over %d folds, %d trials",
         scope,
-        study.best_value,
+        best_value,
         len(cutoffs),
         n_trials,
     )
     # Re-score the winner to record its per-cutoff breakdown, and summarise every trial.
     folds, best_mae, best_rmse = _fold_metrics(spec, data, best_params, cutoffs, days)
-    all_trials = [
+    all_trials: list[dict[str, Any]] = []
+    if incumbent_candidate is not None and incumbent_score is not None:
+        all_trials.append(
+            {
+                "trial": "incumbent",
+                "mean_mae": round(incumbent_score, 4),
+                "params": incumbent_candidate,
+            }
+        )
+    all_trials.extend(
         {
             "trial": trial.number,
             "mean_mae": round(trial.value, 4),
@@ -342,18 +447,19 @@ def tune(
         }
         for trial in study.trials
         if trial.value is not None
-    ]
+    )
     report: dict[str, Any] = {
         "config": {
             "n_trials": n_trials,
             "n_cutoffs": len(cutoffs),
             "days": days,
             "seed": seed,
+            "incumbent_scored": incumbent_params is not None,
         },
         "features": list(data.matrix.columns),
         "cutoffs": list(cutoffs),
         "best_trial": {
-            "trial": study.best_trial.number,
+            "trial": best_trial,
             "mean_mae": round(best_mae, 4),
             "mean_rmse": round(best_rmse, 4),
             "params": best_params,
@@ -361,7 +467,7 @@ def tune(
         },
         "all_trials": all_trials,
     }
-    return TuneResult(best_params, float(study.best_value), len(cutoffs), cutoffs, report)
+    return TuneResult(best_params, best_value, len(cutoffs), cutoffs, report)
 
 
 def save_tuning_report(name: str, result: TuneResult, *, reports_dir: Path = TUNING_DIR) -> Path:

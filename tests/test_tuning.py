@@ -11,7 +11,7 @@ import pytest
 from tests.conftest import make_timeseries
 
 from eex_forecast import tuning as tuning_ops
-from eex_forecast.model import REGISTRY
+from eex_forecast.model import DEFAULT_PARAMS, REGISTRY
 from eex_forecast.tuning import (
     TuneResult,
     evaluate_params,
@@ -19,6 +19,7 @@ from eex_forecast.tuning import (
     seed_list,
     tune,
     walk_forward_metrics_seeded,
+    walk_forward_predictions,
 )
 
 TINY = {
@@ -81,6 +82,26 @@ def test_walk_forward_metrics_seeded_reports_spread(timeseries_frame: pd.DataFra
     assert np.isfinite(many["mean_mae"]) and many["seeds"] == seed_list(4)
 
 
+def test_walk_forward_predictions_exposes_the_rows_used_by_metrics(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    cutoff = (CUTOFFS[0],)
+    rows = walk_forward_predictions(
+        REGISTRY["solar"], timeseries_frame, TINY, days=1, cutoffs=cutoff
+    )
+    metrics = walk_forward_metrics_seeded(
+        REGISTRY["solar"], timeseries_frame, TINY, days=1, seeds=[0], cutoffs=cutoff
+    )
+
+    assert list(rows) == ["delivery_day", "timestamp", "actual", "prediction", "capacity"]
+    assert len(rows) == 24
+    assert rows["delivery_day"].unique().tolist() == [CUTOFFS[0]]
+    assert (rows["capacity"] == 90_000.0).all()
+    assert np.mean(np.abs(rows["actual"] - rows["prediction"])) == pytest.approx(
+        metrics["mean_mae"]
+    )
+
+
 def test_tune_returns_complete_params() -> None:
     frame = make_timeseries(periods=24 * 200)
     result = tune(REGISTRY["wind"], frame, n_trials=2, days=DAYS, cutoffs=CUTOFFS)
@@ -98,6 +119,38 @@ def test_tune_returns_complete_params() -> None:
     )
     assert "mean_rmse" in best
     assert len(result.report["all_trials"]) == 2
+
+
+def test_tune_keeps_a_better_incumbent(monkeypatch: pytest.MonkeyPatch) -> None:
+    frame = make_timeseries(periods=24 * 200)
+    incumbent = {**DEFAULT_PARAMS, "n_estimators": 201, "max_depth": 3}
+
+    def fake_score(
+        spec: object,
+        data: object,
+        params: dict[str, object],
+        cutoffs: tuple[str, ...],
+        days: int,
+    ) -> float:
+        del spec, data, cutoffs, days
+        return 0.0 if params["n_estimators"] == 201 else 1.0
+
+    monkeypatch.setattr(tuning_ops, "_score", fake_score)
+
+    result = tune(
+        REGISTRY["wind"],
+        frame,
+        n_trials=1,
+        incumbent_params=incumbent,
+        days=1,
+        cutoffs=CUTOFFS[:1],
+    )
+
+    assert result.best_value == 0.0
+    assert result.params["n_estimators"] == 201
+    assert result.report["config"]["incumbent_scored"] is True
+    assert result.report["best_trial"]["trial"] == "incumbent"
+    assert result.report["all_trials"][0]["trial"] == "incumbent"
 
 
 def test_save_tuning_report_writes_full_report(tmp_path: Path) -> None:

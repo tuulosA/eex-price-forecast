@@ -128,9 +128,16 @@ def test_point_columns_adds_irradiance_at_temp_points() -> None:
     }
 
 
-def test_point_columns_leaves_solar_single_variable() -> None:
+def test_point_columns_adds_solar_irradiance_and_cloud_auxiliaries() -> None:
     solar = SelectedPoint("ghi_de01", 49.0, 9.0, "shortwave_radiation", "de_land_002", 0.8, 0)
-    assert point_columns("solar", solar) == {"shortwave_radiation": "ghi_de01"}
+    assert point_columns("solar", solar) == {
+        "shortwave_radiation": "ghi_de01",
+        "global_tilted_irradiance": "gti_ghi_de01",
+        "direct_radiation": "direct_ghi_de01",
+        "diffuse_radiation": "diffuse_ghi_de01",
+        "direct_normal_irradiance": "dni_ghi_de01",
+        "cloud_cover": "cloud_ghi_de01",
+    }
 
 
 def test_neighbour_point_columns_wind_only() -> None:

@@ -143,7 +143,18 @@ def fetch_forecast_inputs(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> 
 
 
 # Domestic weather column prefixes; a future row missing any of these has no genuine weather forecast.
-_DOMESTIC_WEATHER_PREFIXES = ("ws_de", "t_ws_de", "t_de", "ghi_de", "ghi_t_de")
+# Solar's adopted direct/diffuse/DNI/cloud inputs are checked here as strictly as the original GHI.
+_DOMESTIC_WEATHER_PREFIXES = (
+    "ws_de",
+    "t_ws_de",
+    "t_de",
+    "ghi_de",
+    "ghi_t_de",
+    "direct_ghi_de",
+    "diffuse_ghi_de",
+    "dni_ghi_de",
+    "cloud_ghi_de",
+)
 
 
 def _weather_coverage_end(
@@ -159,7 +170,11 @@ def _weather_coverage_end(
     if not weather:
         return None
     present = frame[weather].notna().all(axis=1)
-    radiation = [c for c in weather if c.startswith(("ghi_de", "ghi_t_de"))]
+    radiation = [
+        c
+        for c in weather
+        if c.startswith(("ghi_de", "ghi_t_de", "direct_ghi_de", "diffuse_ghi_de", "dni_ghi_de"))
+    ]
     if radiation:
         radiation_present = pd.Series(
             frame[radiation].notna().all(axis=1).to_numpy(),
