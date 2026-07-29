@@ -107,3 +107,49 @@ def test_run_train_flag_retrains_all_models_before_forecast(
     # fetch inputs before training, and forecast (pure predict) after all training.
     assert order.index("fetch_inputs") < order.index("train:wind")
     assert order.index("forecast") > order.index("train:price")
+
+
+def test_analyze_solar_errors_prints_daylight_summary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    report = {
+        "horizon": "24h",
+        "config": {"n_cutoffs": 2},
+        "summary": {
+            "all_hours": {"mae_mw": 100.0, "mean_error_mw": 10.0, "rows": 48},
+            "daylight": {"mae_mw": 180.0, "mean_error_mw": 20.0, "rows": 24},
+            "dark": {"mae_mw": 0.0, "mean_error_mw": 0.0, "rows": 24},
+        },
+        "daylight_slices": {
+            "market_hour": [
+                {"market_hour": 8, "mean_error_mw": -30.0},
+                {"market_hour": 16, "mean_error_mw": 70.0},
+            ]
+        },
+    }
+
+    class _Result:
+        def __init__(self) -> None:
+            self.report = report
+
+    observed: list[int] = []
+
+    def fake_run(frame: pd.DataFrame, *, seeds: int) -> _Result:
+        observed.append(seeds)
+        return _Result()
+
+    monkeypatch.setattr(cli, "connect", lambda path: contextlib.nullcontext())
+    monkeypatch.setattr(cli, "read_frame", lambda conn: pd.DataFrame({"x": [1]}))
+    monkeypatch.setattr(cli.solar_analysis, "run_solar_error_analysis", fake_run)
+    monkeypatch.setattr(
+        cli.solar_analysis,
+        "save_solar_error_report",
+        lambda result: tmp_path / "solar_error_slices.json",
+    )
+
+    result = CliRunner().invoke(cli.app, ["analyze", "solar-errors", "--seeds", "3"])
+
+    assert result.exit_code == 0, result.output
+    assert observed == [3]
+    assert "daylight  MAE 180.000 MW | bias +20.000 MW | 24 rows" in result.output
+    assert "08:00 -30.0 MW | 16:00 +70.0 MW" in result.output
