@@ -41,6 +41,13 @@ PRICE_ACTUAL = "price_actual_eur_mwh"
 PRICE_FORECAST = "price_forecast_eur_mwh"
 PRICE_LAGS_HOURS: tuple[int, ...] = (168,)  # one week; NaN past D+7 at serve
 
+# A central-Germany reference point for deterministic national solar geometry. Solar elevation changes
+# modestly across the country relative to the hourly resolution and the much larger cloud-driven
+# irradiance differences already represented by the 20 weather points. Using one fixed point keeps the
+# geometry block small, reproducible, and available identically in historical and live feature builds.
+SOLAR_REFERENCE_LATITUDE = 51.0
+SOLAR_REFERENCE_LONGITUDE = 10.5
+
 # Neighbour wind columns are ``ws_<cc>NN`` (cc = neighbour country code); the home country's own wind
 # points share the ``ws_`` prefix and are excluded by code. See point_search's neighbour_wind role.
 _NEIGHBOUR_WS_RE = re.compile(r"^ws_([a-z]{2})\d+$")
@@ -66,11 +73,49 @@ WEATHER_AGGREGATES: dict[str, str] = {
     "temp_load": "t_de",
     "irr_load": "ghi_t_de",
     "irr_solar": "ghi_de",
+    "gti_solar": "gti_ghi_de",
+    "direct_solar": "direct_ghi_de",
+    "diffuse_solar": "diffuse_ghi_de",
+    "dni_solar": "dni_ghi_de",
+    "cloud_solar": "cloud_ghi_de",
 }
+# The price model's historical weather block is intentionally explicit. Registering a new sub-model
+# weather role must not silently change the price feature set and confound downstream A/B comparisons.
+PRICE_WEATHER_ROLES: tuple[str, ...] = (
+    "wind_speed",
+    "temp_wind",
+    "temp_load",
+    "irr_load",
+    "irr_solar",
+)
 # Open-Meteo labels these radiation values at the *end* of their averaging interval: a value stamped
 # 21:00 is the mean over 20:00-21:00. ENTSO-E generation/load/price rows are labelled at the start of
 # their delivery interval, so a target at 20:00 needs the radiation value stamped 21:00.
-_PRECEDING_HOUR_MEAN_ROLES = frozenset({"irr_load", "irr_solar"})
+_PRECEDING_HOUR_MEAN_ROLES = frozenset(
+    {
+        "irr_load",
+        "irr_solar",
+        "gti_solar",
+        "direct_solar",
+        "diffuse_solar",
+        "dni_solar",
+    }
+)
+SOLAR_AUXILIARY_WEATHER_ROLES: tuple[str, ...] = (
+    "gti_solar",
+    "direct_solar",
+    "diffuse_solar",
+    "dni_solar",
+    "cloud_solar",
+)
+# Frozen-cutoff testing found the three radiation components plus cloud cover materially better than
+# geometry/GHI alone. GTI was deliberately left out: adding it increased both feature count and MAE.
+SOLAR_PRODUCTION_WEATHER_ROLES: tuple[str, ...] = (
+    "direct_solar",
+    "diffuse_solar",
+    "dni_solar",
+    "cloud_solar",
+)
 
 # Fundamental feature name -> (actual column, forecast column). The price model reads the coalesce of
 # the two, so it trains on measured fundamentals and forecasts on the sub-models' predictions.
@@ -119,6 +164,67 @@ def calendar_features(timestamps: pd.Series) -> pd.DataFrame:
             "month_cos": np.cos(2 * np.pi * month / 12),
         },
         index=market.index,
+    )
+
+
+def solar_geometry_features(
+    timestamps: pd.Series,
+    *,
+    latitude: float = SOLAR_REFERENCE_LATITUDE,
+    longitude: float = SOLAR_REFERENCE_LONGITUDE,
+) -> pd.DataFrame:
+    """Solar elevation and a clear-sky GHI proxy for each delivery interval.
+
+    Radiation and generation are hourly interval means, so geometry is evaluated at the interval
+    midpoint rather than its start label. Solar position follows NOAA's compact fractional-year
+    approximation. The Haurwitz clear-sky model then converts positive cosine-of-zenith into surface GHI.
+    Both are deterministic from UTC timestamp and location, avoiding a history/live data contract.
+    """
+    utc = pd.to_datetime(timestamps, utc=True) + pd.Timedelta(minutes=30)
+    day_of_year = utc.dt.dayofyear.astype(float)
+    fractional_hour = (
+        utc.dt.hour.astype(float)
+        + utc.dt.minute.astype(float) / 60.0
+        + utc.dt.second.astype(float) / 3600.0
+    )
+    fractional_year = 2.0 * np.pi / 365.0 * (day_of_year - 1.0 + (fractional_hour - 12.0) / 24.0)
+    equation_of_time = 229.18 * (
+        0.000075
+        + 0.001868 * np.cos(fractional_year)
+        - 0.032077 * np.sin(fractional_year)
+        - 0.014615 * np.cos(2.0 * fractional_year)
+        - 0.040849 * np.sin(2.0 * fractional_year)
+    )
+    declination = (
+        0.006918
+        - 0.399912 * np.cos(fractional_year)
+        + 0.070257 * np.sin(fractional_year)
+        - 0.006758 * np.cos(2.0 * fractional_year)
+        + 0.000907 * np.sin(2.0 * fractional_year)
+        - 0.002697 * np.cos(3.0 * fractional_year)
+        + 0.00148 * np.sin(3.0 * fractional_year)
+    )
+    solar_minutes = (fractional_hour * 60.0 + equation_of_time + 4.0 * longitude) % 1440.0
+    hour_angle = np.radians(solar_minutes / 4.0 - 180.0)
+    latitude_radians = np.radians(latitude)
+    cosine_zenith = (
+        np.sin(latitude_radians) * np.sin(declination)
+        + np.cos(latitude_radians) * np.cos(declination) * np.cos(hour_angle)
+    ).clip(-1.0, 1.0)
+    elevation = np.degrees(np.arcsin(cosine_zenith))
+    daylight_cosine = cosine_zenith.clip(lower=0.0)
+    clear_sky_ghi = pd.Series(0.0, index=timestamps.index)
+    daylight = daylight_cosine > 0.0
+    clear_sky_ghi.loc[daylight] = (
+        1098.0 * daylight_cosine.loc[daylight] * np.exp(-0.059 / daylight_cosine.loc[daylight])
+    )
+    return pd.DataFrame(
+        {
+            "solar_elevation_deg": elevation.to_numpy(),
+            "solar_zenith_cos": daylight_cosine.to_numpy(),
+            "clear_sky_ghi": clear_sky_ghi.to_numpy(),
+        },
+        index=timestamps.index,
     )
 
 
@@ -332,8 +438,8 @@ def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Solar generation drivers: calendar plus spatial irradiance summary statistics.
+def solar_features_baseline(frame: pd.DataFrame) -> pd.DataFrame:
+    """Pre-geometry solar baseline: calendar plus spatial irradiance summary statistics.
 
     Open-Meteo's preceding-hour radiation is first aligned to the ENTSO-E delivery interval: generation
     at ``t`` uses irradiance stamped ``t + 1 h``. The ranked points are then reduced to their mean, sum,
@@ -348,6 +454,69 @@ def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
         ],
         axis=1,
     )
+
+
+def solar_features_with_geometry(frame: pd.DataFrame) -> pd.DataFrame:
+    """Solar baseline plus interval-midpoint elevation, cosine-of-zenith, and clear-sky GHI."""
+    return pd.concat(
+        [solar_features_baseline(frame), solar_geometry_features(frame[TIMESTAMP])],
+        axis=1,
+    )
+
+
+def solar_features_with_elevation(frame: pd.DataFrame) -> pd.DataFrame:
+    """Solar baseline plus only interval-midpoint solar elevation."""
+    geometry = solar_geometry_features(frame[TIMESTAMP])
+    return pd.concat([solar_features_baseline(frame), geometry[["solar_elevation_deg"]]], axis=1)
+
+
+def solar_features_with_clear_sky_ghi(frame: pd.DataFrame) -> pd.DataFrame:
+    """Solar baseline plus only the deterministic Haurwitz clear-sky GHI."""
+    geometry = solar_geometry_features(frame[TIMESTAMP])
+    return pd.concat([solar_features_baseline(frame), geometry[["clear_sky_ghi"]]], axis=1)
+
+
+def solar_features_with_clear_sky(frame: pd.DataFrame) -> pd.DataFrame:
+    """Geometry variant plus GHI divided by the deterministic clear-sky expectation.
+
+    The ratio is missing when the clear-sky estimate is below 10 W/m2, where dividing by a tiny dawn or
+    dusk denominator would create unstable values. XGBoost handles that missing twilight branch directly.
+    Values are capped at 2 because occasional interpolation/forecast overshoots are possible and the
+    diagnostic needs atmospheric attenuation, not an unbounded numerical outlier.
+    """
+    out = solar_features_with_geometry(frame)
+    denominator = out["clear_sky_ghi"].where(out["clear_sky_ghi"] >= 10.0)
+    out["clear_sky_index"] = (out["irr_solar"] / denominator).clip(lower=0.0, upper=2.0)
+    return out
+
+
+def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """Adopted solar drivers: geometry, irradiance components, and cloud cover.
+
+    Geometry reduced the five-seed frozen-cutoff MAE by about 31 MW versus the irradiance/calendar
+    baseline. Direct, diffuse, and direct-normal irradiance plus cloud-cover spatial statistics then
+    reduced it by another 104 MW. GTI added five redundant features and slightly worsened MAE, so it
+    remains available to the experiment command but is not part of production.
+    """
+    return solar_features_with_auxiliary_weather(frame, roles=SOLAR_PRODUCTION_WEATHER_ROLES)
+
+
+def solar_features_with_auxiliary_weather(
+    frame: pd.DataFrame, *, roles: Sequence[str]
+) -> pd.DataFrame:
+    """Adopted solar features plus stats for selected stage-8 weather roles.
+
+    Radiation roles retain the same preceding-hour alignment as GHI. Cloud cover is instantaneous.
+    Keeping this parameterised preserves the controlled GTI/direct/diffuse/cloud experiment variants
+    independently of the production builder.
+    """
+    unknown = set(roles) - set(SOLAR_AUXILIARY_WEATHER_ROLES)
+    if unknown:
+        raise ValueError(f"Unknown solar auxiliary weather roles: {', '.join(sorted(unknown))}.")
+    blocks = [
+        _primary_block(_weather_role_points(frame, role), role, "stats", {}, 3) for role in roles
+    ]
+    return pd.concat([solar_features_with_geometry(frame), *blocks], axis=1)
 
 
 def load_features(frame: pd.DataFrame) -> pd.DataFrame:
@@ -406,7 +575,7 @@ def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
         [
             calendar_features(frame[TIMESTAMP]),
             price_lags(frame),
-            weather_means(frame),
+            weather_means(frame, PRICE_WEATHER_ROLES),
             fundamentals(frame),
             nuclear_feature(frame),
             ntc_features(frame),

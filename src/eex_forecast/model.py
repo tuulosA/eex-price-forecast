@@ -56,6 +56,7 @@ _PRICE_LAG_COLUMN = f"price_lag_{_PRICE_LAG_HOURS}h"
 _TRAIN_NAN_LAG_FRACTION = 0.5  # D+8..D+14 share of the 14-day horizon lacking the lag at serve
 _TRAIN_NAN_LAG_SEED = 168  # fixed so retrains are reproducible
 _SOLAR_DARKNESS_FEATURE = "irr_solar_max"
+_SOLAR_TARGET_COLUMN = "solar_actual_mw"
 
 # Sensible, lightly-regularised defaults; the walk-forward tuner overrides these per model.
 DEFAULT_PARAMS: dict[str, Any] = {
@@ -150,14 +151,13 @@ def postprocess_predictions(
         series = series * pd.to_numeric(capacity, errors="coerce").to_numpy()
     if spec.non_negative:
         series = series.clip(lower=0.0)
-    if spec.name == "solar" and _SOLAR_DARKNESS_FEATURE in built_features:
+    if spec.target_column == _SOLAR_TARGET_COLUMN and _SOLAR_DARKNESS_FEATURE in built_features:
         # A regression tree's lowest leaf need not pass through physical zero. With Germany's large
         # installed fleet, even a small positive capacity-factor floor becomes a spurious GW-scale
-        # nighttime plateau. All configured points dark is an unambiguous physical constraint; leave
-        # twilight and cloudy daylight model-driven whenever any point has positive irradiance.
-        darkness = pd.to_numeric(
-            built_features[_SOLAR_DARKNESS_FEATURE], errors="coerce"
-        ) <= 0.0
+        # nighttime plateau. Match the target rather than the spec name because analysis variants use
+        # names such as ``solar:stats`` while retaining the same physical target. All configured points
+        # dark is an unambiguous constraint; leave twilight/cloudy daylight model-driven.
+        darkness = pd.to_numeric(built_features[_SOLAR_DARKNESS_FEATURE], errors="coerce") <= 0.0
         series = series.mask(darkness, 0.0)
     return series
 
@@ -176,9 +176,7 @@ class TrainedModel:
         matrix = built_features.reindex(columns=self.feature_names)
         values = self.booster.predict(matrix)
         capacity = capacity_for(self.spec, frame)
-        return postprocess_predictions(
-            self.spec, values, built_features, capacity=capacity
-        )
+        return postprocess_predictions(self.spec, values, built_features, capacity=capacity)
 
     def save(self, models_dir: Path = MODELS_DIR) -> Path:
         """Persist the booster (native JSON) and a sidecar with the training feature order."""
@@ -366,7 +364,9 @@ def apply_train_nan_lag_mask(matrix: pd.DataFrame) -> pd.DataFrame:
     out = matrix.copy()  # copy before nulling so the caller's frame is never mutated
     out.loc[out.index[mask], _PRICE_LAG_COLUMN] = np.nan
     # A per-fit internal detail (fires once per walk-forward fold too), so log at DEBUG - not INFO noise.
-    logger.debug("[price] train_nan lag fix | nulled %d/%d training rows", int(mask.sum()), len(out))
+    logger.debug(
+        "[price] train_nan lag fix | nulled %d/%d training rows", int(mask.sum()), len(out)
+    )
     return out
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -136,6 +137,18 @@ def test_postprocess_predictions_applies_capacity_clamp_and_solar_darkness() -> 
     )
 
     assert prediction.tolist() == [0.0, 2_000.0, 0.0]
+
+
+def test_solar_analysis_variant_keeps_darkness_postprocessing() -> None:
+    variant = replace(REGISTRY["solar"], name="solar:experiment")
+    prediction = postprocess_predictions(
+        variant,
+        np.array([0.01, 0.02]),
+        pd.DataFrame({"irr_solar_max": [0.0, 10.0]}),
+        capacity=pd.Series([100_000.0, 100_000.0]),
+    )
+
+    assert prediction.tolist() == [0.0, 2_000.0]
 
 
 def test_solar_prediction_is_zero_when_all_irradiance_points_are_dark(

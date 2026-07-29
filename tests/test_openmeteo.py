@@ -53,3 +53,4 @@ def test_fetch_history_calls_historical_forecast_ecmwf_and_parses() -> None:
     request_url = responses.calls[0].request.url
     assert "historical-forecast-api.open-meteo.com" in request_url
     assert "ecmwf_ifs" in request_url  # single consistent model, matching the live forecast
+    assert "tilt=35.0" in request_url and "azimuth=0.0" in request_url

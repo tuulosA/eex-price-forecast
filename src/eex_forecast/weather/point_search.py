@@ -33,6 +33,11 @@ from eex_forecast.config import (
 )
 from eex_forecast.weather.candidates import Candidate, Mode, haversine_km
 from eex_forecast.weather.openmeteo import (
+    CLOUD_COVER,
+    DIFFUSE_RADIATION,
+    DIRECT_NORMAL_IRRADIANCE,
+    DIRECT_RADIATION,
+    GLOBAL_TILTED_IRRADIANCE,
     SHORTWAVE_RADIATION,
     TEMPERATURE_2M,
     WIND_SPEED_100M,
@@ -99,6 +104,13 @@ class SelectedPoint:
 AUXILIARY_VARIABLES: dict[str, dict[str, str]] = {
     "wind": {TEMPERATURE_2M: "t_"},  # variable -> prefix prepended to the point's primary column
     "temp": {SHORTWAVE_RADIATION: "ghi_"},
+    "solar": {
+        GLOBAL_TILTED_IRRADIANCE: "gti_",
+        DIRECT_RADIATION: "direct_",
+        DIFFUSE_RADIATION: "diffuse_",
+        DIRECT_NORMAL_IRRADIANCE: "dni_",
+        CLOUD_COVER: "cloud_",
+    },
 }
 
 
@@ -222,7 +234,9 @@ def select_points(scores: Sequence[PointScore], *, role: Role, count: int) -> li
 # (wind power ~ v^3, so the cube is often the stronger price predictor) at small lags, then keep the two
 # most spatially-distinct points. Chosen points share the "neighbour_wind" role and are named ``ws_<cc>NN``.
 NEIGHBOUR_WIND_ROLE = "neighbour_wind"
-PRICE_TARGET_COLUMN = "price_actual_eur_mwh"  # DE day-ahead price: the neighbour-wind ranking target
+PRICE_TARGET_COLUMN = (
+    "price_actual_eur_mwh"  # DE day-ahead price: the neighbour-wind ranking target
+)
 _WIND_TRANSFORMS: tuple[str, ...] = ("ws", "ws3")
 
 
@@ -319,7 +333,9 @@ def select_neighbour_points(
     kept_coords: list[tuple[float, float]] = []
     for score in scores:
         lat, lon = score.candidate.lat, score.candidate.lon
-        if all(haversine_km(lat, lon, k_lat, k_lon) >= min_distance_km for k_lat, k_lon in kept_coords):
+        if all(
+            haversine_km(lat, lon, k_lat, k_lon) >= min_distance_km for k_lat, k_lon in kept_coords
+        ):
             rank = len(chosen) + 1
             chosen.append(
                 SelectedPoint(
@@ -345,7 +361,17 @@ def write_neighbour_rank_csv(scores: Sequence[NeighbourScore], path: Path) -> Pa
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(
-            ["rank", "country", "candidate_id", "lat", "lon", "pearson", "transform", "lag_h", "samples"]
+            [
+                "rank",
+                "country",
+                "candidate_id",
+                "lat",
+                "lon",
+                "pearson",
+                "transform",
+                "lag_h",
+                "samples",
+            ]
         )
         for rank, score in enumerate(scores, start=1):
             writer.writerow(

@@ -7,6 +7,7 @@ tidy frames keyed on a UTC ``timestamp`` column with one column per requested va
 - ``wind_speed_100m`` - 100 m wind speed (wind generation driver)
 - ``temperature_2m`` - 2 m temperature (load driver)
 - ``shortwave_radiation`` - global horizontal irradiance (solar generation driver)
+- solar auxiliaries derived/provided on both endpoints: GTI, direct, diffuse, DNI, and cloud cover
 
 If ``OPENMETEO_API_KEY`` is set the customer endpoint is used; otherwise the free public API. The pure
 JSON->frame parser (:func:`_hourly_frame`) is unit-tested; the network functions are thin wrappers.
@@ -31,6 +32,17 @@ logger = logging.getLogger(__name__)
 WIND_SPEED_100M = "wind_speed_100m"
 TEMPERATURE_2M = "temperature_2m"
 SHORTWAVE_RADIATION = "shortwave_radiation"
+GLOBAL_TILTED_IRRADIANCE = "global_tilted_irradiance"
+DIRECT_RADIATION = "direct_radiation"
+DIFFUSE_RADIATION = "diffuse_radiation"
+DIRECT_NORMAL_IRRADIANCE = "direct_normal_irradiance"
+CLOUD_COVER = "cloud_cover"
+
+# A representative fixed German PV orientation for Open-Meteo's GTI transformation. The source assumes
+# 0 degrees azimuth is south; 35 degrees tilt is a reasonable national fixed-rooftop proxy. These request
+# parameters are harmless when GTI is not among the requested variables.
+SOLAR_PANEL_TILT = 35.0
+SOLAR_PANEL_AZIMUTH = 0.0
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -128,6 +140,8 @@ def fetch_history(
             "timezone": "UTC",
             "wind_speed_unit": "ms",
             "models": ECMWF_MODEL,
+            "tilt": SOLAR_PANEL_TILT,
+            "azimuth": SOLAR_PANEL_AZIMUTH,
         },
     )
     return _hourly_frame(payload, variables)
@@ -151,6 +165,8 @@ def fetch_forecast(
             "forecast_days": forecast_days,
             "wind_speed_unit": "ms",
             "models": ECMWF_MODEL,
+            "tilt": SOLAR_PANEL_TILT,
+            "azimuth": SOLAR_PANEL_AZIMUTH,
         },
     )
     return _hourly_frame(payload, variables)

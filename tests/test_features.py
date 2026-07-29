@@ -20,6 +20,13 @@ from eex_forecast.features import (
     price_features_with_neighbours,
     price_lags,
     solar_features,
+    solar_features_baseline,
+    solar_features_with_auxiliary_weather,
+    solar_features_with_clear_sky,
+    solar_features_with_clear_sky_ghi,
+    solar_features_with_elevation,
+    solar_features_with_geometry,
+    solar_geometry_features,
     weather_means,
     weather_strategy_block,
     wind_features,
@@ -79,6 +86,26 @@ def test_calendar_features_follow_berlin_dst_transitions() -> None:
 
     assert cal["hour"].tolist() == [1, 3, 2, 2]  # spring skips 02:00; autumn repeats 02:00
     assert cal["is_weekend"].tolist() == [1, 1, 1, 1]
+
+
+def test_solar_geometry_tracks_interval_midpoint_and_season() -> None:
+    times = pd.Series(
+        pd.to_datetime(
+            [
+                "2025-06-21T00:00Z",
+                "2025-06-21T12:00Z",
+                "2025-12-21T12:00Z",
+            ]
+        )
+    )
+
+    geometry = solar_geometry_features(times)
+
+    assert geometry["solar_elevation_deg"].iloc[0] < 0.0
+    assert geometry["solar_elevation_deg"].iloc[1] > 55.0
+    assert 10.0 < geometry["solar_elevation_deg"].iloc[2] < 20.0
+    assert geometry["clear_sky_ghi"].iloc[0] == 0.0
+    assert geometry["clear_sky_ghi"].iloc[1] > geometry["clear_sky_ghi"].iloc[2] > 0.0
 
 
 def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataFrame) -> None:
@@ -155,6 +182,9 @@ def test_default_fundamental_builders_use_adopted_strategies(
         "irr_solar_std",
         "irr_solar_min",
         "irr_solar_max",
+        "solar_elevation_deg",
+        "solar_zenith_cos",
+        "clear_sky_ghi",
     } <= set(solar.columns)
     assert "ghi_de01" not in solar.columns
     solar_points = timeseries_frame[["ghi_de01", "ghi_de02"]].shift(-1)
@@ -168,6 +198,87 @@ def test_default_fundamental_builders_use_adopted_strategies(
     pd.testing.assert_series_equal(
         load["ghi_t_de01"], timeseries_frame["ghi_t_de01"].shift(-1), check_names=False
     )
+
+
+def test_solar_physics_variants_add_geometry_and_stable_clear_sky_index(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    geometry = solar_features_with_geometry(timeseries_frame)
+    elevation = solar_features_with_elevation(timeseries_frame)
+    clear_sky_ghi = solar_features_with_clear_sky_ghi(timeseries_frame)
+    clear_sky = solar_features_with_clear_sky(timeseries_frame)
+    baseline = solar_features_baseline(timeseries_frame)
+
+    pd.testing.assert_frame_equal(solar_features(timeseries_frame), geometry)
+    assert set(elevation.columns) - set(baseline.columns) == {"solar_elevation_deg"}
+    assert set(clear_sky_ghi.columns) - set(baseline.columns) == {"clear_sky_ghi"}
+    assert set(geometry.columns) - set(baseline.columns) == {
+        "solar_elevation_deg",
+        "solar_zenith_cos",
+        "clear_sky_ghi",
+    }
+    assert set(clear_sky.columns) - set(geometry.columns) == {"clear_sky_index"}
+    stable = clear_sky["clear_sky_ghi"] >= 10.0
+    expected = (clear_sky.loc[stable, "irr_solar"] / clear_sky.loc[stable, "clear_sky_ghi"]).clip(
+        0.0, 2.0
+    )
+    pd.testing.assert_series_equal(
+        clear_sky.loc[stable, "clear_sky_index"], expected, check_names=False
+    )
+    assert clear_sky.loc[~stable, "clear_sky_index"].isna().all()
+
+
+def test_solar_auxiliary_weather_aligns_radiation_but_not_cloud(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    frame = timeseries_frame.assign(
+        gti_ghi_de01=timeseries_frame["ghi_de01"] * 1.1,
+        direct_ghi_de01=timeseries_frame["ghi_de01"] * 0.7,
+        diffuse_ghi_de01=timeseries_frame["ghi_de01"] * 0.3,
+        dni_ghi_de01=timeseries_frame["ghi_de01"] * 0.9,
+        cloud_ghi_de01=np.arange(len(timeseries_frame), dtype=float) % 100.0,
+    )
+
+    features = solar_features_with_auxiliary_weather(
+        frame,
+        roles=(
+            "gti_solar",
+            "direct_solar",
+            "diffuse_solar",
+            "dni_solar",
+            "cloud_solar",
+        ),
+    )
+
+    assert {
+        "gti_solar",
+        "direct_solar",
+        "diffuse_solar",
+        "dni_solar",
+        "cloud_solar",
+    } <= set(features)
+    pd.testing.assert_series_equal(
+        features["gti_solar"], frame["gti_ghi_de01"].shift(-1), check_names=False
+    )
+    pd.testing.assert_series_equal(
+        features["cloud_solar"], frame["cloud_ghi_de01"], check_names=False
+    )
+    production = solar_features(frame)
+    assert "gti_solar" not in production
+    assert {
+        "direct_solar",
+        "diffuse_solar",
+        "dni_solar",
+        "cloud_solar",
+    } <= set(production)
+    price = price_features(frame)
+    assert not {
+        "gti_solar",
+        "direct_solar",
+        "diffuse_solar",
+        "dni_solar",
+        "cloud_solar",
+    } & set(price)
 
 
 def test_weather_strategy_cube_adds_convex_aggregate(timeseries_frame: pd.DataFrame) -> None:
