@@ -61,6 +61,11 @@ Committed reports:
   [solar](../data/ablation/solar_ablation.json),
   [load](../data/ablation/load_ablation.json), and
   [price](../data/ablation/price_ablation.json)
+- Grouped price ablation:
+  [without direct weather](../data/ablation/price_no_weather_ablation.json),
+  [without German weather means](../data/ablation/price_no_german_weather_ablation.json),
+  [without neighbour wind](../data/ablation/price_no_neighbour_wind_ablation.json), and
+  [without MW fundamentals](../data/ablation/price_no_fundamentals_ablation.json)
 - Ranked domestic points: [wind](../data/rank/wind_rank.csv),
   [solar](../data/rank/solar_rank.csv), and [temperature](../data/rank/temp_rank.csv)
 
@@ -342,6 +347,27 @@ memory.
 
 - Removing the weekly price lag worsened D+1 MAE by `0.285 ± 0.127 EUR/MWh`.
 - Neighbour wind clearly helps compared with no neighbour wind.
+
+Grouped five-seed ablation separates the price model's two overlapping descriptions of supply/demand:
+
+| Price inputs removed | Reduced MAE | Delta vs full | Paired delta spread |
+|---|---:|---:|---:|
+| German weather means + neighbour wind | 12.745 | +0.878 EUR/MWh | ±0.239 |
+| German weather means only | 11.861 | -0.006 EUR/MWh | ±0.281 |
+| Neighbour wind only | 12.718 | +0.851 EUR/MWh | ±0.197 |
+| Wind/solar/load MW fundamentals | 14.266 | +2.399 EUR/MWh | ±0.450 |
+
+The common full-model reference is 11.867 ± 0.196 EUR/MWh. Both penalties clear seed noise, so direct
+weather as a complete group and MW fundamentals carry non-redundant signal. Removing only the five
+German means is indistinguishable from noise. The complementary direct test confirms that neighbour wind
+is the valuable weather block: removing it costs 0.851 ± 0.197 EUR/MWh, nearly the complete weather
+group's 0.878 ± 0.239 penalty. Do not subtract the grouped deltas as exact attribution, because retrained
+feature groups interact.
+
+Fundamentals are more valuable in this test, but the comparison is deliberately conditional: price
+ablation receives held-out **actual** wind/solar/load, not sub-model forecasts. Calendar, weekly price
+lag, nuclear availability, and NTC remain in every reduced model. Hyperparameters are also held at the
+full model's values rather than retuned for each reduced representation.
 
 | Neighbour representation | Price MAE (EUR/MWh) |
 |---|---:|
@@ -764,3 +790,10 @@ Before changing a production feature/model:
   0.096 EUR/MWh, and the isolated solar penalty by 0.080 EUR/MWh.
 - Restored production parity for `eex analyze aggregation solar`: every variant retains geometry and
   radiation/cloud auxiliaries, and the adopted `stats` variant exactly matches solar tuning/eval.
+- Added grouped price ablations: removing direct weather costs 0.878 ± 0.239 EUR/MWh, while removing
+  actual MW fundamentals costs 2.399 ± 0.450 EUR/MWh; both groups independently help conditional price
+  skill.
+- Removing only the five German weather means changes price MAE by -0.006 ± 0.281 EUR/MWh, indicating
+  that the broader weather-group gain is concentrated in neighbour wind rather than domestic means.
+- Directly removing the seven neighbour-wind means costs 0.851 ± 0.197 EUR/MWh, confirming that
+  cross-border wind supplies nearly all measured value in the price model's direct weather block.

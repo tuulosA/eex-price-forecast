@@ -1,0 +1,108 @@
+{
+  "model": "price",
+  "compared": "feature removal",
+  "run_at": "2026-07-29T19:53:23.677262+00:00",
+  "config": {
+    "n_cutoffs": 22,
+    "days": 1,
+    "seeds": [
+      42,
+      1055,
+      2068,
+      3081,
+      4094
+    ],
+    "params": {
+      "n_estimators": 850,
+      "max_depth": 7,
+      "learning_rate": 0.02118456009377406,
+      "subsample": 0.689589490361874,
+      "colsample_bytree": 0.9096036375859492,
+      "min_child_weight": 11.390590124796397,
+      "reg_alpha": 0.06414655315032827,
+      "reg_lambda": 0.0010616062644797349,
+      "objective": "reg:squarederror",
+      "tree_method": "hist",
+      "random_state": 42,
+      "n_jobs": 0
+    }
+  },
+  "cutoffs": [
+    "2025-01-01",
+    "2025-02-17",
+    "2025-03-19",
+    "2025-04-17",
+    "2025-05-16",
+    "2025-06-14",
+    "2025-07-22",
+    "2025-08-17",
+    "2025-08-18",
+    "2025-09-18",
+    "2025-10-03",
+    "2025-10-24",
+    "2025-11-08",
+    "2025-11-19",
+    "2025-12-25",
+    "2026-01-23",
+    "2026-02-09",
+    "2026-03-15",
+    "2026-04-06",
+    "2026-05-21",
+    "2026-06-17",
+    "2026-07-07"
+  ],
+  "dropped": [
+    "wind_speed",
+    "temp_wind",
+    "temp_load",
+    "irr_load",
+    "irr_solar",
+    "nbr_wind_at",
+    "nbr_wind_ch",
+    "nbr_wind_cz",
+    "nbr_wind_dk",
+    "nbr_wind_fr",
+    "nbr_wind_nl",
+    "nbr_wind_pl"
+  ],
+  "kept": [
+    "hour",
+    "day_of_week",
+    "month",
+    "is_weekend",
+    "is_holiday",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "month_sin",
+    "month_cos",
+    "price_lag_168h",
+    "wind",
+    "solar",
+    "load",
+    "nuclear_available_mw",
+    "ntc_imp_total",
+    "ntc_exp_total"
+  ],
+  "full": {
+    "mean_mae": 11.8671,
+    "mean_rmse": 15.3221,
+    "std_mae": 0.1958
+  },
+  "reduced": {
+    "mean_mae": 12.7453,
+    "mean_rmse": 16.2747,
+    "std_mae": 0.0886
+  },
+  "mae_delta": 0.8783,
+  "delta_std": 0.2393,
+  "decisive": true,
+  "per_seed_delta": [
+    1.2196,
+    0.6466,
+    0.8093,
+    1.0211,
+    0.6948
+  ]
+}
