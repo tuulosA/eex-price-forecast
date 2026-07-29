@@ -16,6 +16,7 @@ Command groups:
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
 - eex analyze eval: end-to-end backtest the sub-models -> price chain on the frozen cutoffs.
+- eex analyze oracle: diagnose each sub-model's downstream price effect with actual substitutions.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast.
@@ -703,6 +704,44 @@ def analyze_eval(
             f"  {model_eval.model:<6} "
             f"{_mae_cell(model_eval.mean_mae, model_eval.std_mae, seeds)} {model_eval.unit:<7} | "
             f"RMSE {model_eval.mean_rmse:.3f} | {model_eval.n_cutoffs} cutoffs"
+        )
+    typer.echo(f"  report -> {path}")
+
+
+@analyze_app.command("oracle")
+def analyze_oracle(
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Diagnose each fundamental forecast's contribution to day-ahead price MAE.
+
+    Every cutoff fits one common model chain, then scores price with all actual fundamentals, each
+    fundamental forecast substituted alone, and all three forecasts together. The impossible all-actual
+    case is only a reference; ``eex analyze eval`` remains the headline end-to-end production score.
+    """
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    try:
+        result = evaluation.run_oracle_diagnostics(frame, seeds=seeds)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    path = evaluation.save_oracle_report(result)
+
+    typer.echo(
+        f"Oracle substitution diagnostic "
+        f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"{result.report['horizon']}):"
+    )
+    for scenario in result.scenarios:
+        delta = f"{scenario.mean_delta_mae:+.3f}"
+        if seeds > 1:
+            delta += f" +/- {scenario.std_delta_mae:.3f}"
+        typer.echo(
+            f"  {scenario.scenario:<14} "
+            f"{_mae_cell(scenario.mean_mae, scenario.std_mae, seeds)} EUR/MWh "
+            f"| delta vs all_actual {delta}"
         )
     typer.echo(f"  report -> {path}")
 

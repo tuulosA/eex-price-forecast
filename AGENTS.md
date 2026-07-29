@@ -49,7 +49,7 @@ src/eex_forecast/
   tuning.py            # Optuna walk-forward tuning; single-model backtest engine + seed averaging (reused by aggregation/ablation)
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
-  evaluation.py        # frozen-cutoff end-to-end sub-models -> price 24h MAE (eex analyze eval)
+  evaluation.py        # end-to-end 24h eval + oracle-substitution price diagnostics
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)

@@ -11,6 +11,11 @@ The report still carries one result per model, so the fundamental errors explain
 headline end-to-end price error. All models are always run: selecting only price would still require all
 three sub-models, while selecting a subset would make the command's pipeline semantics ambiguous.
 
+The separate oracle-substitution diagnostic reuses the same fitted models within a fold and changes only
+which held-out fundamentals the price model sees. Its impossible-in-production all-actual scenario is a
+reference, while forecasting one fundamental at a time measures that sub-model's isolated downstream price
+effect. The all-forecast scenario must reproduce the standard evaluator's headline price fold.
+
 Only the **24 h** (next delivery day) horizon is scored, and it is fixed. The historical-forecast weather
 stored for the sub-models is near-actual (short lead), so a multi-day MAE would be measured against weather
 far more accurate than the real multi-day-lead forecast served live. Add a longer horizon only once
@@ -57,6 +62,17 @@ EVAL_HORIZON_DAYS = DAY_AHEAD_DAYS
 # Natural error unit per model, for the report and the printed table.
 EVAL_UNITS: dict[str, str] = {"price": "EUR/MWh", "wind": "MW", "solar": "MW", "load": "MW"}
 
+# Which held-out fundamentals use their freshly generated forecast in each oracle scenario. Fundamentals
+# absent from a tuple keep their actual value. Dict insertion order is the report/CLI display order.
+ORACLE_SCENARIOS: dict[str, tuple[str, ...]] = {
+    "all_actual": (),
+    "forecast_wind": ("wind",),
+    "forecast_solar": ("solar",),
+    "forecast_load": ("load",),
+    "forecast_all": SUBMODELS,
+}
+ORACLE_REFERENCE_SCENARIO = "all_actual"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelEval:
@@ -77,6 +93,40 @@ class EvaluationResult:
 
     models: list[ModelEval]
     report: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class OracleScenarioEval:
+    """One oracle scenario's price error and signed effect vs all-actual, averaged across seeds."""
+
+    scenario: str
+    forecast_fundamentals: tuple[str, ...]
+    mean_mae: float
+    std_mae: float
+    mean_rmse: float
+    mean_delta_mae: float
+    std_delta_mae: float
+    n_cutoffs: int
+    folds: list[dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class OracleResult:
+    """The five matched oracle-substitution scenarios and their serialisable report."""
+
+    scenarios: list[OracleScenarioEval]
+    report: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _PreparedFold:
+    """Models and data shared by the standard and oracle price scenarios for one cutoff."""
+
+    frame: pd.DataFrame
+    times: pd.Series
+    window: pd.Series
+    price_model: TrainedModel
+    fundamental_metrics: dict[str, dict[str, Any]]
 
 
 def _fit_before(
@@ -135,17 +185,17 @@ def _fold_error(
     }
 
 
-def _pipeline_fold(
+def _prepare_fold(
     frame: pd.DataFrame,
     params_by_model: dict[str, dict[str, Any]],
     delivery_day: str,
-) -> dict[str, dict[str, Any]] | None:
-    """Fit and score the complete sub-models -> price chain for one delivery day.
+) -> _PreparedFold | None:
+    """Fit all four models once and generate the held-out fundamental forecasts for a cutoff.
 
     Existing forecast columns are cleared first: a forecast previously written to the database must not
     enter a historical fold. Only the freshly fitted sub-model predictions are written, and only over the
-    held-out window. The corresponding actual fundamentals are then nulled before price features are built,
-    forcing :func:`eex_forecast.features.fundamentals` down its live forecast branch.
+    held-out window. The price model is fit on rows before the cutoff, where fundamentals remain actual;
+    callers then choose which held-out actuals to hide without refitting any model.
     """
     times = pd.to_datetime(frame[TIMESTAMP], utc=True)
     start = cutoff_utc(delivery_day)
@@ -171,37 +221,88 @@ def _pipeline_fold(
             return None
         metrics[name] = scored
 
-    # Price must see measured fundamentals in its training history but only freshly generated forecasts
-    # in the held-out delivery day, exactly as the actual-or-forecast coalesce behaves at serve.
-    for name in SUBMODELS:
-        fold_frame.loc[window, REGISTRY[name].target_column] = np.nan
-
     price_spec = REGISTRY["price"]
     trained_price = _fit_before(price_spec, fold_frame, times, start, params_by_model["price"])
     if trained_price is None:
         return None
-    price_prediction = trained_price.predict(fold_frame)
-    price_metrics = _fold_error(price_spec, frame, times, window, price_prediction, delivery_day)
+    return _PreparedFold(fold_frame, times, window, trained_price, metrics)
+
+
+def _price_scenario_fold(
+    prepared: _PreparedFold,
+    original_frame: pd.DataFrame,
+    delivery_day: str,
+    forecast_fundamentals: tuple[str, ...],
+    *,
+    score_window: pd.Series | None = None,
+) -> dict[str, Any] | None:
+    """Score price after replacing the chosen held-out actual fundamentals with their forecasts."""
+    scenario_frame = prepared.frame.copy()
+    for name in forecast_fundamentals:
+        scenario_frame.loc[prepared.window, REGISTRY[name].target_column] = np.nan
+    price_spec = REGISTRY["price"]
+    price_prediction = prepared.price_model.predict(scenario_frame)
+    return _fold_error(
+        price_spec,
+        original_frame,
+        prepared.times,
+        prepared.window if score_window is None else score_window,
+        price_prediction,
+        delivery_day,
+    )
+
+
+def _pipeline_fold(
+    frame: pd.DataFrame,
+    params_by_model: dict[str, dict[str, Any]],
+    delivery_day: str,
+) -> dict[str, dict[str, Any]] | None:
+    """Fit and score the standard all-forecast sub-models -> price chain for one delivery day."""
+    prepared = _prepare_fold(frame, params_by_model, delivery_day)
+    if prepared is None:
+        return None
+    price_metrics = _price_scenario_fold(
+        prepared, frame, delivery_day, ORACLE_SCENARIOS["forecast_all"]
+    )
     if price_metrics is None:
         return None
-    metrics["price"] = price_metrics
-    return metrics
+    return {**prepared.fundamental_metrics, "price": price_metrics}
 
 
 def _evaluate_seed(
     frame: pd.DataFrame,
     params_by_model: dict[str, dict[str, Any]],
     cutoffs: tuple[str, ...],
+    *,
+    seed_number: int,
+    n_seeds: int,
 ) -> dict[str, dict[str, Any]]:
     """Run every cutoff for one common XGBoost seed and aggregate each model's folds."""
     folds_by_model: dict[str, list[dict[str, Any]]] = {name: [] for name in ALL_MODELS}
-    for delivery_day in cutoffs:
+    for cutoff_number, delivery_day in enumerate(cutoffs, start=1):
         fold = _pipeline_fold(frame, params_by_model, delivery_day)
         if fold is None:
-            logger.warning("[eval] skipping unusable end-to-end cutoff %s", delivery_day)
+            logger.warning(
+                "[eval] seed %d/%d | cutoff %d/%d %s unusable - skipped",
+                seed_number,
+                n_seeds,
+                cutoff_number,
+                len(cutoffs),
+                delivery_day,
+            )
             continue
         for name in ALL_MODELS:
             folds_by_model[name].append(fold[name])
+        logger.info(
+            "[eval] seed %d/%d | cutoff %d/%d %s complete | "
+            "wind %.3f | solar %.3f | load %.3f | price %.3f",
+            seed_number,
+            n_seeds,
+            cutoff_number,
+            len(cutoffs),
+            delivery_day,
+            *(fold[name]["mae"] for name in ALL_MODELS),
+        )
 
     result: dict[str, dict[str, Any]] = {}
     for name in ALL_MODELS:
@@ -214,6 +315,112 @@ def _evaluate_seed(
             "folds": folds,
         }
     return result
+
+
+def _oracle_fold(
+    frame: pd.DataFrame,
+    params_by_model: dict[str, dict[str, Any]],
+    delivery_day: str,
+) -> dict[str, dict[str, Any]] | None:
+    """Score all oracle scenarios on identical price rows using one set of fitted fold models."""
+    prepared = _prepare_fold(frame, params_by_model, delivery_day)
+    if prepared is None:
+        return None
+
+    # Oracle comparisons need every fundamental actual on every scored row. Otherwise all-actual would
+    # silently coalesce a missing measurement to forecast and scenarios would no longer differ only by the
+    # declared substitution.
+    score_window = prepared.window.copy()
+    for name in SUBMODELS:
+        actual = pd.to_numeric(frame[REGISTRY[name].target_column], errors="coerce")
+        score_window &= actual.notna()
+    if not bool(score_window.any()):
+        return None
+
+    metrics: dict[str, dict[str, Any]] = {}
+    for scenario, forecast_fundamentals in ORACLE_SCENARIOS.items():
+        scored = _price_scenario_fold(
+            prepared,
+            frame,
+            delivery_day,
+            forecast_fundamentals,
+            score_window=score_window,
+        )
+        if scored is None:
+            return None
+        metrics[scenario] = scored
+
+    reference = metrics[ORACLE_REFERENCE_SCENARIO]
+    for scored in metrics.values():
+        scored["delta_mae"] = scored["mae"] - reference["mae"]
+        scored["delta_rmse"] = scored["rmse"] - reference["rmse"]
+    return metrics
+
+
+def _evaluate_oracle_seed(
+    frame: pd.DataFrame,
+    params_by_model: dict[str, dict[str, Any]],
+    cutoffs: tuple[str, ...],
+    *,
+    seed_number: int,
+    n_seeds: int,
+) -> dict[str, dict[str, Any]]:
+    """Run every matched oracle scenario across the frozen cutoffs for one seed."""
+    folds_by_scenario: dict[str, list[dict[str, Any]]] = {
+        scenario: [] for scenario in ORACLE_SCENARIOS
+    }
+    for cutoff_number, delivery_day in enumerate(cutoffs, start=1):
+        fold = _oracle_fold(frame, params_by_model, delivery_day)
+        if fold is None:
+            logger.warning(
+                "[oracle] seed %d/%d | cutoff %d/%d %s unusable - skipped",
+                seed_number,
+                n_seeds,
+                cutoff_number,
+                len(cutoffs),
+                delivery_day,
+            )
+            continue
+        for scenario in ORACLE_SCENARIOS:
+            folds_by_scenario[scenario].append(fold[scenario])
+        logger.info(
+            "[oracle] seed %d/%d | cutoff %d/%d %s complete | "
+            "actual %.3f | wind %+.3f | solar %+.3f | load %+.3f | all %+.3f",
+            seed_number,
+            n_seeds,
+            cutoff_number,
+            len(cutoffs),
+            delivery_day,
+            fold["all_actual"]["mae"],
+            *(fold[name]["delta_mae"] for name in tuple(ORACLE_SCENARIOS)[1:]),
+        )
+
+    result: dict[str, dict[str, Any]] = {}
+    for scenario, folds in folds_by_scenario.items():
+        if not folds:
+            raise ValueError("No usable oracle-substitution walk-forward folds.")
+        result[scenario] = {
+            "mean_mae": float(np.mean([fold["mae"] for fold in folds])),
+            "mean_rmse": float(np.mean([fold["rmse"] for fold in folds])),
+            "mean_delta_mae": float(np.mean([fold["delta_mae"] for fold in folds])),
+            "mean_delta_rmse": float(np.mean([fold["delta_rmse"] for fold in folds])),
+            "folds": folds,
+        }
+    return result
+
+
+def _resolve_params(
+    params_by_model: dict[str, dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Resolve optional injected params over the tuned/default params for all pipeline models."""
+    return {
+        name: (
+            dict(params_by_model[name])
+            if params_by_model is not None and name in params_by_model
+            else load_params(name)
+        )
+        for name in ALL_MODELS
+    }
 
 
 def run_evaluation(
@@ -230,14 +437,7 @@ def run_evaluation(
     only same-model runs are comparable.
     """
     seed_values = seed_list(seeds)
-    resolved_params = {
-        name: (
-            dict(params_by_model[name])
-            if params_by_model is not None and name in params_by_model
-            else load_params(name)
-        )
-        for name in ALL_MODELS
-    }
+    resolved_params = _resolve_params(params_by_model)
     logger.info(
         "[eval] end-to-end pipeline over %d frozen cutoffs (%s .. %s), 24h horizon, %d seed(s)",
         len(cutoffs),
@@ -251,7 +451,13 @@ def run_evaluation(
         seeded_params = {
             name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
         }
-        evaluated = _evaluate_seed(frame, seeded_params, cutoffs)
+        evaluated = _evaluate_seed(
+            frame,
+            seeded_params,
+            cutoffs,
+            seed_number=index + 1,
+            n_seeds=len(seed_values),
+        )
         by_seed.append(evaluated)
         if len(seed_values) > 1:
             logger.info(
@@ -323,10 +529,149 @@ def run_evaluation(
     return EvaluationResult(results, report)
 
 
+def run_oracle_diagnostics(
+    frame: pd.DataFrame,
+    *,
+    params_by_model: dict[str, dict[str, Any]] | None = None,
+    seeds: int = 1,
+    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+) -> OracleResult:
+    """Measure each sub-model's downstream price effect using matched actual/forecast substitutions.
+
+    ``all_actual`` is the impossible oracle reference. ``forecast_wind`` / ``forecast_solar`` /
+    ``forecast_load`` replace only that fundamental, while ``forecast_all`` reproduces the standard
+    end-to-end evaluator. Deltas are paired against all-actual within each fold and seed.
+    """
+    seed_values = seed_list(seeds)
+    resolved_params = _resolve_params(params_by_model)
+    logger.info(
+        "[oracle] %d substitution scenarios over %d frozen cutoffs (%s .. %s), "
+        "24h horizon, %d seed(s)",
+        len(ORACLE_SCENARIOS),
+        len(cutoffs),
+        cutoffs[0],
+        cutoffs[-1],
+        seeds,
+    )
+
+    by_seed: list[dict[str, dict[str, Any]]] = []
+    for index, seed in enumerate(seed_values):
+        seeded_params = {
+            name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
+        }
+        evaluated = _evaluate_oracle_seed(
+            frame,
+            seeded_params,
+            cutoffs,
+            seed_number=index + 1,
+            n_seeds=len(seed_values),
+        )
+        by_seed.append(evaluated)
+        if len(seed_values) > 1:
+            logger.info(
+                "[oracle] seed %d/%d | actual %.3f | wind %+.3f | solar %+.3f | "
+                "load %+.3f | all %+.3f",
+                index + 1,
+                len(seed_values),
+                evaluated["all_actual"]["mean_mae"],
+                *(evaluated[name]["mean_delta_mae"] for name in tuple(ORACLE_SCENARIOS)[1:]),
+            )
+
+    multiple_seeds = len(seed_values) > 1
+    results: list[OracleScenarioEval] = []
+    for scenario, forecast_fundamentals in ORACLE_SCENARIOS.items():
+        per_seed_mae = [evaluated[scenario]["mean_mae"] for evaluated in by_seed]
+        per_seed_rmse = [evaluated[scenario]["mean_rmse"] for evaluated in by_seed]
+        per_seed_delta = [evaluated[scenario]["mean_delta_mae"] for evaluated in by_seed]
+        first_folds = [
+            {
+                **fold,
+                "mae": round(fold["mae"], 4),
+                "rmse": round(fold["rmse"], 4),
+                "delta_mae": round(fold["delta_mae"], 4),
+                "delta_rmse": round(fold["delta_rmse"], 4),
+            }
+            for fold in by_seed[0][scenario]["folds"]
+        ]
+        result = OracleScenarioEval(
+            scenario=scenario,
+            forecast_fundamentals=forecast_fundamentals,
+            mean_mae=float(np.mean(per_seed_mae)),
+            std_mae=(float(np.std(per_seed_mae, ddof=1)) if multiple_seeds else 0.0),
+            mean_rmse=float(np.mean(per_seed_rmse)),
+            mean_delta_mae=float(np.mean(per_seed_delta)),
+            std_delta_mae=(float(np.std(per_seed_delta, ddof=1)) if multiple_seeds else 0.0),
+            n_cutoffs=len(first_folds),
+            folds=first_folds,
+        )
+        results.append(result)
+        logger.info(
+            "[oracle] %-14s | MAE %.3f +/- %.3f | delta vs actual %+.3f +/- %.3f | "
+            "RMSE %.3f | %d cutoffs",
+            scenario,
+            result.mean_mae,
+            result.std_mae,
+            result.mean_delta_mae,
+            result.std_delta_mae,
+            result.mean_rmse,
+            result.n_cutoffs,
+        )
+
+    report: dict[str, Any] = {
+        "horizon": f"{EVAL_HORIZON_DAYS * 24}h",
+        "days": EVAL_HORIZON_DAYS,
+        "reference_scenario": ORACLE_REFERENCE_SCENARIO,
+        "summary": {
+            result.scenario: {
+                "mae": round(result.mean_mae, 4),
+                "rmse": round(result.mean_rmse, 4),
+                "std_mae": round(result.std_mae, 4),
+                "delta_mae": round(result.mean_delta_mae, 4),
+                "std_delta_mae": round(result.std_delta_mae, 4),
+                "unit": "EUR/MWh",
+            }
+            for result in results
+        },
+        "config": {
+            "seeds": seed_values,
+            "n_cutoffs": len(cutoffs),
+            "cutoffs": list(cutoffs),
+        },
+        "scenarios": [
+            {
+                "scenario": result.scenario,
+                "forecast_fundamentals": list(result.forecast_fundamentals),
+                "actual_fundamentals": [
+                    name for name in SUBMODELS if name not in result.forecast_fundamentals
+                ],
+                "unit": "EUR/MWh",
+                "mean_mae": round(result.mean_mae, 4),
+                "std_mae": round(result.std_mae, 4),
+                "mean_rmse": round(result.mean_rmse, 4),
+                "mean_delta_mae": round(result.mean_delta_mae, 4),
+                "std_delta_mae": round(result.std_delta_mae, 4),
+                "n_cutoffs": result.n_cutoffs,
+                "folds": result.folds,
+            }
+            for result in results
+        ],
+    }
+    return OracleResult(results, report)
+
+
 def save_evaluation_report(result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
     """Write the eval to ``model_eval.json`` (a headline summary, then per-model per-day folds)."""
     payload = {"run_at": pd.Timestamp.now(tz="UTC").isoformat(), **result.report}
     reports_dir.mkdir(parents=True, exist_ok=True)
     path = reports_dir / "model_eval.json"
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    return path
+
+
+def save_oracle_report(result: OracleResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
+    """Write the oracle diagnostic to ``oracle_substitution.json`` beside the headline eval."""
+    payload = {"run_at": pd.Timestamp.now(tz="UTC").isoformat(), **result.report}
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / "oracle_substitution.json"
     path.write_text(json.dumps(payload, indent=2) + "\n")
     return path
