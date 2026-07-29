@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 from tests.conftest import make_timeseries
 
+from eex_forecast import tuning as tuning_ops
 from eex_forecast.model import REGISTRY
 from eex_forecast.tuning import (
     TuneResult,
@@ -37,6 +38,23 @@ DAYS = 2
 def test_evaluate_params_returns_finite_mae(timeseries_frame: pd.DataFrame) -> None:
     mae = evaluate_params(REGISTRY["wind"], timeseries_frame, TINY, days=DAYS, cutoffs=CUTOFFS)
     assert np.isfinite(mae) and mae >= 0
+
+
+def test_walk_forward_uses_shared_prediction_postprocessing(
+    timeseries_frame: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    original = tuning_ops.postprocess_predictions
+
+    def spy(spec, prediction, built_features, *, capacity=None):
+        calls.append(spec.name)
+        return original(spec, prediction, built_features, capacity=capacity)
+
+    monkeypatch.setattr(tuning_ops, "postprocess_predictions", spy)
+
+    evaluate_params(REGISTRY["solar"], timeseries_frame, TINY, days=DAYS, cutoffs=CUTOFFS)
+
+    assert calls == ["solar"] * len(CUTOFFS)
 
 
 def test_seed_list_is_deterministic_and_starts_at_the_default() -> None:

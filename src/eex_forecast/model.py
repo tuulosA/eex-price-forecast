@@ -123,6 +123,45 @@ SUBMODELS: tuple[str, ...] = ("wind", "solar", "load")
 ALL_MODELS: tuple[str, ...] = (*SUBMODELS, "price")
 
 
+def postprocess_predictions(
+    spec: ModelSpec,
+    prediction: np.ndarray[Any, Any],
+    built_features: pd.DataFrame,
+    *,
+    capacity: pd.Series | None = None,
+) -> pd.Series:
+    """Convert raw booster output to the exact natural-unit prediction deployed in production.
+
+    This is the single post-processing contract for live prediction and every scoring path: reverse
+    capacity-factor scaling, clamp physically non-negative targets, then force solar to zero when all
+    aligned irradiance points are dark. Keeping it outside :class:`TrainedModel` lets training holdouts
+    and the shared walk-forward engine apply identical semantics without constructing a second wrapper.
+    """
+    values = np.asarray(prediction, dtype=float)
+    if values.ndim != 1 or len(values) != len(built_features):
+        raise ValueError("Prediction must be one-dimensional and match the feature rows.")
+    series = pd.Series(values, index=built_features.index, name=spec.forecast_column)
+
+    if spec.capacity_column is not None:
+        if capacity is None or len(capacity) != len(series):
+            raise ValueError(
+                f"Prediction for capacity-scaled model '{spec.name}' requires matching capacity."
+            )
+        series = series * pd.to_numeric(capacity, errors="coerce").to_numpy()
+    if spec.non_negative:
+        series = series.clip(lower=0.0)
+    if spec.name == "solar" and _SOLAR_DARKNESS_FEATURE in built_features:
+        # A regression tree's lowest leaf need not pass through physical zero. With Germany's large
+        # installed fleet, even a small positive capacity-factor floor becomes a spurious GW-scale
+        # nighttime plateau. All configured points dark is an unambiguous physical constraint; leave
+        # twilight and cloudy daylight model-driven whenever any point has positive irradiance.
+        darkness = pd.to_numeric(
+            built_features[_SOLAR_DARKNESS_FEATURE], errors="coerce"
+        ) <= 0.0
+        series = series.mask(darkness, 0.0)
+    return series
+
+
 @dataclass(slots=True)
 class TrainedModel:
     """A fitted XGBoost model plus the exact feature order it was trained on."""
@@ -136,21 +175,10 @@ class TrainedModel:
         built_features = self.spec.build_features(frame)
         matrix = built_features.reindex(columns=self.feature_names)
         values = self.booster.predict(matrix)
-        series = pd.Series(values, index=frame.index, name=self.spec.forecast_column)
-        if self.spec.capacity_column is not None:  # model predicts a capacity factor -> scale to MW
-            series = series * _capacity_series(frame, self.spec.capacity_column)
-        if self.spec.non_negative:
-            series = series.clip(lower=0.0)
-        if self.spec.name == "solar" and _SOLAR_DARKNESS_FEATURE in built_features:
-            # A regression tree's lowest leaf need not pass through physical zero. With Germany's large
-            # installed fleet, even a small positive capacity-factor floor becomes a spurious GW-scale
-            # nighttime plateau. All configured points dark is an unambiguous physical constraint; leave
-            # twilight and cloudy daylight model-driven whenever any point has positive irradiance.
-            darkness = (
-                pd.to_numeric(built_features[_SOLAR_DARKNESS_FEATURE], errors="coerce") <= 0.0
-            )
-            series = series.mask(darkness, 0.0)
-        return series
+        capacity = capacity_for(self.spec, frame)
+        return postprocess_predictions(
+            self.spec, values, built_features, capacity=capacity
+        )
 
     def save(self, models_dir: Path = MODELS_DIR) -> Path:
         """Persist the booster (native JSON) and a sidecar with the training feature order."""
@@ -301,12 +329,19 @@ def _fit(
     n_estimators = (best_iteration + 1) if best_iteration is not None else params["n_estimators"]
     logger.info("%s best iteration %s / %s", scope, best_iteration, params["n_estimators"])
 
-    # Score the holdout in natural units (reverse the capacity scaling for wind/solar).
+    # Score the holdout with the exact production post-processing contract.
     y_val = target.iloc[split:].to_numpy()
-    pred_val = early.predict(matrix.iloc[split:])
+    val_matrix = matrix.iloc[split:]
+    val_capacity = capacity.iloc[split:] if capacity is not None else None
+    pred_val = postprocess_predictions(
+        spec,
+        early.predict(val_matrix),
+        val_matrix,
+        capacity=val_capacity,
+    ).to_numpy()
     if capacity is not None:
         cap = capacity.iloc[split:].to_numpy()
-        y_val, pred_val = y_val * cap, pred_val * cap
+        y_val = y_val * cap
     diagnostics = _residual_diagnostics(y_val - pred_val)
     metrics = _validation_metrics(y_val, pred_val)
 

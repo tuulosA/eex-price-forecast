@@ -67,6 +67,12 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   converts its temporary timestamp view to `Europe/Berlin` before extracting hour, day, month, weekend,
   and public-holiday fields. Do not move database timestamps away from UTC or regress the feature block
   to UTC calendar semantics; local-midnight and DST boundaries would be mislabeled.
+- **Align preceding-hour radiation to delivery intervals.** Open-Meteo stamps `shortwave_radiation` at
+  the end of its averaging interval, while ENTSO-E targets are stamped at the interval start.
+  `features._weather_role_points` therefore gives target row `t` the GHI stored at `t + 1 h`, using a
+  timestamp lookup rather than a row shift. Keep the raw DB source timestamps unchanged, preserve this
+  alignment in production/analysis builders and point ranking, and reserve the following weather hour
+  when deciding forecast coverage.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
 - **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values
@@ -78,8 +84,10 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   scenarios diagnose downstream contribution and may have signed/non-additive MAE deltas.
 - **Capacity scaling** for wind/solar: the model learns a *capacity factor* (target ÷ installed
   capacity) and multiplies the prediction back by capacity, so it stays calibrated as the fleet grows.
-  Any code that scores or compares predictions to actuals must reverse the scaling first — see
-  `model._fit` and `tuning._fold_metrics` for the pattern (`prediction * capacity`).
+  Every natural-unit prediction must go through `model.postprocess_predictions`, which also applies
+  non-negative clipping and the solar-darkness constraint. Live prediction, training holdout metrics,
+  tuning, aggregation, ablation, eval, and oracle share this function; do not recreate part of the
+  post-processing sequence in another scoring path.
 - **No leakage in tuning, and serve-faithful for the price lag.** Winsorising (`clip_target_quantiles`)
   is applied per-fold on **train rows only** (`tuning._fold_metrics`), never over the whole series.
   Features are built once over the full frame, then sliced by timestamp per fold — but each fold also
@@ -97,7 +105,7 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
   already-cleared day-ahead prices), but the Open-Meteo *archive* stops at **today** (it 400s on a future
   `end_date`). These are two separate helpers (`_default_end` vs `_weather_end`) — keep them distinct.
 - **Feature order is persisted** in a `<model>.meta.json` sidecar; prediction reindexes to it. If you
-  add/remove/rename features, models must be retrained, not just reloaded.
+  add/remove/rename features—or change their semantics—models must be retrained, not just reloaded.
 
 ## Commands
 

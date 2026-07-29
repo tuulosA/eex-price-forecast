@@ -160,6 +160,11 @@ def rank_candidates(
         )
         if not history.empty:
             feature = history.set_index("timestamp")[variable]
+            if variable == SHORTWAVE_RADIATION:
+                # Open-Meteo stamps radiation at the end of its preceding-hour averaging interval,
+                # whereas the ENTSO-E target is stamped at the start of its delivery interval. Relabel
+                # 21:00 radiation (the 20:00-21:00 mean) to 20:00 before comparing candidates.
+                feature.index = pd.to_datetime(feature.index, utc=True) - pd.Timedelta(hours=1)
             lag, pearson = best_lagged_correlation(feature, target, max_lag_hours=max_lag_hours)
             if pd.notna(pearson):
                 scores.append(PointScore(candidate, lag, pearson, int(feature.notna().sum())))

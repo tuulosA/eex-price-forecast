@@ -67,6 +67,10 @@ WEATHER_AGGREGATES: dict[str, str] = {
     "irr_load": "ghi_t_de",
     "irr_solar": "ghi_de",
 }
+# Open-Meteo labels these radiation values at the *end* of their averaging interval: a value stamped
+# 21:00 is the mean over 20:00-21:00. ENTSO-E generation/load/price rows are labelled at the start of
+# their delivery interval, so a target at 20:00 needs the radiation value stamped 21:00.
+_PRECEDING_HOUR_MEAN_ROLES = frozenset({"irr_load", "irr_solar"})
 
 # Fundamental feature name -> (actual column, forecast column). The price model reads the coalesce of
 # the two, so it trains on measured fundamentals and forecasts on the sub-models' predictions.
@@ -118,14 +122,42 @@ def calendar_features(timestamps: pd.Series) -> pd.DataFrame:
     )
 
 
+def _weather_role_points(frame: pd.DataFrame, name: str) -> pd.DataFrame:
+    """Numeric point columns for one weather role, aligned to the target delivery interval.
+
+    Most Open-Meteo variables are instantaneous at their timestamp. Radiation is a preceding-hour mean,
+    however, while this project's ENTSO-E targets use interval-start timestamps. For those roles, look up
+    values at ``timestamp + 1 h`` using timestamps rather than row positions so gaps cannot silently shift
+    the data. The raw database remains an exact representation of the source response.
+    """
+    prefix = WEATHER_AGGREGATES[name]
+    columns = sorted(c for c in frame.columns if c.startswith(prefix))
+    if not columns:
+        return pd.DataFrame(index=frame.index)
+
+    numeric: pd.DataFrame = frame[columns].apply(pd.to_numeric, errors="coerce")
+    if name not in _PRECEDING_HOUR_MEAN_ROLES:
+        return numeric
+
+    times = pd.to_datetime(frame[TIMESTAMP], utc=True)
+    indexed = numeric.copy()
+    indexed.index = pd.DatetimeIndex(times)
+    indexed = indexed[~indexed.index.duplicated(keep="last")]
+    aligned = indexed.reindex(pd.DatetimeIndex(times + pd.Timedelta(hours=1)))
+    aligned.index = frame.index
+    return aligned
+
+
 def weather_means(frame: pd.DataFrame, names: Sequence[str] | None = None) -> pd.DataFrame:
-    """National mean per weather role (only roles whose point columns are present in ``frame``)."""
-    wanted = WEATHER_AGGREGATES if names is None else {n: WEATHER_AGGREGATES[n] for n in names}
+    """National mean per weather role, with preceding-hour radiation aligned to delivery intervals."""
+    wanted = (
+        WEATHER_AGGREGATES if names is None else {name: WEATHER_AGGREGATES[name] for name in names}
+    )
     out: dict[str, pd.Series] = {}
-    for name, prefix in wanted.items():
-        columns = [c for c in frame.columns if c.startswith(prefix)]
-        if columns:
-            out[name] = frame[columns].apply(pd.to_numeric, errors="coerce").mean(axis=1)
+    for name in wanted:
+        points = _weather_role_points(frame, name)
+        if points.shape[1]:
+            out[name] = points.mean(axis=1)
     return pd.DataFrame(out, index=frame.index)
 
 
@@ -192,15 +224,6 @@ WEATHER_AGG: dict[str, WeatherAgg] = {
     "solar": WeatherAgg("solar", "irr_solar", ()),
     "load": WeatherAgg("load", "temp_load", ("irr_load",)),
 }
-
-
-def _prefixed_numeric(frame: pd.DataFrame, prefix: str) -> pd.DataFrame:
-    """The frame's columns starting with ``prefix`` (sorted), coerced to numeric; empty if none match."""
-    columns = sorted(c for c in frame.columns if c.startswith(prefix))
-    if not columns:
-        return pd.DataFrame(index=frame.index)
-    numeric: pd.DataFrame = frame[columns].apply(pd.to_numeric, errors="coerce")
-    return numeric
 
 
 def _latitude_bands(
@@ -274,10 +297,10 @@ def weather_strategy_block(
     under ``raw`` where every auxiliary point column is fed in too. ``coords`` (column -> ``(lat, lon)``)
     is only needed by ``regional``; with none it degrades to a single mean.
     """
-    primary = _prefixed_numeric(frame, WEATHER_AGGREGATES[agg.primary])
+    primary = _weather_role_points(frame, agg.primary)
     primary_block = _primary_block(primary, agg.primary, strategy, coords or {}, n_regions)
     if strategy == "raw":
-        aux_frames = [_prefixed_numeric(frame, WEATHER_AGGREGATES[role]) for role in agg.auxiliary]
+        aux_frames = [_weather_role_points(frame, role) for role in agg.auxiliary]
     else:
         aux_frames = [weather_means(frame, [role]) for role in agg.auxiliary]
     return pd.concat([primary_block, *aux_frames], axis=1)
@@ -312,10 +335,11 @@ def wind_features(frame: pd.DataFrame) -> pd.DataFrame:
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
     """Solar generation drivers: calendar plus spatial irradiance summary statistics.
 
-    At each hour the existing ranked irradiance points are reduced to their mean, sum, standard deviation,
-    minimum, and maximum. This retains the national level and spatial spread without making the model learn
-    a separate relationship for every location. Hour and season calendar features carry the diurnal and
-    annual solar cycles; capacity scaling remains part of the model target/prediction path.
+    Open-Meteo's preceding-hour radiation is first aligned to the ENTSO-E delivery interval: generation
+    at ``t`` uses irradiance stamped ``t + 1 h``. The ranked points are then reduced to their mean, sum,
+    standard deviation, minimum, and maximum. This retains the national level and spatial spread without
+    making the model learn a separate relationship for every location. Hour and season calendar features
+    carry the diurnal and annual solar cycles; capacity scaling remains in the model prediction path.
     """
     return pd.concat(
         [

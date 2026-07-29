@@ -149,11 +149,27 @@ _DOMESTIC_WEATHER_PREFIXES = ("ws_de", "t_ws_de", "t_de", "ghi_de", "ghi_t_de")
 def _weather_coverage_end(
     frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp
 ) -> pd.Timestamp | None:
-    """Last future hour whose domestic weather is genuinely present (not the NaN forecast tail)."""
+    """Last future delivery hour whose required domestic weather is genuinely present.
+
+    Radiation stamped at ``t + 1 h`` describes delivery interval ``t``, so a row is usable only when the
+    following timestamp's GHI is also present. This prevents retaining a final hour whose aligned solar
+    feature would be NaN even though the raw weather row at that hour exists.
+    """
     weather = [c for c in frame.columns if c.startswith(_DOMESTIC_WEATHER_PREFIXES)]
     if not weather:
         return None
     present = frame[weather].notna().all(axis=1)
+    radiation = [c for c in weather if c.startswith(("ghi_de", "ghi_t_de"))]
+    if radiation:
+        radiation_present = pd.Series(
+            frame[radiation].notna().all(axis=1).to_numpy(),
+            index=pd.DatetimeIndex(times),
+        )
+        radiation_present = radiation_present[~radiation_present.index.duplicated(keep="last")]
+        next_hour_present = radiation_present.reindex(
+            pd.DatetimeIndex(times + pd.Timedelta(hours=1)), fill_value=False
+        )
+        present &= next_hour_present.to_numpy()
     covered = times[(times >= now) & present.to_numpy()]
     return covered.max() if len(covered) else None
 

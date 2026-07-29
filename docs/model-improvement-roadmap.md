@@ -14,7 +14,7 @@ Last updated: **2026-07-29**
 ### Current direction
 
 1. **Improve solar first.** In the oracle diagnostic, substituting only the solar forecast increased
-   downstream price MAE by **1.779 EUR/MWh**, much more than wind or load.
+   downstream price MAE by **1.939 EUR/MWh**, much more than wind or load.
 2. Improve load thermal-memory and exceptional-day features.
 3. Revisit wind geography and eventually separate onshore/offshore generation.
 4. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
@@ -29,6 +29,8 @@ Last updated: **2026-07-29**
   fundamental forecasts.
 - Eval/oracle emit one progress heartbeat per completed cutoff.
 - Calendar features now use German market-local time while timestamps remain stored in UTC.
+- Preceding-hour Open-Meteo radiation is now aligned to ENTSO-E delivery intervals by timestamp.
+- All prediction/scoring paths now share capacity reversal, clipping, and solar-darkness post-processing.
 - The existing `model_eval.json` schema was retained.
 
 ### Deferred decisions
@@ -57,17 +59,54 @@ Committed reports:
 
 ### Current end-to-end baseline
 
-The first complete end-to-end run used one seed over all 22 frozen cutoffs:
+The corrected and retuned pipeline was evaluated with one seed over all 22 frozen cutoffs:
 
 | Model | MAE | RMSE | Unit |
 |---|---:|---:|---|
-| Wind | 2,552.304 | 3,079.991 | MW |
-| Solar | 1,392.268 | 2,339.918 | MW |
-| Load | 1,527.345 | 1,757.290 | MW |
-| Price | 13.309 | 17.429 | EUR/MWh |
+| Wind | 2,540.680 | 3,097.944 | MW |
+| Solar | 1,301.493 | 2,161.326 | MW |
+| Load | 1,488.821 | 1,746.757 | MW |
+| Price | 13.027 | 16.708 | EUR/MWh |
+
+Compared with the immediately preceding committed report:
+
+| Model | Previous MAE | Current MAE | MAE change | RMSE change |
+|---|---:|---:|---:|---:|
+| Wind | 2,540.680 | 2,540.680 | 0.000 (0.00%) | 0.000 (0.00%) |
+| Solar | 1,400.841 | 1,301.493 | -99.348 (-7.09%) | -213.339 (-8.98%) |
+| Load | 1,505.246 | 1,488.821 | -16.425 (-1.09%) | -25.273 (-1.43%) |
+| Price | 13.389 | 13.027 | -0.362 (-2.70%) | -0.457 (-2.66%) |
+
+The solar mean improvement is substantial but not broad across every day: 11 cutoffs improved and 11
+worsened, with a median MAE change of +46 MW. Large improvements on difficult 2026 solar days drove the
+lower overall mean. Load improved on 13 of 22 cutoffs and price on 12 of 22.
 
 `std_mae = 0` in this report means only one XGBoost seed was evaluated; it does not mean there is no
 seed-to-seed uncertainty.
+
+The corrected models have been trained and a real `eex forecast --plot` run visually confirmed that
+night-time solar now reaches zero and the evening decline behaves as intended.
+
+### Refreshed tuning and report integrity
+
+The retunes selected lower-MAE trials than their preceding committed runs:
+
+| Target | Previous tuned MAE | Current tuned MAE | Change |
+|---|---:|---:|---:|
+| Solar | 1,388.151 MW | 1,301.493 MW | -86.658 MW (-6.24%) |
+| Load | 1,505.246 MW | 1,488.821 MW | -16.425 MW (-1.09%) |
+| Price, actual fundamentals | 11.794 EUR/MWh | 11.631 EUR/MWh | -0.164 EUR/MWh (-1.39%) |
+
+The generated JSON reports are internally consistent:
+
+- each selected trial is the minimum-MAE trial in its tuning report;
+- `config/hyperparams.json` exactly matches the selected solar, load, and price parameters;
+- tuning, eval, and oracle use the same 22 cutoffs and seed;
+- solar/load tuning scores exactly match their end-to-end eval sub-model scores;
+- price tuning exactly matches oracle `all_actual`;
+- end-to-end eval price exactly matches oracle `forecast_all`.
+
+These equalities are useful regression checks for the shared prediction post-processing contract.
 
 ### Legacy actual-fundamentals reference
 
@@ -80,11 +119,10 @@ Keep the old evaluator values as a historical reference:
 | Load | 1,527 | 1,757 | MW |
 | Price | 12.01 | 15.38 | EUR/MWh |
 
-The legacy price MAE was conditional on perfect wind, solar, and load. Moving to freshly generated
-fundamental forecasts increased price MAE by **1.299 EUR/MWh** and RMSE by **2.048 EUR/MWh**.
-
-Wind/load remained unchanged because their fold semantics did not change. Solar increased by about
-4.34 MW because end-to-end eval applies the live darkness constraint through `TrainedModel.predict`.
+The legacy price MAE was conditional on perfect wind, solar, and load and predates the calendar,
+radiation-alignment, and retuning work. In the current corrected report, the comparable `all_actual`
+oracle score is **11.631 EUR/MWh** and the production-like `forecast_all` score is **13.027 EUR/MWh**.
+The current fundamental-forecast penalty is therefore **1.396 EUR/MWh**.
 
 ### Known limits of the baseline
 
@@ -103,24 +141,30 @@ the price model sees:
 
 | Scenario | Price MAE | Price RMSE | MAE delta vs all-actual |
 |---|---:|---:|---:|
-| All actual | 12.010 | 15.381 | +0.000 EUR/MWh |
-| Forecast wind only | 12.184 | 15.911 | +0.174 EUR/MWh |
-| Forecast solar only | 13.789 | 17.567 | +1.779 EUR/MWh |
-| Forecast load only | 11.838 | 15.334 | -0.172 EUR/MWh |
-| Forecast all | 13.309 | 17.429 | +1.299 EUR/MWh |
+| All actual | 11.631 | 15.116 | +0.000 EUR/MWh |
+| Forecast wind only | 11.844 | 15.552 | +0.213 EUR/MWh |
+| Forecast solar only | 13.570 | 17.247 | +1.939 EUR/MWh |
+| Forecast load only | 11.426 | 14.920 | -0.205 EUR/MWh |
+| Forecast all | 13.027 | 16.708 | +1.396 EUR/MWh |
 
 Interpretation:
 
-- **Solar is the clearest price-relevant priority.** It was harmful on 13 of 22 cutoffs, with a +0.752
-  median cutoff delta. Its mean effect was +2.073 EUR/MWh in 2025 and +1.148 in 2026.
-- Wind's mean delta was only +0.174 EUR/MWh and its median was -0.186; it worsened 10 cutoffs and
-  improved 12.
-- Load's mean delta was -0.172 EUR/MWh, with an 11/11 harmful/helpful split. This does not make an
+- **Solar is the clearest price-relevant priority.** It was harmful on 15 of 22 cutoffs, with a +1.020
+  median cutoff delta and +1.939 mean delta.
+- Wind's mean delta was only +0.213 EUR/MWh and its median was +0.024; it worsened 11 cutoffs and
+  improved 11.
+- Load's mean delta was -0.205 EUR/MWh; it worsened 10 cutoffs and improved 12. This does not make an
   inaccurate load forecast desirable; smoothing or error compensation may help the imperfect price
   model on some days.
-- The isolated deltas sum to +1.780 EUR/MWh, while `forecast_all` adds +1.299. The approximately
-  **-0.481 EUR/MWh interaction** shows that errors can compensate and do not add linearly.
+- The isolated deltas sum to +1.948 EUR/MWh, while `forecast_all` adds +1.396. The approximately
+  **-0.552 EUR/MWh interaction** shows that errors currently compensate and do not add linearly.
 - Wind/load effects are small enough to require multi-seed confirmation before strong conclusions.
+
+Solar's own MW MAE improved while its isolated oracle price penalty increased from +1.544 to +1.939
+EUR/MWh. This is not contradictory: MW MAE weights hours uniformly, whereas price impact depends on the
+timing, direction, and market regime of each error. The price model and its irradiance features were also
+retuned/corrected in the same batch, so this oracle change cannot be attributed to the solar model alone.
+The full forecast chain nevertheless improved price MAE by 0.362 EUR/MWh.
 
 ## What existing experiments show
 
@@ -139,9 +183,14 @@ Aggregation result:
 The 4.4 MW spread-versus-statistics difference is too small to trust from one seed. Spatial variation
 itself is valuable: removing irradiance std/min/max worsened MAE by approximately `126 ± 3 MW`.
 
-The darkness constraint changes historical MAE by only about +4 MW. Its purpose is physical plausibility,
-not backtest optimization. Solar errors are concentrated in daylight and show a positive midday bias, so
-new physical inputs and calibration are more promising than rearranging the same GHI points again.
+In the earlier, pre-alignment comparison, the darkness constraint changed historical MAE by only about
++4 MW. Its purpose is physical plausibility, not backtest optimization.
+
+After interval alignment, shared post-processing, and retuning, solar MAE fell from 1,400.841 to
+1,301.493 MW and RMSE from 2,374.665 to 2,161.326 MW. The split result—11 improved cutoffs and 11
+worsened—means the next solar experiment should examine delivery-hour bias and the difficult individual
+days, not rely only on the lower mean. Solar errors remain concentrated in daylight, so richer physical
+inputs and calibration are more promising than rearranging the same GHI points again.
 
 ### Wind
 
@@ -210,6 +259,20 @@ and may change under forecast fundamentals.
 ### 1. Solar physics and calibration
 
 This is the next model track because solar has the largest isolated downstream price effect.
+
+#### Align irradiance to the delivery interval
+
+**Status: completed 2026-07-29 as a shared correctness fix.**
+
+Open-Meteo stamps hourly radiation at the end of its preceding-hour averaging interval. ENTSO-E solar
+generation at `t` represents the delivery interval beginning at `t`, so the correct driver is GHI stamped
+`t + 1 h`. Feature construction now performs that timestamp lookup for solar, load irradiance, and price
+weather means; aggregation variants use the same path. Point ranking relabels radiation intervals before
+correlation, and forecast coverage reserves the following GHI hour.
+
+The raw database values and timestamps remain unchanged. Before implementation, local 2025–2026 data
+showed solar correlation improving from 0.9450 with GHI at `t` to 0.9806 with GHI at `t + 1 h`; the
+evening-only correlation improved from 0.9472 to 0.9839.
 
 #### Confirm the current aggregation
 
@@ -368,14 +431,15 @@ After geography:
 
 #### Recency weighting and rolling windows
 
-The seven 2026 cutoffs score worse than the 15 cutoffs from 2025:
+The seven 2026 cutoffs score worse than the 15 cutoffs from 2025 for wind, load, and price, but not by
+as much for corrected solar:
 
 | Model | 2025 MAE | 2026 MAE |
 |---|---:|---:|
-| Wind | 2,213 MW | 3,279 MW |
-| Solar | 1,204 MW | 1,795 MW |
-| Load | 1,383 MW | 1,837 MW |
-| Price | 12.73 EUR/MWh | 14.54 EUR/MWh |
+| Wind | 2,174 MW | 3,326 MW |
+| Solar | 1,221 MW | 1,474 MW |
+| Load | 1,420 MW | 1,636 MW |
+| Price | 12.31 EUR/MWh | 14.56 EUR/MWh |
 
 The subsets are small and differ in difficulty, so this does not prove drift. It justifies comparing all
 history with trailing one/two-year windows and linear/exponential recency weights.
@@ -518,24 +582,30 @@ end-to-end eval/oracle instead.
 
 ### Prediction post-processing parity
 
-**Decision: partially completed.**
+**Status: completed 2026-07-29.**
 
-End-to-end eval uses `TrainedModel.predict`, matching live capacity reversal, non-negative clipping, and
-the solar-darkness constraint. Tuning, aggregation, and ablation still own a separate scoring path that
-does not apply the darkness rule. Centralize post-processing eventually to prevent future drift; this is
-not urgent because the darkness rule changed historical solar MAE by only about 4 MW.
+`model.postprocess_predictions` is now the single natural-unit prediction contract. It reverses wind/solar
+capacity-factor scaling, applies non-negative clipping, and forces solar to zero when aligned irradiance
+shows every selected point is dark. `TrainedModel.predict`, training holdout metrics, and the shared
+walk-forward engine all call it; aggregation and ablation inherit it from that engine, while eval/oracle
+inherit it through `TrainedModel`.
+
+XGBoost early stopping still monitors its raw fit-space objective internally, which is appropriate for
+choosing the booster iteration. Every reported metric and experiment score uses deployed post-processing.
 
 ## Recommended sequence
 
 1. **Completed:** end-to-end price evaluation.
 2. **Completed:** oracle-substitution diagnostics.
 3. **Completed:** German market-local calendar correction for all four models.
-4. **Next:** solar irradiance/geometry/calibration experiments.
-5. Compact lagged/rolling temperature features.
-6. Diverse wind-anchor selection.
-7. Separate onshore/offshore wind.
-8. Training-history learning curves and recency weighting.
-9. Robust objectives, interpretation diagnostics, and ensembles.
+4. **Completed:** preceding-hour radiation alignment to ENTSO-E delivery intervals.
+5. **Completed:** prediction post-processing parity across every scoring path.
+6. **Next:** solar irradiance/geometry/calibration experiments.
+7. Compact lagged/rolling temperature features.
+8. Diverse wind-anchor selection.
+9. Separate onshore/offshore wind.
+10. Training-history learning curves and recency weighting.
+11. Robust objectives, interpretation diagnostics, and ensembles.
 
 Deferred:
 
@@ -586,3 +656,13 @@ Before changing a production feature/model:
 - Recorded that frozen-cutoff evaluation already has rolling-origin semantics.
 - Added training-history learning curves and grouped interpretation diagnostics to the later experiments.
 - Corrected the shared calendar block to derive German civil-time features without changing UTC storage.
+- Aligned preceding-hour Open-Meteo radiation to interval-start ENTSO-E targets without rewriting the DB.
+- Centralized deployed prediction post-processing across training metrics and every analysis path.
+- Retuned solar, load, and price and regenerated eval/oracle reports after the correctness fixes.
+- Recorded a 7.09% solar MAE improvement, 1.09% load improvement, and 2.70% end-to-end price
+  improvement against the immediately preceding report; wind was unchanged.
+- Confirmed report integrity: selected trials match committed hyperparameters, sub-model tuning matches
+  eval, price tuning matches oracle `all_actual`, and eval price matches oracle `forecast_all`.
+- Retained solar as the highest-priority sub-model: despite lower MW error, its isolated price penalty
+  increased to +1.939 EUR/MWh and was harmful on 15 of 22 cutoffs.
+- Visually confirmed the corrected night-time solar behavior in a live forecast plot.

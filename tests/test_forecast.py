@@ -114,6 +114,21 @@ def test_weather_coverage_end_finds_last_real_hour() -> None:
     assert _weather_coverage_end(frame, pd.Series(times), now) == times[2]
 
 
+def test_weather_coverage_reserves_following_hour_for_radiation_alignment() -> None:
+    now = pd.Timestamp("2026-08-01 00:00", tz="UTC")
+    times = pd.date_range(now, periods=6, freq="h", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "timestamp": times,
+            "ws_de01": [1.0, 2, 3, np.nan, np.nan, np.nan],
+            "ghi_de01": [0.0, 10, 20, np.nan, np.nan, np.nan],
+        }
+    )
+
+    # Raw weather exists through 02:00, but the 02:00 delivery interval would require GHI stamped 03:00.
+    assert _weather_coverage_end(frame, pd.Series(times), now) == times[1]
+
+
 def test_weather_limited_end_drops_incomplete_final_market_day() -> None:
     requested = pd.Timestamp("2026-08-11 22:00", tz="UTC")
     # Weather ending at 15:00 CEST makes August 11 incomplete, so cut at its 00:00 CEST boundary.

@@ -47,6 +47,7 @@ from eex_forecast.model import (
     apply_train_nan_lag_mask,
     capacity_for,
     capacity_scaled,
+    postprocess_predictions,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,11 +123,12 @@ def _score_fold(
     x_test = apply_serve_unavailable_lag_mask(data.matrix[test], data.times[test], start)
     booster = XGBRegressor(**params)
     booster.fit(x_train, y_train)
-    prediction = booster.predict(x_test)
-    if data.capacity is not None:  # reverse the capacity scaling back to MW
-        prediction = prediction * data.capacity[test].to_numpy()
-    if spec.non_negative:
-        prediction = np.clip(prediction, 0.0, None)
+    prediction = postprocess_predictions(
+        spec,
+        booster.predict(x_test),
+        x_test,
+        capacity=data.capacity[test] if data.capacity is not None else None,
+    ).to_numpy()
     error = data.actual[test].to_numpy() - prediction
     test_times = data.times[test]
     return {
