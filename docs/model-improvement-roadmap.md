@@ -17,7 +17,8 @@ Last updated: **2026-07-29**
    downstream price MAE by **1.779 EUR/MWh**, much more than wind or load.
 2. Improve load calendar semantics and thermal-memory features.
 3. Revisit wind geography and eventually separate onshore/offshore generation.
-4. Consider cross-model changes such as recency weighting and robust objectives after the feature work.
+4. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
+   objectives after the feature work.
 
 ### Completed evaluation work
 
@@ -373,6 +374,23 @@ The seven 2026 cutoffs score worse than the 15 cutoffs from 2025:
 The subsets are small and differ in difficulty, so this does not prove drift. It justifies comparing all
 history with trailing one/two-year windows and linear/exponential recency weights.
 
+#### Training-history learning curves
+
+Measure whether more history still improves generalization or whether older market regimes have become a
+liability. Compare otherwise identical models trained on:
+
+- the trailing 6 months;
+- the trailing 1 year;
+- the trailing 2 years;
+- all history available before each cutoff.
+
+Evaluate every window on the same frozen cutoffs. Keep the first pass controlled by holding features and
+hyperparameters fixed; retune only the promising window if the result is large enough to adopt.
+
+Plot MAE against training-history length for each sub-model and price. A curve that is still improving
+supports collecting more history. A plateau suggests that features or irreducible forecast uncertainty
+are the bottleneck. Degradation with longer history supports rolling windows or recency weighting.
+
 #### Alternative objectives
 
 The tuner fixes `reg:squarederror` while optimizing MAE. Compare it with `reg:absoluteerror` and
@@ -399,6 +417,22 @@ Report MAE and bias by:
 
 Mean MAE hides the few days that dominate wind and solar errors.
 
+#### Model-interpretation diagnostics
+
+Use interpretation to debug adopted models after the higher-priority feature experiments:
+
+- TreeSHAP for hour-level explanations and aggregate dependence plots;
+- grouped permutation importance for feature families such as German solar weather, neighbour wind,
+  calendar, nuclear, NTC, and the three fundamentals.
+
+Prefer grouped over individual-feature permutation because weather points and aggregates are strongly
+correlated. An individual point can appear unimportant merely because another point carries nearly the
+same signal. Run importance on held-out cutoff rows, not training rows.
+
+Treat both methods as descriptive rather than causal. SHAP distributes credit among correlated features,
+while permutation measures dependence of the fitted model without showing whether retraining without the
+feature would improve it. Existing retrained ablation remains the stronger feature-adoption test.
+
 ## Evaluation and architecture decisions
 
 ### Actual versus forecast fundamentals
@@ -411,6 +445,18 @@ The analysis modes differ only in what the price model receives on held-out rows
 - `eex analyze oracle` switches matched actual/forecast scenarios for attribution.
 
 Only `forecast_all` is production-like. Oracle deltas are signed and non-additive.
+
+### Rolling-origin validation
+
+**Status: already implemented for the current D+1 scope.**
+
+Each frozen cutoff trains only on earlier rows and evaluates the following German delivery day. This is
+rolling-origin validation, so no separate cross-validation engine is needed. The present 22 cutoffs are a
+small, deliberately selected stress set rather than a regular sample of all production days.
+
+If broader representativeness becomes important, expand the cutoff configuration with regularly spaced
+delivery days across seasons and years. Keep those exploratory cutoffs separate from any future untouched
+holdout set.
 
 ### Development versus holdout cutoffs
 
@@ -482,7 +528,8 @@ not urgent because the darkness rule changed historical solar MAE by only about 
 5. Compact lagged/rolling temperature features.
 6. Diverse wind-anchor selection.
 7. Separate onshore/offshore wind.
-8. Recency weighting, robust objectives, and ensembles.
+8. Training-history learning curves and recency weighting.
+9. Robust objectives, interpretation diagnostics, and ensembles.
 
 Deferred:
 
@@ -530,3 +577,5 @@ Before changing a production feature/model:
 - Added per-cutoff eval/oracle progress logging.
 - Deferred fixed-run weather after finding incomplete Open-Meteo archive coverage.
 - Deferred end-to-end price tuning/ablation/aggregation until fold forecasts can be cached efficiently.
+- Recorded that frozen-cutoff evaluation already has rolling-origin semantics.
+- Added training-history learning curves and grouped interpretation diagnostics to the later experiments.
