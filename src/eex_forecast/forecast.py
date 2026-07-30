@@ -51,10 +51,13 @@ logger = logging.getLogger(__name__)
 PRICE_ACTUAL = "price_actual_eur_mwh"
 _RESULT_COLUMNS = [
     TIMESTAMP,
-    PRICE_ACTUAL,  # kept alongside the forecast so the output is a forecast-vs-actual record
+    PRICE_ACTUAL,
     "price_forecast_eur_mwh",
+    "wind_actual_mw",
     "wind_forecast_mw",
+    "solar_actual_mw",
     "solar_forecast_mw",
+    "load_actual_mw",
     "load_forecast_mw",
 ]
 

@@ -68,6 +68,17 @@ def test_run_forecast_fills_fundamentals_then_price(
     result = run_forecast(str(db_path), horizon_days=3, history_days=30, plot=True)
 
     assert not result.empty
+    assert list(result.columns) == [
+        "timestamp",
+        "price_actual_eur_mwh",
+        "price_forecast_eur_mwh",
+        "wind_actual_mw",
+        "wind_forecast_mw",
+        "solar_actual_mw",
+        "solar_forecast_mw",
+        "load_actual_mw",
+        "load_forecast_mw",
+    ]
     # The whole window is predicted (in-sample past + future), so it spans both sides of `now`.
     result_times = pd.to_datetime(result["timestamp"], utc=True)
     assert (result_times < now).any() and (result_times >= now).any()
@@ -89,7 +100,12 @@ def test_run_forecast_fills_fundamentals_then_price(
     unseen = result[result["price_actual_eur_mwh"].isna()]
     assert not unseen.empty
     assert (pd.to_datetime(unseen["timestamp"], utc=True) >= now).all()
-    assert (tmp_path / "out" / "forecast.csv").exists()
+    assert unseen[["wind_actual_mw", "solar_actual_mw", "load_actual_mw"]].isna().all().all()
+    historical = result.loc[pd.to_datetime(result["timestamp"], utc=True) < now]
+    assert historical[["wind_actual_mw", "solar_actual_mw", "load_actual_mw"]].notna().all().all()
+    csv_path = tmp_path / "out" / "forecast.csv"
+    assert csv_path.exists()
+    assert list(pd.read_csv(csv_path, nrows=0).columns) == list(result.columns)
     assert (tmp_path / "out" / "forecast.png").exists()  # price plot
     assert (tmp_path / "out" / "fundamentals.png").exists()  # wind/solar/load plot
     assert (tmp_path / "out" / "drivers.png").exists()  # per-driver-group dashboard
