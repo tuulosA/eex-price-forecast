@@ -198,7 +198,9 @@ forecast step fetches those once over both windows rather than `update` re-pulli
 
 `forecast` fetches the Open-Meteo weather forecast (and the known-ahead nuclear/NTC series over the
 recent + horizon window), runs the sub-models to fill the fundamentals, then the price model, and writes
-`data/forecast/forecast.csv` — the actual price alongside all four forecast series. `--plot` adds three
+`data/forecast/forecast.csv` — actual/forecast pairs for price, wind, solar, and load. Fundamental
+actuals are populated over the historical portion and remain blank where they are not yet measured.
+`--plot` adds three
 PNGs: `forecast.png` (actual price up to the last settled hour, then only the genuinely out-of-sample
 forecast), `fundamentals.png` (the sub-model forecasts), and `drivers.png` (a panel per price-model
 driver group — wind speed, irradiance, temperature, neighbour wind, nuclear, transfer capacity — over
