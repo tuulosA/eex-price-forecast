@@ -131,6 +131,7 @@ eex backfill entsoe --start 2023-01-01      # targets, actuals, and installed ca
 eex backfill weather --start 2023-01-01     # history at the committed weather points
 eex backfill nuclear --start 2023-01-01     # French nuclear availability
 eex backfill ntc --start 2023-01-01         # cross-border transfer capacity
+eex update                                  # refresh recent ENTSO-E actuals + historical weather
 eex model train                             # train all four models with committed hyperparameters
 eex forecast --plot                         # first forecast -> data/forecast/
 ```
@@ -161,6 +162,7 @@ eex backfill weather --start 2023-01-01     # weather history at every chosen po
 eex backfill nuclear --start 2023-01-01     # cross-border (French) nuclear availability
 eex backfill ntc --start 2023-01-01         # per-border transfer capacity / NTC
 
+eex update                                  # refresh recent ENTSO-E actuals + historical weather
 eex model tune --target price               # optional but recommended (also wind / solar / load)
 eex model train                             # train all four models
 eex forecast --plot                         # first 14-day forecast -> data/forecast/
