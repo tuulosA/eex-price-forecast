@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from tests.conftest import make_timeseries
 
-from eex_forecast.solar_analysis import (
+from eex_forecast.analysis.solar import (
     SOLAR_ERROR_DEFINITION,
     SOLAR_FEATURE_VARIANTS,
     SOLAR_IRRADIANCE_VARIANTS,

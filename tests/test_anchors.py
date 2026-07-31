@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from tests.conftest import make_timeseries
 
-from eex_forecast.anchor_analysis import (
+from eex_forecast.analysis.anchors import (
     ANCHOR_CONTRACTS,
     AnchorModel,
     WeatherAnchor,

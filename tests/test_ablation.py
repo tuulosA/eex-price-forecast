@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 from tests.conftest import make_timeseries
 
-from eex_forecast.ablation import (
+from eex_forecast.analysis.ablation import (
     feature_names,
     resolve_selection,
     run_ablation,

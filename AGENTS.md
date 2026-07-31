@@ -41,18 +41,20 @@ src/eex_forecast/
     candidates.py      # candidate points (pure-Python point-in-ring; no shapely)
     openmeteo.py       # Open-Meteo client (archive history + forecast)
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
-  analysis/            # correlation matrix + candidate/ranked point maps
+  analysis/            # offline `eex analyze ...` implementations; depends on core, never vice versa
+    correlation.py     # feature correlation matrix + heatmap
+    maps.py            # candidate/ranked point maps
+    ablation.py        # remove chosen features and measure the loss, any model
+    aggregation.py     # A/B weather aggregation per fundamental + neighbour
+    anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
+    evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
+    solar.py           # solar error slices + physics/irradiance feature A/B commands
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
   quality.py           # reject gross upstream actual-data corruption before hourly resampling
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
   backtest_cutoffs.py  # frozen cutoffs from config/backtest_cutoffs.yaml + DST delivery-day window helpers
-  tuning.py            # Optuna walk-forward tuning; single-model backtest engine + seed averaging (reused by aggregation/ablation)
-  aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
-  ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
-  anchor_analysis.py   # wind/load/solar anchor spacing/count/redundancy/coverage experiments
-  evaluation.py        # end-to-end 24h eval + oracle-substitution price diagnostics
-  solar_analysis.py    # solar error slices + physics/irradiance feature A/B commands
+  tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
