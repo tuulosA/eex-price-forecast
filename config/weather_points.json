@@ -11,87 +11,6 @@
     },
     {
       "column": "ws_de02",
-      "lat": 53.1882,
-      "lon": 9.1701,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_043",
-      "pearson": 0.8646,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de03",
-      "lat": 53.1882,
-      "lon": 8.4361,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_042",
-      "pearson": 0.8605,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de04",
-      "lat": 52.2779,
-      "lon": 8.4361,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_062",
-      "pearson": 0.8603,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de05",
-      "lat": 52.2779,
-      "lon": 9.1701,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_063",
-      "pearson": 0.8576,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de06",
-      "lat": 52.733,
-      "lon": 8.0691,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_052",
-      "pearson": 0.8563,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de07",
-      "lat": 52.733,
-      "lon": 9.5371,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_054",
-      "pearson": 0.8541,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de08",
-      "lat": 53.1882,
-      "lon": 7.7021,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_041",
-      "pearson": 0.8539,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de09",
-      "lat": 53.1882,
-      "lon": 9.9041,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_044",
-      "pearson": 0.8518,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de10",
-      "lat": 52.2779,
-      "lon": 9.9041,
-      "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_064",
-      "pearson": 0.8511,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ws_de11",
       "lat": 53.6434,
       "lon": 7.3351,
       "variable": "wind_speed_100m",
@@ -100,85 +19,166 @@
       "best_lag_hours": 0
     },
     {
-      "column": "ws_de12",
-      "lat": 53.6434,
-      "lon": 8.0691,
+      "column": "ws_de03",
+      "lat": 52.733,
+      "lon": 11.0052,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_032",
-      "pearson": 0.8484,
+      "candidate_id": "de_zones_056",
+      "pearson": 0.824,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de04",
+      "lat": 51.3675,
+      "lon": 9.9041,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_087",
+      "pearson": 0.8185,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de05",
+      "lat": 51.8227,
+      "lon": 7.3351,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_072",
+      "pearson": 0.807,
+      "best_lag_hours": 1
+    },
+    {
+      "column": "ws_de06",
+      "lat": 54.0986,
+      "lon": 9.9041,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_024",
+      "pearson": 0.7955,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de07",
+      "lat": 51.3675,
+      "lon": 12.1062,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_090",
+      "pearson": 0.7814,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de08",
+      "lat": 53.6434,
+      "lon": 12.4732,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_038",
+      "pearson": 0.7495,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de09",
+      "lat": 54.5537,
+      "lon": 5.867,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_008",
+      "pearson": 0.7442,
+      "best_lag_hours": 1
+    },
+    {
+      "column": "ws_de10",
+      "lat": 50.4571,
+      "lon": 8.4361,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_108",
+      "pearson": 0.7339,
+      "best_lag_hours": 1
+    },
+    {
+      "column": "ws_de11",
+      "lat": 55.0089,
+      "lon": 8.4361,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_006",
+      "pearson": 0.7174,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ws_de12",
+      "lat": 52.2779,
+      "lon": 13.5742,
+      "variable": "wind_speed_100m",
+      "candidate_id": "de_zones_069",
+      "pearson": 0.7136,
       "best_lag_hours": 0
     },
     {
       "column": "ws_de13",
-      "lat": 53.6434,
-      "lon": 8.8031,
+      "lat": 50.002,
+      "lon": 11.0052,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_033",
-      "pearson": 0.8469,
+      "candidate_id": "de_zones_121",
+      "pearson": 0.6695,
       "best_lag_hours": 0
     },
     {
       "column": "ws_de14",
-      "lat": 52.733,
-      "lon": 7.3351,
+      "lat": 50.002,
+      "lon": 6.601,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_051",
-      "pearson": 0.8417,
-      "best_lag_hours": 0
+      "candidate_id": "de_zones_115",
+      "pearson": 0.5979,
+      "best_lag_hours": 1
     },
     {
       "column": "ws_de15",
-      "lat": 53.6434,
-      "lon": 9.5371,
+      "lat": 54.5537,
+      "lon": 13.9412,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_034",
-      "pearson": 0.8387,
+      "candidate_id": "de_zones_018",
+      "pearson": 0.5806,
       "best_lag_hours": 0
     },
     {
       "column": "ws_de16",
-      "lat": 51.8227,
-      "lon": 9.5371,
+      "lat": 50.9123,
+      "lon": 14.6753,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_075",
-      "pearson": 0.8376,
+      "candidate_id": "de_zones_105",
+      "pearson": 0.5633,
       "best_lag_hours": 0
     },
     {
       "column": "ws_de17",
-      "lat": 52.733,
-      "lon": 10.2711,
+      "lat": 48.6364,
+      "lon": 8.4361,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_055",
-      "pearson": 0.8343,
-      "best_lag_hours": 0
+      "candidate_id": "de_zones_139",
+      "pearson": 0.5628,
+      "best_lag_hours": 3
     },
     {
       "column": "ws_de18",
-      "lat": 52.2779,
-      "lon": 7.7021,
+      "lat": 49.0916,
+      "lon": 12.4732,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_061",
-      "pearson": 0.8322,
+      "candidate_id": "de_zones_137",
+      "pearson": 0.5073,
       "best_lag_hours": 0
     },
     {
       "column": "ws_de19",
-      "lat": 53.1882,
+      "lat": 48.6364,
       "lon": 10.6381,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_045",
-      "pearson": 0.8322,
+      "candidate_id": "de_zones_142",
+      "pearson": 0.4864,
       "best_lag_hours": 0
     },
     {
       "column": "ws_de20",
-      "lat": 53.6434,
-      "lon": 6.601,
+      "lat": 47.7261,
+      "lon": 12.1062,
       "variable": "wind_speed_100m",
-      "candidate_id": "de_zones_030",
-      "pearson": 0.8281,
-      "best_lag_hours": 1
+      "candidate_id": "de_zones_160",
+      "pearson": 0.3149,
+      "best_lag_hours": 0
     }
   ],
   "temp": [

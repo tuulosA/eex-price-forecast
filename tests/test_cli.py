@@ -153,3 +153,115 @@ def test_analyze_solar_errors_prints_daylight_summary(
     assert observed == [3]
     assert "daylight  MAE 180.000 MW | bias +20.000 MW | 24 rows" in result.output
     assert "08:00 -30.0 MW | 16:00 +70.0 MW" in result.output
+
+
+def test_analyze_wind_anchors_prints_variant_ranking(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    report = {"config": {"n_cutoffs": 2, "point_count": 20}}
+
+    class _Result:
+        def __init__(self) -> None:
+            self.report = report
+            self.variants = [
+                {
+                    "variant": "min_75km",
+                    "mean_mae": 2400.0,
+                    "std_mae": 20.0,
+                    "mae_delta_vs_current": -100.0,
+                    "mae_delta_std_vs_current": 10.0,
+                    "mean_rmse": 3000.0,
+                    "n_anchors": 20,
+                    "actual_min_pair_distance_km": 76.0,
+                    "trailing_365d": {
+                        "mean_mae": 2300.0,
+                        "std_mae": 15.0,
+                        "mae_delta_vs_current": -150.0,
+                        "mae_delta_std_vs_current": 8.0,
+                        "n_cutoffs": 2,
+                    },
+                },
+                {
+                    "variant": "current",
+                    "mean_mae": 2500.0,
+                    "std_mae": 30.0,
+                    "mae_delta_vs_current": 0.0,
+                    "mae_delta_std_vs_current": 0.0,
+                    "mean_rmse": 3100.0,
+                    "n_anchors": 20,
+                    "actual_min_pair_distance_km": 50.0,
+                    "trailing_365d": {
+                        "mean_mae": 2450.0,
+                        "std_mae": 25.0,
+                        "mae_delta_vs_current": 0.0,
+                        "mae_delta_std_vs_current": 0.0,
+                        "n_cutoffs": 2,
+                    },
+                },
+            ]
+            self.best_variant = "min_75km"
+
+    observed: list[tuple[tuple[float, ...], tuple[int, ...] | None, int]] = []
+
+    def fake_run(
+        frame: pd.DataFrame,
+        *,
+        distances_km: tuple[float, ...],
+        point_counts: tuple[int, ...] | None,
+        redundancy_penalties: tuple[float, ...],
+        redundancy_candidate_pool: int,
+        coverage_relevance_weights: tuple[float, ...],
+        coverage_candidate_pool: int,
+        seeds: int,
+    ) -> _Result:
+        observed.append(
+            (
+                distances_km,
+                point_counts,
+                redundancy_penalties,
+                redundancy_candidate_pool,
+                coverage_relevance_weights,
+                coverage_candidate_pool,
+                seeds,
+            )
+        )
+        return _Result()
+
+    monkeypatch.setattr(cli, "connect", lambda path: contextlib.nullcontext())
+    monkeypatch.setattr(cli, "read_frame", lambda conn: pd.DataFrame({"x": [1]}))
+    monkeypatch.setattr(cli.wind_anchor_analysis, "run_wind_anchor_analysis", fake_run)
+    monkeypatch.setattr(
+        cli.wind_anchor_analysis,
+        "save_wind_anchor_report",
+        lambda result: tmp_path / "wind_anchor_experiment.json",
+    )
+
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "analyze",
+            "anchors",
+            "wind",
+            "--distances",
+            "75,100",
+            "--counts",
+            "10,20",
+            "--seeds",
+            "3",
+            "--redundancy-penalties",
+            "0.1,0.5",
+            "--candidate-pool",
+            "60",
+            "--coverage-weights",
+            "0.25,0.75",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert observed == [((75.0, 100.0), (10, 20), (0.1, 0.5), 60, (0.25, 0.75), 60, 3)]
+    assert (
+        "min_75km   MAE 2400.000 +/- 20.000 MW "
+        "| delta vs current -100.000 +/- 10.000" in result.output
+    )
+    assert "trailing 365d MAE 2300.000 +/- 15.000 MW" in result.output
+    assert "best: min_75km" in result.output

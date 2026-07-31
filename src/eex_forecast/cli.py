@@ -15,6 +15,7 @@ Command groups:
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
+- eex analyze anchors wind: A/B current versus spatially diverse German wind weather anchors.
 - eex analyze solar-errors: slice production-faithful solar errors by daylight regime.
 - eex analyze solar-features: A/B deterministic solar geometry and clear-sky features.
 - eex analyze solar-irradiance: A/B GTI/direct/diffuse/DNI/cloud solar inputs.
@@ -35,7 +36,14 @@ from typing import Annotated
 
 import typer
 
-from eex_forecast import ablation, aggregation, evaluation, solar_analysis, tuning
+from eex_forecast import (
+    ablation,
+    aggregation,
+    evaluation,
+    solar_analysis,
+    tuning,
+    wind_anchor_analysis,
+)
 from eex_forecast import backfill as backfill_ops
 from eex_forecast import forecast as forecast_ops
 from eex_forecast import model as model_ops
@@ -97,6 +105,10 @@ aggregation_app = typer.Typer(
     help="A/B a fundamental's weather-aggregation strategies.", no_args_is_help=True
 )
 analyze_app.add_typer(aggregation_app, name="aggregation")
+anchors_app = typer.Typer(
+    help="A/B weather-anchor selection while holding the model fixed.", no_args_is_help=True
+)
+analyze_app.add_typer(anchors_app, name="anchors")
 model_app = typer.Typer(help="Train and tune the forecast models.", no_args_is_help=True)
 app.add_typer(db_app, name="db")
 app.add_typer(geo_app, name="geo")
@@ -605,6 +617,143 @@ def aggregation_neighbour(
         )
     typer.echo(
         f"  best: {result.best_strategy}{_best_within_noise(result.variants, seeds)} | report -> {path}"
+    )
+
+
+@anchors_app.command("wind")
+def anchors_wind(
+    distances: Annotated[
+        str,
+        typer.Option(help="Comma-separated minimum anchor distances in km."),
+    ] = "125,140",
+    counts: Annotated[
+        str | None,
+        typer.Option(
+            help="Optional comma-separated point counts for nested distance-selected subsets."
+        ),
+    ] = None,
+    redundancy_penalties: Annotated[
+        str | None,
+        typer.Option(
+            "--redundancy-penalties",
+            help="Optional relevance-minus-weather-redundancy penalty weights.",
+        ),
+    ] = None,
+    candidate_pool: Annotated[
+        int,
+        typer.Option(help="Top-ranked candidates considered by redundancy/coverage selection."),
+    ] = 80,
+    coverage_weights: Annotated[
+        str | None,
+        typer.Option(
+            "--coverage-weights",
+            help="Optional relevance weights (0=spread, 1=relevance) for farthest-first selection.",
+        ),
+    ] = None,
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Compare current wind anchors with correlation-ranked spatial alternatives.
+
+    Alternative weather history is cached under ``data/weather_cache/wind_anchors``. The command does
+    not modify the production database or ``config/weather_points.json``.
+    """
+    try:
+        distance_values = tuple(
+            float(value.strip()) for value in distances.split(",") if value.strip()
+        )
+    except ValueError as error:
+        raise typer.BadParameter("--distances must be comma-separated numbers.") from error
+    if not distance_values:
+        raise typer.BadParameter("Give at least one minimum distance.")
+    if any(distance <= 0 for distance in distance_values):
+        raise typer.BadParameter("Every minimum distance must be greater than zero.")
+    try:
+        point_counts = (
+            tuple(int(value.strip()) for value in counts.split(",") if value.strip())
+            if counts is not None
+            else None
+        )
+    except ValueError as error:
+        raise typer.BadParameter("--counts must be comma-separated integers.") from error
+    if point_counts is not None and not point_counts:
+        raise typer.BadParameter("Give at least one point count.")
+    if point_counts is not None and any(count < 1 for count in point_counts):
+        raise typer.BadParameter("Every point count must be greater than zero.")
+    try:
+        penalties = (
+            tuple(
+                float(value.strip()) for value in redundancy_penalties.split(",") if value.strip()
+            )
+            if redundancy_penalties is not None
+            else ()
+        )
+    except ValueError as error:
+        raise typer.BadParameter(
+            "--redundancy-penalties must be comma-separated numbers."
+        ) from error
+    if any(penalty < 0 for penalty in penalties):
+        raise typer.BadParameter("Every redundancy penalty must be non-negative.")
+    if candidate_pool < 1:
+        raise typer.BadParameter("--candidate-pool must be greater than zero.")
+    try:
+        parsed_coverage_weights = (
+            tuple(float(value.strip()) for value in coverage_weights.split(",") if value.strip())
+            if coverage_weights is not None
+            else ()
+        )
+    except ValueError as error:
+        raise typer.BadParameter("--coverage-weights must be comma-separated numbers.") from error
+    if any(not 0 <= weight <= 1 for weight in parsed_coverage_weights):
+        raise typer.BadParameter("Every coverage weight must be between zero and one.")
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+
+    try:
+        result = wind_anchor_analysis.run_wind_anchor_analysis(
+            frame,
+            distances_km=distance_values,
+            point_counts=point_counts,
+            redundancy_penalties=penalties,
+            redundancy_candidate_pool=candidate_pool,
+            coverage_relevance_weights=parsed_coverage_weights,
+            coverage_candidate_pool=candidate_pool,
+            seeds=seeds,
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    path = wind_anchor_analysis.save_wind_anchor_report(result)
+    typer.echo(
+        f"Wind-anchor diversity "
+        f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"production baseline {result.report['config']['point_count']} anchors):"
+    )
+    for variant in result.variants:
+        delta = f"{variant['mae_delta_vs_current']:+.3f}"
+        if seeds > 1:
+            delta += f" +/- {variant['mae_delta_std_vs_current']:.3f}"
+        typer.echo(
+            f"  {variant['variant']:<10} "
+            f"{_mae_cell(variant['mean_mae'], variant['std_mae'], seeds)} MW "
+            f"| delta vs current {delta} "
+            f"| RMSE {variant['mean_rmse']:.3f} "
+            f"| {variant['n_anchors']} anchors "
+            f"| min pair {variant['actual_min_pair_distance_km']:.1f} km"
+        )
+        trailing = variant["trailing_365d"]
+        trailing_delta = f"{trailing['mae_delta_vs_current']:+.3f}"
+        if seeds > 1:
+            trailing_delta += f" +/- {trailing['mae_delta_std_vs_current']:.3f}"
+        typer.echo(
+            f"    trailing 365d "
+            f"{_mae_cell(trailing['mean_mae'], trailing['std_mae'], seeds)} MW "
+            f"| delta vs current {trailing_delta} "
+            f"| {trailing['n_cutoffs']} cutoffs"
+        )
+    typer.echo(
+        f"  best: {result.best_variant}{_best_within_noise(result.variants, seeds)} "
+        f"| report -> {path}"
     )
 
 
