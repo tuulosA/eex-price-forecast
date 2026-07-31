@@ -201,9 +201,10 @@ def test_analyze_wind_anchors_prints_variant_ranking(
             ]
             self.best_variant = "min_75km"
 
-    observed: list[tuple[tuple[float, ...], tuple[int, ...] | None, int]] = []
+    observed: list[tuple[object, ...]] = []
 
     def fake_run(
+        model: str,
         frame: pd.DataFrame,
         *,
         distances_km: tuple[float, ...],
@@ -216,6 +217,7 @@ def test_analyze_wind_anchors_prints_variant_ranking(
     ) -> _Result:
         observed.append(
             (
+                model,
                 distances_km,
                 point_counts,
                 redundancy_penalties,
@@ -229,10 +231,10 @@ def test_analyze_wind_anchors_prints_variant_ranking(
 
     monkeypatch.setattr(cli, "connect", lambda path: contextlib.nullcontext())
     monkeypatch.setattr(cli, "read_frame", lambda conn: pd.DataFrame({"x": [1]}))
-    monkeypatch.setattr(cli.wind_anchor_analysis, "run_wind_anchor_analysis", fake_run)
+    monkeypatch.setattr(cli.anchor_analysis, "run_anchor_analysis", fake_run)
     monkeypatch.setattr(
-        cli.wind_anchor_analysis,
-        "save_wind_anchor_report",
+        cli.anchor_analysis,
+        "save_anchor_report",
         lambda result: tmp_path / "wind_anchor_experiment.json",
     )
 
@@ -258,10 +260,19 @@ def test_analyze_wind_anchors_prints_variant_ranking(
     )
 
     assert result.exit_code == 0, result.output
-    assert observed == [((75.0, 100.0), (10, 20), (0.1, 0.5), 60, (0.25, 0.75), 60, 3)]
+    assert observed == [("wind", (75.0, 100.0), (10, 20), (0.1, 0.5), 60, (0.25, 0.75), 60, 3)]
     assert (
         "min_75km   MAE 2400.000 +/- 20.000 MW "
         "| delta vs current -100.000 +/- 10.000" in result.output
     )
     assert "trailing 365d MAE 2300.000 +/- 15.000 MW" in result.output
     assert "best: min_75km" in result.output
+
+
+@pytest.mark.parametrize("model", ["load", "solar"])
+def test_analyze_anchor_submodel_help_is_registered(model: str) -> None:
+    result = CliRunner().invoke(cli.app, ["analyze", "anchors", model, "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--distances" in result.output
+    assert "--counts" in result.output

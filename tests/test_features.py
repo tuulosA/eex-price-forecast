@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import eex_forecast.features as feature_module
 from eex_forecast.features import (
     NEIGHBOUR_STRATEGIES,
     WEATHER_AGG,
@@ -19,6 +20,7 @@ from eex_forecast.features import (
     price_features,
     price_features_with_neighbours,
     price_lags,
+    set_active_weather_columns,
     solar_features,
     solar_features_baseline,
     solar_features_with_auxiliary_weather,
@@ -119,6 +121,30 @@ def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataF
         means["irr_solar"], timeseries_frame["ghi_de01"].shift(-1), check_names=False
     )
     assert weather_means(timeseries_frame, ["wind_speed"]).columns.tolist() == ["wind_speed"]
+
+
+def test_weather_means_ignores_stale_schema_columns_and_allows_analysis_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2025-01-01", periods=2, freq="h", tz="UTC"),
+            "ws_de01": [4.0, 6.0],
+            "ws_de99": [40.0, 60.0],
+        }
+    )
+    monkeypatch.setattr(
+        feature_module,
+        "_configured_weather_columns",
+        lambda: frozenset({"ws_de01"}),
+    )
+
+    production = weather_means(frame, ["wind_speed"])
+    pd.testing.assert_series_equal(production["wind_speed"], frame["ws_de01"], check_names=False)
+
+    set_active_weather_columns(frame, ["ws_de99"])
+    experiment = weather_means(frame, ["wind_speed"])
+    pd.testing.assert_series_equal(experiment["wind_speed"], frame["ws_de99"], check_names=False)
 
 
 def test_radiation_alignment_uses_timestamps_not_row_positions() -> None:
@@ -368,8 +394,17 @@ def _frame_with_neighbours() -> pd.DataFrame:
     )
 
 
-def test_neighbour_wind_columns_groups_and_excludes_home() -> None:
-    groups = _neighbour_wind_columns(_frame_with_neighbours())
+def test_neighbour_wind_columns_groups_and_excludes_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = _frame_with_neighbours()
+    frame["ws_dk99"] = 100.0
+    monkeypatch.setattr(
+        feature_module,
+        "_configured_weather_columns",
+        lambda: frozenset({"ws_de01", "ws_dk01", "ws_dk02", "ws_nl01", "ws_nl02"}),
+    )
+    groups = _neighbour_wind_columns(frame)
     assert groups == {"dk": ["ws_dk01", "ws_dk02"], "nl": ["ws_nl01", "ws_nl02"]}  # no 'de'
 
 

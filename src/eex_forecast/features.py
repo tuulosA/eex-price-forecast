@@ -101,6 +101,48 @@ _PRECEDING_HOUR_MEAN_ROLES = frozenset(
         "dni_solar",
     }
 )
+
+# SQLite intentionally keeps columns added by earlier weather-point configurations. Feature builders
+# must therefore distinguish columns that merely exist in the schema from the points that are active
+# now. Analysis frames can override the committed configuration when deliberately testing a different
+# anchor set; production frames otherwise use config/weather_points.json as the source of truth.
+_ACTIVE_WEATHER_COLUMNS_ATTR = "eex_active_weather_columns"
+
+
+def set_active_weather_columns(frame: pd.DataFrame, columns: Sequence[str]) -> pd.DataFrame:
+    """Mark the exact weather columns represented by an experimental frame.
+
+    Anchor experiments remap arbitrary candidates onto production-style column names without changing
+    the committed points config. Recording those names on the frame lets the shared feature builders
+    honour that deliberate override while normal production continues to ignore stale SQLite columns.
+    The frame is mutated only in its pandas metadata and returned for convenient composition.
+    """
+    frame.attrs[_ACTIVE_WEATHER_COLUMNS_ATTR] = tuple(columns)
+    return frame
+
+
+def _configured_weather_columns() -> frozenset[str]:
+    """Return all database weather columns belonging to the currently committed point set."""
+    # Keep this import local: point_search owns the point/config contract and also imports Open-Meteo
+    # source constants, while feature construction should remain lightweight at module import time.
+    from eex_forecast.weather.point_search import load_points_config, point_columns
+
+    return frozenset(
+        column
+        for role, points in load_points_config().items()
+        for point in points
+        for column in point_columns(role, point).values()
+    )
+
+
+def active_weather_columns(frame: pd.DataFrame) -> frozenset[str]:
+    """Weather columns active for this production or explicitly marked experimental frame."""
+    override = frame.attrs.get(_ACTIVE_WEATHER_COLUMNS_ATTR)
+    if override is not None:
+        return frozenset(str(column) for column in override)
+    return _configured_weather_columns()
+
+
 SOLAR_AUXILIARY_WEATHER_ROLES: tuple[str, ...] = (
     "gti_solar",
     "direct_solar",
@@ -237,7 +279,8 @@ def _weather_role_points(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     the data. The raw database remains an exact representation of the source response.
     """
     prefix = WEATHER_AGGREGATES[name]
-    columns = sorted(c for c in frame.columns if c.startswith(prefix))
+    active = active_weather_columns(frame)
+    columns = sorted(c for c in frame.columns if c.startswith(prefix) and c in active)
     if not columns:
         return pd.DataFrame(index=frame.index)
 
@@ -634,10 +677,11 @@ def _neighbour_wind_columns(frame: pd.DataFrame) -> dict[str, list[str]]:
 
     The home country (``AREA_CODE``) is excluded - its wind is already the German wind aggregate.
     """
+    active = active_weather_columns(frame)
     groups: dict[str, list[str]] = {}
     for column in frame.columns:
         match = _NEIGHBOUR_WS_RE.match(column)
-        if match and match.group(1) != _HOME_CODE:
+        if match and match.group(1) != _HOME_CODE and column in active:
             groups.setdefault(match.group(1), []).append(column)
     return {code: sorted(cols) for code, cols in sorted(groups.items())}
 

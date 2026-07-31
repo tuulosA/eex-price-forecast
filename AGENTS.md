@@ -50,7 +50,7 @@ src/eex_forecast/
   tuning.py            # Optuna walk-forward tuning; single-model backtest engine + seed averaging (reused by aggregation/ablation)
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
-  wind_anchor_analysis.py # wind anchor spacing/count/redundancy/coverage experiments
+  anchor_analysis.py   # wind/load/solar anchor spacing/count/redundancy/coverage experiments
   evaluation.py        # end-to-end 24h eval + oracle-substitution price diagnostics
   solar_analysis.py    # solar error slices + physics/irradiance feature A/B commands
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
@@ -85,9 +85,12 @@ docs/
   following weather hour when deciding forecast coverage.
 - **Solar's auxiliary weather contract is part of production.** The adopted builder uses direct,
   diffuse, and direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
-  alongside GHI and deterministic geometry. GTI is fetched for reproducible experiments but was not
-  adopted. Historical and live Open-Meteo calls must request the same variables; adding a solar
-  auxiliary requires forecast-coverage checks and preceding-hour alignment when it is radiation.
+  alongside GHI and deterministic geometry. The adopted point set is the 31-anchor, 100 km-spaced
+  selection recorded by the anchor experiment; changing it requires a complete weather backfill,
+  matched retune, end-to-end/oracle comparison, and live coverage check. GTI is fetched for reproducible
+  experiments but was not adopted. Historical and live Open-Meteo calls must request the same variables;
+  adding a solar auxiliary requires forecast-coverage checks and preceding-hour alignment when it is
+  radiation.
 - **Solar aggregation varies only GHI.** `aggregation._variant_spec` routes solar through
   `features.solar_features_with_aggregation`, retaining production geometry and
   direct/diffuse/DNI/cloud statistics. The `stats` variant must exactly equal `solar_features`; keep the
@@ -96,6 +99,13 @@ docs/
   used by feature helpers, while `PRICE_WEATHER_ROLES` is the explicit original price weather block.
   Keep `_price_base` on that allow-list so a sub-model experiment cannot silently change price features
   and confound an end-to-end/oracle comparison.
+- **Configured weather points, not the SQLite schema, define active features.** SQLite keeps columns
+  added by old anchor configurations, including after a point-count rollback. Feature builders filter
+  German and neighbour weather columns through `config/weather_points.json`; anchor-analysis variant
+  frames use `features.set_active_weather_columns` to declare their deliberate override. Do not revert
+  to prefix-only schema discovery or retired anchors will silently remain in models and direct price
+  weather means. The forecast weather-coverage guard uses the same active-column set so stale columns
+  cannot falsely truncate the published horizon.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
 - **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values

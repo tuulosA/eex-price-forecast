@@ -1,20 +1,16 @@
-"""Wind weather-anchor diversity experiment.
+"""Weather-anchor diversity experiments for the wind, load, and solar sub-models.
 
-The production wind points are selected independently by correlation with aggregate German wind. That
-criterion finds individually strong locations, but it can spend most of a fixed point budget on adjacent
-grid cells describing the same northwestern weather regime. The wind model's raw per-point representation
-already beats national aggregation decisively, so whether those raw points cover enough distinct weather
-regimes is an empirical modelling question rather than a map-aesthetics preference.
+The normal point-ranking step scores every location independently against its target. That can spend a
+fixed point budget on adjacent grid cells describing the same weather regime, as the original clustered
+wind selection demonstrated. This module keeps the saved ranking but compares the committed production
+points with alternatives selected under minimum-distance, point-budget, relevance/coverage, or
+meteorological-redundancy constraints.
 
-This module compares the committed production points with correlation-ranked alternatives selected under
-a minimum-distance constraint. It can also vary the point budget through nested prefixes, balance
-relevance against farthest-first geographic coverage, or penalize candidates whose 2025 wind histories
-duplicate those already selected. These alternatives separate "better locations", "more locations",
-and competing definitions of diversity. Everything downstream is held fixed: co-located 2 m
-temperature, raw-point feature representation, capacity-factor target, tuned hyperparameters, frozen
-delivery-day cutoffs, and seed handling. Alternative historical weather is fetched from the same
-Open-Meteo Historical Forecast API used by the production backfill and cached outside the production
-database. The experiment therefore never rewrites ``config/weather_points.json`` or production columns.
+Each model retains its complete production weather contract: wind speed plus co-located temperature;
+load temperature plus irradiance; and solar GHI plus GTI, direct, diffuse, DNI, and cloud cover. Feature
+builders, target scaling, tuned parameters, frozen cutoffs, and seed handling remain unchanged. Missing
+candidate history is fetched from the same Open-Meteo Historical Forecast API as production and cached
+outside SQLite. No experiment rewrites ``config/weather_points.json`` or production weather columns.
 """
 
 from __future__ import annotations
@@ -26,7 +22,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from statistics import mean, stdev
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 import pandas as pd
 
@@ -36,21 +32,95 @@ from eex_forecast.backtest_cutoffs import (
     horizon_end_utc,
 )
 from eex_forecast.config import ANALYSIS_DIR, RANK_DIR, WEATHER_CACHE_DIR
-from eex_forecast.features import TIMESTAMP
+from eex_forecast.features import TIMESTAMP, set_active_weather_columns
 from eex_forecast.model import REGISTRY, load_params
 from eex_forecast.tuning import seed_list, walk_forward_metrics_seeded
 from eex_forecast.weather.candidates import haversine_km
-from eex_forecast.weather.openmeteo import TEMPERATURE_2M, WIND_SPEED_100M, fetch_history
+from eex_forecast.weather.openmeteo import (
+    CLOUD_COVER,
+    DIFFUSE_RADIATION,
+    DIRECT_NORMAL_IRRADIANCE,
+    DIRECT_RADIATION,
+    GLOBAL_TILTED_IRRADIANCE,
+    SHORTWAVE_RADIATION,
+    TEMPERATURE_2M,
+    WIND_SPEED_100M,
+    fetch_history,
+)
 from eex_forecast.weather.point_search import SelectedPoint, load_points_config
 
 logger = logging.getLogger(__name__)
 
-WIND_RANK_PATH = RANK_DIR / "wind_rank.csv"
-WIND_ANCHOR_CACHE_DIR = WEATHER_CACHE_DIR / "wind_anchors"
-WIND_ANCHOR_REPORT = "wind_anchor_experiment.json"
+AnchorModel = Literal["wind", "load", "solar"]
+ANCHOR_MODELS: tuple[AnchorModel, ...] = ("wind", "load", "solar")
 DEFAULT_DISTANCES_KM: tuple[float, ...] = (125.0, 140.0)
 DEFAULT_POINT_COUNTS: tuple[int, ...] | None = None
 TRAILING_WINDOW_DAYS = 365
+
+
+@dataclass(frozen=True, slots=True)
+class AnchorContract:
+    """One model's ranking role, fetched variables, and production column naming contract."""
+
+    model: AnchorModel
+    point_role: str
+    primary_variable: str
+    variables: tuple[str, ...]
+    column_prefixes: dict[str, str]
+
+    @property
+    def rank_path(self) -> Path:
+        return RANK_DIR / f"{self.point_role}_rank.csv"
+
+    @property
+    def cache_dir(self) -> Path:
+        return WEATHER_CACHE_DIR / f"{self.model}_anchors"
+
+    @property
+    def report_name(self) -> str:
+        return f"{self.model}_anchor_experiment.json"
+
+    def column(self, variable: str, index: int) -> str:
+        return f"{self.column_prefixes[variable]}{index:02d}"
+
+
+ANCHOR_CONTRACTS: dict[AnchorModel, AnchorContract] = {
+    "wind": AnchorContract(
+        "wind",
+        "wind",
+        WIND_SPEED_100M,
+        (WIND_SPEED_100M, TEMPERATURE_2M),
+        {WIND_SPEED_100M: "ws_de", TEMPERATURE_2M: "t_ws_de"},
+    ),
+    "load": AnchorContract(
+        "load",
+        "temp",
+        TEMPERATURE_2M,
+        (TEMPERATURE_2M, SHORTWAVE_RADIATION),
+        {TEMPERATURE_2M: "t_de", SHORTWAVE_RADIATION: "ghi_t_de"},
+    ),
+    "solar": AnchorContract(
+        "solar",
+        "solar",
+        SHORTWAVE_RADIATION,
+        (
+            SHORTWAVE_RADIATION,
+            GLOBAL_TILTED_IRRADIANCE,
+            DIRECT_RADIATION,
+            DIFFUSE_RADIATION,
+            DIRECT_NORMAL_IRRADIANCE,
+            CLOUD_COVER,
+        ),
+        {
+            SHORTWAVE_RADIATION: "ghi_de",
+            GLOBAL_TILTED_IRRADIANCE: "gti_ghi_de",
+            DIRECT_RADIATION: "direct_ghi_de",
+            DIFFUSE_RADIATION: "diffuse_ghi_de",
+            DIRECT_NORMAL_IRRADIANCE: "dni_ghi_de",
+            CLOUD_COVER: "cloud_ghi_de",
+        },
+    ),
+}
 
 
 class HistoryFetcher(Protocol):
@@ -68,8 +138,8 @@ class HistoryFetcher(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class WindAnchor:
-    """A ranked wind candidate with the metadata needed to reproduce a selected set."""
+class WeatherAnchor:
+    """A ranked weather candidate with the metadata needed to reproduce a selected set."""
 
     candidate_id: str
     lat: float
@@ -84,16 +154,17 @@ class AnchorVariant:
 
     name: str
     min_distance_km: float
-    anchors: tuple[WindAnchor, ...]
+    anchors: tuple[WeatherAnchor, ...]
     selection_method: str = "minimum_distance"
     redundancy_penalty: float | None = None
     coverage_relevance_weight: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class WindAnchorResult:
-    """Completed diversity comparison, ordered by held-out wind MAE."""
+class AnchorResult:
+    """Completed diversity comparison, ordered by the selected model's held-out MAE."""
 
+    model: AnchorModel
     variants: list[dict[str, Any]]
     cutoffs: tuple[str, ...]
     report: dict[str, Any]
@@ -103,23 +174,28 @@ class WindAnchorResult:
         return str(self.variants[0]["variant"])
 
 
-def read_ranked_wind_candidates(path: Path = WIND_RANK_PATH) -> list[WindAnchor]:
-    """Read the complete wind ranking produced by ``eex points rank --target wind``.
+def read_ranked_candidates(model: AnchorModel, path: Path | None = None) -> list[WeatherAnchor]:
+    """Read the complete saved ranking for one anchor model.
 
     Reading the saved ranking rather than re-ranking avoids changing both the ranking period and spatial
     selection rule in one experiment.
     """
+    contract = ANCHOR_CONTRACTS[model]
+    path = contract.rank_path if path is None else path
     if not path.exists():
         raise FileNotFoundError(
-            f"Missing wind ranking {path}. Run `eex points rank --target wind` first."
+            f"Missing {model} ranking {path}. Run "
+            f"`eex points rank --target {contract.point_role}` first."
         )
     frame = pd.read_csv(path).sort_values("rank")
     required = {"candidate_id", "lat", "lon", "pearson", "best_lag_hours"}
     missing = required - set(frame.columns)
     if missing:
-        raise ValueError(f"Wind ranking is missing columns: {', '.join(sorted(missing))}.")
+        raise ValueError(
+            f"{model.title()} ranking is missing columns: {', '.join(sorted(missing))}."
+        )
     return [
-        WindAnchor(
+        WeatherAnchor(
             candidate_id=str(row.candidate_id),
             lat=float(cast("Any", row.lat)),
             lon=float(cast("Any", row.lon)),
@@ -130,17 +206,21 @@ def read_ranked_wind_candidates(path: Path = WIND_RANK_PATH) -> list[WindAnchor]
     ]
 
 
-def current_wind_anchors(config_path: Path | None = None) -> list[WindAnchor]:
-    """Load the committed production wind points as the experiment's baseline."""
+def current_anchors(model: AnchorModel, config_path: Path | None = None) -> list[WeatherAnchor]:
+    """Load one model's committed production points as the experiment baseline."""
+    contract = ANCHOR_CONTRACTS[model]
     config = load_points_config() if config_path is None else load_points_config(config_path)
-    points = config.get("wind", [])
+    points = config.get(contract.point_role, [])
     if not points:
-        raise ValueError("No configured wind points. Run `eex points rank --target wind` first.")
+        raise ValueError(
+            f"No configured {model} points. Run "
+            f"`eex points rank --target {contract.point_role}` first."
+        )
     return [_anchor_from_selected(point) for point in points]
 
 
-def _anchor_from_selected(point: SelectedPoint) -> WindAnchor:
-    return WindAnchor(
+def _anchor_from_selected(point: SelectedPoint) -> WeatherAnchor:
+    return WeatherAnchor(
         candidate_id=point.candidate_id,
         lat=point.lat,
         lon=point.lon,
@@ -150,14 +230,14 @@ def _anchor_from_selected(point: SelectedPoint) -> WindAnchor:
 
 
 def select_with_minimum_distance(
-    ranked: Sequence[WindAnchor], *, count: int, min_distance_km: float
-) -> tuple[WindAnchor, ...]:
+    ranked: Sequence[WeatherAnchor], *, count: int, min_distance_km: float
+) -> tuple[WeatherAnchor, ...]:
     """Greedily retain the best-ranked candidates at least ``min_distance_km`` apart."""
     if count < 1:
         raise ValueError("count must be >= 1.")
     if min_distance_km < 0:
         raise ValueError("min_distance_km must be >= 0.")
-    selected: list[WindAnchor] = []
+    selected: list[WeatherAnchor] = []
     for candidate in ranked:
         if all(
             haversine_km(candidate.lat, candidate.lon, kept.lat, kept.lon) >= min_distance_km
@@ -167,25 +247,26 @@ def select_with_minimum_distance(
             if len(selected) == count:
                 return tuple(selected)
     raise ValueError(
-        f"Only {len(selected)} wind candidates satisfy {min_distance_km:g} km spacing; "
+        f"Only {len(selected)} weather candidates satisfy {min_distance_km:g} km spacing; "
         f"cannot select {count}."
     )
 
 
 def select_with_redundancy_penalty(
-    ranked: Sequence[WindAnchor],
+    ranked: Sequence[WeatherAnchor],
     histories: dict[str, pd.DataFrame],
     *,
     count: int,
     penalty: float,
     start: pd.Timestamp,
     end: pd.Timestamp,
-) -> tuple[WindAnchor, ...]:
+    variable: str = WIND_SPEED_100M,
+) -> tuple[WeatherAnchor, ...]:
     """Greedily balance target relevance against similarity to anchors already selected.
 
     Geographic spacing is only a proxy for whether two locations experience the same weather. This
     selector uses the saved target correlation as relevance, then subtracts ``penalty`` times the mean
-    absolute wind-speed correlation with the selected set. The correlation window is explicitly passed
+    absolute primary-weather correlation with the selected set. The correlation window is explicitly passed
     by the caller so candidate selection can stay on the same complete development year as point
     ranking rather than looking into an incomplete evaluation year.
     """
@@ -201,7 +282,7 @@ def select_with_redundancy_penalty(
 
     columns: dict[str, pd.Series[float]] = {}
     for anchor in ranked:
-        history = histories[anchor.candidate_id].set_index(TIMESTAMP)[WIND_SPEED_100M]
+        history = histories[anchor.candidate_id].set_index(TIMESTAMP)[variable]
         columns[anchor.candidate_id] = history.loc[start:end]
     correlations = pd.DataFrame(columns).corr().abs()
 
@@ -210,7 +291,7 @@ def select_with_redundancy_penalty(
     while len(selected) < count:
         selected_ids = tuple(anchor.candidate_id for anchor in selected)
 
-        def score(anchor: WindAnchor, compared_ids: tuple[str, ...] = selected_ids) -> float:
+        def score(anchor: WeatherAnchor, compared_ids: tuple[str, ...] = selected_ids) -> float:
             redundancy = mean(
                 float(cast("Any", correlations.at[anchor.candidate_id, selected_id]))
                 for selected_id in compared_ids
@@ -224,8 +305,8 @@ def select_with_redundancy_penalty(
 
 
 def build_anchor_variants(
-    current: Sequence[WindAnchor],
-    ranked: Sequence[WindAnchor],
+    current: Sequence[WeatherAnchor],
+    ranked: Sequence[WeatherAnchor],
     *,
     distances_km: Sequence[float] = DEFAULT_DISTANCES_KM,
     point_counts: Sequence[int] | None = DEFAULT_POINT_COUNTS,
@@ -237,7 +318,7 @@ def build_anchor_variants(
     feature budget while preserving the ranking and spatial-selection rule.
     """
     if not current:
-        raise ValueError("The current wind-anchor set is empty.")
+        raise ValueError("The current anchor set is empty.")
     current_count = len(current)
     counts = tuple(point_counts) if point_counts is not None else (current_count,)
     if not counts:
@@ -272,13 +353,14 @@ def build_anchor_variants(
 
 
 def build_redundancy_variants(
-    ranked: Sequence[WindAnchor],
+    ranked: Sequence[WeatherAnchor],
     histories: dict[str, pd.DataFrame],
     *,
     count: int,
     penalties: Sequence[float],
     start: pd.Timestamp,
     end: pd.Timestamp,
+    variable: str = WIND_SPEED_100M,
 ) -> list[AnchorVariant]:
     """Build equal-size meteorological-redundancy alternatives from one candidate pool."""
     variants: list[AnchorVariant] = []
@@ -296,6 +378,7 @@ def build_redundancy_variants(
                     penalty=float(penalty),
                     start=start,
                     end=end,
+                    variable=variable,
                 ),
                 selection_method="correlation_redundancy",
                 redundancy_penalty=float(penalty),
@@ -305,11 +388,11 @@ def build_redundancy_variants(
 
 
 def select_with_coverage_balance(
-    ranked: Sequence[WindAnchor],
+    ranked: Sequence[WeatherAnchor],
     *,
     count: int,
     relevance_weight: float,
-) -> tuple[WindAnchor, ...]:
+) -> tuple[WeatherAnchor, ...]:
     """Select anchors by a normalized blend of target relevance and new geographic coverage."""
     if count < 1:
         raise ValueError("count must be >= 1.")
@@ -334,7 +417,7 @@ def select_with_coverage_balance(
         coverage_range = max(coverage.values()) - coverage_min
 
         def score(
-            anchor: WindAnchor,
+            anchor: WeatherAnchor,
             distances: dict[str, float] = coverage,
             minimum: float = coverage_min,
             distance_range: float = coverage_range,
@@ -354,7 +437,7 @@ def select_with_coverage_balance(
 
 
 def build_coverage_variants(
-    ranked: Sequence[WindAnchor],
+    ranked: Sequence[WeatherAnchor],
     *,
     count: int,
     relevance_weights: Sequence[float],
@@ -378,13 +461,13 @@ def build_coverage_variants(
     return variants
 
 
-def _normalise_weather(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return unique UTC hourly rows containing the two wind-model weather variables."""
-    required = {TIMESTAMP, WIND_SPEED_100M, TEMPERATURE_2M}
+def _normalise_weather(frame: pd.DataFrame, variables: Sequence[str]) -> pd.DataFrame:
+    """Return unique UTC hourly rows containing one model's complete point-weather contract."""
+    required = {TIMESTAMP, *variables}
     missing = required - set(frame.columns)
     if missing:
         raise ValueError(f"Anchor weather is missing columns: {', '.join(sorted(missing))}.")
-    out = frame[[TIMESTAMP, WIND_SPEED_100M, TEMPERATURE_2M]].copy()
+    out = frame[[TIMESTAMP, *variables]].copy()
     out[TIMESTAMP] = pd.to_datetime(out[TIMESTAMP], utc=True)
     return out.sort_values(TIMESTAMP).drop_duplicates(TIMESTAMP, keep="last").reset_index(drop=True)
 
@@ -398,24 +481,28 @@ def _cache_covers(frame: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -
 
 
 def load_or_fetch_anchor_history(
-    anchor: WindAnchor,
+    anchor: WeatherAnchor,
     *,
+    model: AnchorModel = "wind",
     start: pd.Timestamp,
     end: pd.Timestamp,
-    cache_dir: Path = WIND_ANCHOR_CACHE_DIR,
+    cache_dir: Path | None = None,
     history_fetcher: HistoryFetcher = fetch_history,
 ) -> pd.DataFrame:
-    """Load cached history or fetch and atomically replace an incomplete candidate cache."""
+    """Load or fetch one candidate's complete model-specific weather contract."""
+    contract = ANCHOR_CONTRACTS[model]
+    cache_dir = contract.cache_dir if cache_dir is None else cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
     path = cache_dir / f"{anchor.candidate_id}.csv"
     if path.exists():
-        cached = _normalise_weather(pd.read_csv(path))
+        cached = _normalise_weather(pd.read_csv(path), contract.variables)
         if _cache_covers(cached, start, end):
-            logger.info("[anchors:wind] cache hit %s", anchor.candidate_id)
+            logger.info("[anchors:%s] cache hit %s", model, anchor.candidate_id)
             return cached
 
     logger.info(
-        "[anchors:wind] fetching %s (%.4f, %.4f), %s .. %s",
+        "[anchors:%s] fetching %s (%.4f, %.4f), %s .. %s",
+        model,
         anchor.candidate_id,
         anchor.lat,
         anchor.lon,
@@ -428,8 +515,9 @@ def load_or_fetch_anchor_history(
             anchor.lon,
             start=start.strftime("%Y-%m-%d"),
             end=end.strftime("%Y-%m-%d"),
-            variables=[WIND_SPEED_100M, TEMPERATURE_2M],
-        )
+            variables=contract.variables,
+        ),
+        contract.variables,
     )
     temp_path = path.with_suffix(".csv.tmp")
     fetched.to_csv(temp_path, index=False)
@@ -438,25 +526,25 @@ def load_or_fetch_anchor_history(
 
 
 def _current_histories(
-    frame: pd.DataFrame, current: Sequence[WindAnchor]
+    frame: pd.DataFrame,
+    current: Sequence[WeatherAnchor],
+    contract: AnchorContract,
 ) -> dict[str, pd.DataFrame]:
     """Extract committed anchors from the DB frame, avoiding unnecessary API calls."""
     histories: dict[str, pd.DataFrame] = {}
     for index, anchor in enumerate(current, start=1):
-        wind_column = f"ws_de{index:02d}"
-        temperature_column = f"t_{wind_column}"
-        missing = {wind_column, temperature_column} - set(frame.columns)
+        columns = {variable: contract.column(variable, index) for variable in contract.variables}
+        missing = set(columns.values()) - set(frame.columns)
         if missing:
             raise ValueError(
-                f"Production frame is missing current wind weather: {', '.join(sorted(missing))}."
+                f"Production frame is missing current {contract.model} weather: "
+                f"{', '.join(sorted(missing))}."
             )
         histories[anchor.candidate_id] = _normalise_weather(
-            frame[[TIMESTAMP, wind_column, temperature_column]].rename(
-                columns={
-                    wind_column: WIND_SPEED_100M,
-                    temperature_column: TEMPERATURE_2M,
-                }
-            )
+            frame[[TIMESTAMP, *columns.values()]].rename(
+                columns={column: variable for variable, column in columns.items()}
+            ),
+            contract.variables,
         )
     return histories
 
@@ -482,28 +570,37 @@ def _variant_frame(
     frame: pd.DataFrame,
     variant: AnchorVariant,
     histories: dict[str, pd.DataFrame],
+    contract: AnchorContract,
 ) -> pd.DataFrame:
-    """Build a minimal wind-model frame with one variant mapped to production feature names."""
-    target = REGISTRY["wind"].target_column
-    capacity = REGISTRY["wind"].capacity_column
-    assert capacity is not None
-    required = {TIMESTAMP, target, capacity}
+    """Build a minimal model frame with one variant mapped to production feature names."""
+    spec = REGISTRY[contract.model]
+    required = {TIMESTAMP, spec.target_column}
+    if spec.capacity_column is not None:
+        required.add(spec.capacity_column)
     missing = required - set(frame.columns)
     if missing:
         raise ValueError(
-            f"Database frame is missing wind model columns: {', '.join(sorted(missing))}."
+            f"Database frame is missing {contract.model} model columns: "
+            f"{', '.join(sorted(missing))}."
         )
-    out = frame[[TIMESTAMP, target, capacity]].copy()
+    base_columns = [TIMESTAMP, spec.target_column]
+    if spec.capacity_column is not None:
+        base_columns.append(spec.capacity_column)
+    out = frame[base_columns].copy()
     out[TIMESTAMP] = pd.to_datetime(out[TIMESTAMP], utc=True)
     timestamps = pd.DatetimeIndex(out[TIMESTAMP])
+    weather_columns: dict[str, Any] = {}
     for index, anchor in enumerate(variant.anchors, start=1):
         history = histories[anchor.candidate_id].set_index(TIMESTAMP)
-        out[f"ws_de{index:02d}"] = history[WIND_SPEED_100M].reindex(timestamps).to_numpy()
-        out[f"t_ws_de{index:02d}"] = history[TEMPERATURE_2M].reindex(timestamps).to_numpy()
-    return out
+        for variable in contract.variables:
+            weather_columns[contract.column(variable, index)] = (
+                history[variable].reindex(timestamps).to_numpy()
+            )
+    variant_frame = pd.concat([out, pd.DataFrame(weather_columns, index=out.index)], axis=1)
+    return set_active_weather_columns(variant_frame, tuple(weather_columns))
 
 
-def _minimum_pair_distance(anchors: Sequence[WindAnchor]) -> float:
+def _minimum_pair_distance(anchors: Sequence[WeatherAnchor]) -> float:
     distances = [
         haversine_km(first.lat, first.lon, second.lat, second.lon)
         for index, first in enumerate(anchors)
@@ -543,11 +640,12 @@ def _fold_window_metrics(
     }
 
 
-def run_wind_anchor_analysis(
+def run_anchor_analysis(
+    model: AnchorModel,
     frame: pd.DataFrame,
     *,
-    ranked: Sequence[WindAnchor] | None = None,
-    current: Sequence[WindAnchor] | None = None,
+    ranked: Sequence[WeatherAnchor] | None = None,
+    current: Sequence[WeatherAnchor] | None = None,
     distances_km: Sequence[float] = DEFAULT_DISTANCES_KM,
     point_counts: Sequence[int] | None = DEFAULT_POINT_COUNTS,
     redundancy_penalties: Sequence[float] = (),
@@ -560,14 +658,16 @@ def run_wind_anchor_analysis(
     days: int = DAY_AHEAD_DAYS,
     seeds: int = 1,
     cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
-    cache_dir: Path = WIND_ANCHOR_CACHE_DIR,
+    cache_dir: Path | None = None,
     history_fetcher: HistoryFetcher = fetch_history,
-) -> WindAnchorResult:
-    """Compare current and distance-constrained wind anchors under an otherwise fixed wind model."""
+) -> AnchorResult:
+    """Compare one model's current anchors with spatial alternatives under a fixed model contract."""
     if not cutoffs:
         raise ValueError("At least one cutoff is required.")
-    ranked = list(ranked) if ranked is not None else read_ranked_wind_candidates()
-    current = list(current) if current is not None else current_wind_anchors()
+    contract = ANCHOR_CONTRACTS[model]
+    cache_dir = contract.cache_dir if cache_dir is None else cache_dir
+    ranked = list(ranked) if ranked is not None else read_ranked_candidates(model)
+    current = list(current) if current is not None else current_anchors(model)
     variants = build_anchor_variants(
         current,
         ranked,
@@ -592,14 +692,15 @@ def run_wind_anchor_analysis(
         )
     redundancy_ranked = list(ranked[:redundancy_candidate_pool])
     start, end = _analysis_window(frame, cutoffs, days)
-    histories = _current_histories(frame, current)
+    histories = _current_histories(frame, current, contract)
     needed = {anchor.candidate_id: anchor for variant in variants for anchor in variant.anchors}
     if redundancy_penalties:
         needed.update({anchor.candidate_id: anchor for anchor in redundancy_ranked})
     missing = [anchor for candidate_id, anchor in needed.items() if candidate_id not in histories]
     logger.info(
-        "[anchors:wind] %d variants (%s anchors) over %d frozen cutoffs; "
+        "[anchors:%s] %d variants (%s anchors) over %d frozen cutoffs; "
         "%d alternative histories required (%s .. %s)",
+        model,
         len(variants),
         ", ".join(str(count) for count in sorted({len(variant.anchors) for variant in variants})),
         len(cutoffs),
@@ -608,9 +709,16 @@ def run_wind_anchor_analysis(
         end.date(),
     )
     for index, anchor in enumerate(missing, start=1):
-        logger.info("[anchors:wind] weather %d/%d: %s", index, len(missing), anchor.candidate_id)
+        logger.info(
+            "[anchors:%s] weather %d/%d: %s",
+            model,
+            index,
+            len(missing),
+            anchor.candidate_id,
+        )
         histories[anchor.candidate_id] = load_or_fetch_anchor_history(
             anchor,
+            model=model,
             start=start,
             end=end,
             cache_dir=cache_dir,
@@ -627,20 +735,21 @@ def run_wind_anchor_analysis(
                 penalties=redundancy_penalties,
                 start=selection_start,
                 end=selection_end,
+                variable=contract.primary_variable,
             )
         )
 
-    parameters = params or load_params("wind")
+    parameters = params or load_params(model)
     seed_values = seed_list(seeds)
     trailing_end = date.fromisoformat(cutoffs[-1])
     trailing_start = trailing_end - timedelta(days=TRAILING_WINDOW_DAYS - 1)
     scored: list[dict[str, Any]] = []
     baseline_mae: float | None = None
     for index, variant in enumerate(variants, start=1):
-        logger.info("[anchors:wind] scoring %d/%d: %s", index, len(variants), variant.name)
-        variant_frame = _variant_frame(frame, variant, histories)
+        logger.info("[anchors:%s] scoring %d/%d: %s", model, index, len(variants), variant.name)
+        variant_frame = _variant_frame(frame, variant, histories, contract)
         metrics = walk_forward_metrics_seeded(
-            REGISTRY["wind"],
+            REGISTRY[model],
             variant_frame,
             parameters,
             days=days,
@@ -658,7 +767,7 @@ def run_wind_anchor_analysis(
                 "configured_min_distance_km": variant.min_distance_km,
                 "actual_min_pair_distance_km": round(_minimum_pair_distance(variant.anchors), 4),
                 "n_anchors": len(variant.anchors),
-                "n_features": REGISTRY["wind"].build_features(variant_frame).shape[1],
+                "n_features": REGISTRY[model].build_features(variant_frame).shape[1],
                 "mean_point_pearson": round(
                     sum(anchor.pearson for anchor in variant.anchors) / len(variant.anchors),
                     6,
@@ -676,7 +785,8 @@ def run_wind_anchor_analysis(
             }
         )
         logger.info(
-            "[anchors:wind] %-10s | MAE %.3f +/- %.3f MW | RMSE %.3f",
+            "[anchors:%s] %-10s | MAE %.3f +/- %.3f MW | RMSE %.3f",
+            model,
             variant.name,
             metrics["mean_mae"],
             metrics["std_mae"],
@@ -711,6 +821,9 @@ def run_wind_anchor_analysis(
     report: dict[str, Any] = {
         "horizon": f"{days * 24}h",
         "config": {
+            "model": model,
+            "point_role": contract.point_role,
+            "weather_variables": list(contract.variables),
             "n_cutoffs": len(cutoffs),
             "days": days,
             "seeds": seed_values,
@@ -733,19 +846,20 @@ def run_wind_anchor_analysis(
         "cutoffs": list(cutoffs),
         "variants": scored,
     }
-    return WindAnchorResult(scored, cutoffs, report)
+    return AnchorResult(model, scored, cutoffs, report)
 
 
-def save_wind_anchor_report(result: WindAnchorResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
+def save_anchor_report(result: AnchorResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
     """Write the reproducible anchor ranking, metrics, and per-cutoff results."""
+    contract = ANCHOR_CONTRACTS[result.model]
     payload = {
-        "model": "wind",
+        "model": result.model,
         "compared": "weather-anchor spatial diversity",
         "run_at": pd.Timestamp.now(tz="UTC").isoformat(),
         "best_variant": result.best_variant,
         **result.report,
     }
     reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / WIND_ANCHOR_REPORT
+    path = reports_dir / contract.report_name
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
