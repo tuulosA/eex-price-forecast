@@ -1,4 +1,8 @@
-"""Exploratory analysis tools over the backfilled data: feature correlation and point maps."""
+"""Offline experiments, diagnostics, evaluation reports, correlations, and point maps.
+
+Production data fetching, feature construction, model training, and forecasting remain in the package
+root. Modules here may depend on that core layer; the core layer must not depend on analysis commands.
+"""
 
 from __future__ import annotations
 

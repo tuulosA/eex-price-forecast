@@ -9,13 +9,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from eex_forecast.backtest_cutoffs import cutoff_utc, horizon_end_utc
-from eex_forecast.evaluation import (
+from eex_forecast.analysis.evaluation import (
     EVAL_HORIZON_DAYS,
     ORACLE_SCENARIOS,
     run_evaluation,
     run_oracle_diagnostics,
 )
+from eex_forecast.backtest_cutoffs import cutoff_utc, horizon_end_utc
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY, SUBMODELS
 
@@ -62,7 +62,7 @@ def test_eval_horizon_is_one_day() -> None:
 def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    with caplog.at_level(logging.INFO, logger="eex_forecast.evaluation"):
+    with caplog.at_level(logging.INFO, logger="eex_forecast.analysis.evaluation"):
         result = run_evaluation(
             _hourly_frame("2024-01-01", "2024-05-01"),
             params_by_model=FAST_PARAMS,
@@ -135,7 +135,7 @@ def test_oracle_scenarios_are_matched_and_forecast_all_reproduces_eval(
         seeds=1,
         cutoffs=cutoffs,
     )
-    with caplog.at_level(logging.INFO, logger="eex_forecast.evaluation"):
+    with caplog.at_level(logging.INFO, logger="eex_forecast.analysis.evaluation"):
         oracle = run_oracle_diagnostics(
             frame,
             params_by_model=FAST_PARAMS,

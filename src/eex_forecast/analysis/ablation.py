@@ -1,8 +1,8 @@
 """Feature ablation: does removing a chosen set of features help or hurt?
 
 This is ablation in the literal sense - remove a part and measure the loss (or gain). Where
-:mod:`eex_forecast.aggregation` compares whole weather-aggregation *strategies*, this measures the
-marginal worth of individual **features**. It works for **any** model in the registry - price (drop a
+:mod:`eex_forecast.analysis.aggregation` compares whole weather-aggregation *strategies*, this measures
+the marginal worth of individual **features**. It works for **any** model in the registry - price (drop a
 price lag, a weather aggregate) or, once a sub-model is switched to raw per-point columns, a subset of
 those columns (e.g. drop the least-useful ``ws_de*`` points).
 

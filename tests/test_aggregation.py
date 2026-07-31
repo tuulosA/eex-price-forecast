@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from tests.conftest import make_timeseries
 
-from eex_forecast.aggregation import (
+from eex_forecast.analysis.aggregation import (
     AggregationResult,
     _variant_spec,
     load_coords,
@@ -221,7 +221,7 @@ def _frame_with_neighbours(periods: int = 24 * 120) -> pd.DataFrame:
 
 
 def test_run_neighbour_aggregation_ranks_strategies_incl_baseline() -> None:
-    from eex_forecast.aggregation import run_neighbour_aggregation
+    from eex_forecast.analysis.aggregation import run_neighbour_aggregation
 
     frame = _frame_with_neighbours()
     result = run_neighbour_aggregation(
@@ -241,7 +241,7 @@ def test_run_neighbour_aggregation_ranks_strategies_incl_baseline() -> None:
 
 
 def test_save_neighbour_aggregation_report(tmp_path: Path) -> None:
-    from eex_forecast.aggregation import (
+    from eex_forecast.analysis.aggregation import (
         run_neighbour_aggregation,
         save_neighbour_aggregation_report,
     )

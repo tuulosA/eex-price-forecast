@@ -36,22 +36,24 @@ from typing import Annotated
 
 import typer
 
-from eex_forecast import (
-    ablation,
-    aggregation,
-    anchor_analysis,
-    evaluation,
-    solar_analysis,
-    tuning,
-)
 from eex_forecast import backfill as backfill_ops
 from eex_forecast import forecast as forecast_ops
 from eex_forecast import model as model_ops
+from eex_forecast import tuning
 from eex_forecast.analysis import (
+    ablation,
     aggregate_features,
+    aggregation,
     correlation_matrix,
+    evaluation,
     plot_points_map,
     save_heatmap,
+)
+from eex_forecast.analysis import (
+    anchors as anchor_analysis,
+)
+from eex_forecast.analysis import (
+    solar as solar_analysis,
 )
 from eex_forecast.analysis.correlation import correlations_with, order_by_target
 from eex_forecast.config import (
@@ -99,7 +101,8 @@ neighbours_app = typer.Typer(
 points_app.add_typer(neighbours_app, name="neighbours")
 backfill_app = typer.Typer(help="Backfill data into the database.", no_args_is_help=True)
 analyze_app = typer.Typer(
-    help="Exploratory analysis over the backfilled data.", no_args_is_help=True
+    help="Offline experiments, diagnostics, and evaluation over backfilled data.",
+    no_args_is_help=True,
 )
 aggregation_app = typer.Typer(
     help="A/B a fundamental's weather-aggregation strategies.", no_args_is_help=True
