@@ -1,25 +1,39 @@
-# Model improvement roadmap
+# Model development: roadmap and decision log
 
-This is the living, evidence-backed roadmap for improving `eex-price-forecast`. It records what the
+This is the living, evidence-backed development record for `eex-price-forecast`. It records what the
 experiments show, why modelling decisions were made, what should be tried next, and which technically
 interesting ideas are deliberately deferred.
 
-It complements the user-facing [README](../README.md) and the implementation rules in
+It complements the user-facing [README](../README.md), the reproducible commands and methodology in
+[Experimentation and evaluation](experimentation.md), and the implementation rules in
 [AGENTS.md](../AGENTS.md). Generated JSON/CSV reports remain the source of truth for exact results.
 
-Last updated: **2026-07-29**
+Last updated: **2026-07-31**
+
+## Contents
+
+- [Executive summary](#executive-summary)
+- [Current evidence and benchmarks](#current-evidence-and-benchmarks)
+- [Completed experiments and findings](#completed-experiments-and-findings)
+- [Active and proposed work](#active-and-proposed-work)
+- [Evaluation and architecture decisions](#evaluation-and-architecture-decisions)
+- [Recommended sequence](#recommended-sequence)
+- [Decision history](#decision-history)
 
 ## Executive summary
 
 ### Current direction
 
-1. **Improve solar first.** In the oracle diagnostic, substituting only the solar forecast increased
-   downstream price MAE by **1.859 EUR/MWh**, much more than wind or load. Geometry and richer
-   irradiance/cloud inputs are now adopted; the remaining evidence points to seasonal/capacity-factor
-   calibration and solar geography, not night-time handling.
+1. **The 135 km / 20-point wind anchors are adopted and production-validated.** After a matched retune,
+   wind MAE fell from **2,541 to 1,505 MW** and end-to-end price MAE fell from **12.931 to
+   12.420 EUR/MWh**. The configuration survived spacing, point-budget, redundancy, representation, and
+   live-forecast coverage checks.
 2. Improve load thermal-memory and exceptional-day features.
-3. Revisit wind geography and eventually separate onshore/offshore generation.
-4. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
+3. Eventually separate onshore/offshore wind generation if the remaining wind error justifies the added
+   model-chain complexity.
+4. Solar seasonal/capacity-drift work is parked on its own branch: it improved solar objectively but
+   changed downstream price MAE by only about 0.1 EUR/MWh, too little to justify the current complexity.
+5. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
    objectives after the feature work.
 
 ### Completed evaluation work
@@ -44,7 +58,7 @@ Last updated: **2026-07-29**
 - Forecast fundamentals inside price tuning, price ablation, and neighbour aggregation.
 - A local archive of live weather snapshots.
 
-## Evidence and benchmarks
+## Current evidence and benchmarks
 
 Committed reports:
 
@@ -71,27 +85,29 @@ Committed reports:
 
 ### Current end-to-end baseline
 
-The corrected and retuned pipeline was evaluated with one seed over all 22 frozen cutoffs:
+The adopted 135 km / 20-point wind configuration and corrected solar/load pipeline were evaluated with
+one seed over all 22 frozen cutoffs:
 
 | Model | MAE | RMSE | Unit |
 |---|---:|---:|---|
-| Wind | 2,540.680 | 3,097.944 | MW |
+| Wind | 1,504.538 | 1,925.817 | MW |
 | Solar | 1,169.164 | 1,940.718 | MW |
 | Load | 1,488.821 | 1,746.757 | MW |
-| Price | 12.931 | 16.652 | EUR/MWh |
+| Price | 12.420 | 15.992 | EUR/MWh |
 
-Compared with the immediately preceding corrected report:
+Compared with the immediately preceding report, which already included the adopted solar features but
+still used the old clustered wind anchors:
 
 | Model | Previous MAE | Current MAE | MAE change | RMSE change |
 |---|---:|---:|---:|---:|
-| Wind | 2,540.680 | 2,540.680 | 0.000 (0.00%) | 0.000 (0.00%) |
-| Solar | 1,301.493 | 1,169.164 | -132.329 (-10.17%) | -220.608 (-10.21%) |
+| Wind | 2,540.680 | 1,504.538 | -1,036.142 (-40.78%) | -1,172.127 (-37.84%) |
+| Solar | 1,169.164 | 1,169.164 | 0.000 (0.00%) | 0.000 (0.00%) |
 | Load | 1,488.821 | 1,488.821 | 0.000 (0.00%) | 0.000 (0.00%) |
-| Price | 13.027 | 12.931 | -0.096 (-0.74%) | -0.056 (-0.34%) |
+| Price | 12.931 | 12.420 | -0.510 (-3.95%) | -0.660 (-3.96%) |
 
-The new solar inputs produce a large sub-model improvement and a smaller but correctly directed
-end-to-end price gain. This difference is expected: price impact depends on when and in which market
-regime an MW error occurs, not only on its average absolute size.
+The geographically diverse wind anchors produced a large wind improvement and a meaningful downstream
+price gain. The earlier solar feature adoption also improved its sub-model substantially but moved price
+by only about 0.1 EUR/MWh; that milestone is documented under the solar findings.
 
 `std_mae = 0` in this report means only one XGBoost seed was evaluated; it does not mean there is no
 seed-to-seed uncertainty.
@@ -99,9 +115,9 @@ seed-to-seed uncertainty.
 The corrected models have been trained and a real `eex forecast --plot` run visually confirmed that
 night-time solar now reaches zero and the evening decline behaves as intended.
 
-### Refreshed tuning and report integrity
+### Earlier corrected-model tuning milestone
 
-The latest tuning/report progression is:
+Before the wind-anchor promotion, the solar/load/price tuning progression was:
 
 | Target | Previous tuned MAE | Current tuned MAE | Change |
 |---|---:|---:|---:|
@@ -109,7 +125,7 @@ The latest tuning/report progression is:
 | Load | 1,505.246 MW | 1,488.821 MW | -16.425 MW (-1.09%) |
 | Price, actual fundamentals | 11.794 EUR/MWh | 11.631 EUR/MWh | -0.164 EUR/MWh (-1.39%) |
 
-The generated JSON reports are internally consistent:
+At that milestone, the generated JSON reports were internally consistent:
 
 - each selected trial or incumbent is the minimum-MAE candidate in its tuning report;
 - `config/hyperparams.json` exactly matches the selected solar, load, and price parameters;
@@ -118,7 +134,10 @@ The generated JSON reports are internally consistent:
 - price tuning exactly matches oracle `all_actual`;
 - end-to-end eval price exactly matches oracle `forecast_all`.
 
-These equalities are useful regression checks for the shared prediction post-processing contract.
+These equalities were useful regression checks for the shared prediction post-processing contract. The
+current eval/oracle reports include the later wind-anchor promotion, while the preserved solar/load/price
+tuning reports describe the earlier milestone; exact equality between those historical and current
+reports is therefore no longer expected.
 
 ### Legacy actual-fundamentals reference
 
@@ -132,9 +151,9 @@ Keep the old evaluator values as a historical reference:
 | Price | 12.01 | 15.38 | EUR/MWh |
 
 The legacy price MAE was conditional on perfect wind, solar, and load and predates the calendar,
-radiation-alignment, and retuning work. In the current corrected report, the comparable `all_actual`
-oracle score is **11.631 EUR/MWh** and the production-like `forecast_all` score is **12.931 EUR/MWh**.
-The current fundamental-forecast penalty is therefore **1.300 EUR/MWh**.
+radiation-alignment, retuning, and wind-anchor work. In the current report, the comparable `all_actual`
+oracle score is **11.216 EUR/MWh** and the production-like `forecast_all` score is **12.420 EUR/MWh**.
+The current fundamental-forecast penalty is therefore **1.205 EUR/MWh**.
 
 ### Known limits of the baseline
 
@@ -153,32 +172,32 @@ the price model sees:
 
 | Scenario | Price MAE | Price RMSE | MAE delta vs all-actual |
 |---|---:|---:|---:|
-| All actual | 11.631 | 15.116 | +0.000 EUR/MWh |
-| Forecast wind only | 11.844 | 15.552 | +0.213 EUR/MWh |
-| Forecast solar only | 13.490 | 17.141 | +1.859 EUR/MWh |
-| Forecast load only | 11.426 | 14.920 | -0.205 EUR/MWh |
-| Forecast all | 12.931 | 16.652 | +1.300 EUR/MWh |
+| All actual | 11.216 | 14.551 | +0.000 EUR/MWh |
+| Forecast wind only | 11.178 | 14.473 | -0.037 EUR/MWh |
+| Forecast solar only | 13.033 | 16.674 | +1.817 EUR/MWh |
+| Forecast load only | 10.941 | 14.305 | -0.275 EUR/MWh |
+| Forecast all | 12.420 | 15.992 | +1.205 EUR/MWh |
 
 Interpretation:
 
-- **Solar remains the clearest price-relevant priority.** It was harmful on 16 of 22 cutoffs, with a
-  +0.630 median cutoff delta and +1.859 mean delta.
-- Wind's mean delta was only +0.213 EUR/MWh and its median was +0.024; it worsened 11 cutoffs and
-  improved 11.
-- Load's mean delta was -0.205 EUR/MWh; it worsened 10 cutoffs and improved 12. This does not make an
+- **Solar remains the clearest price-relevant priority.** It was harmful on 14 of 22 cutoffs, with a
+  +0.646 median cutoff delta and +1.817 mean delta.
+- Wind's mean delta was -0.037 EUR/MWh and its median was -0.030; it worsened 11 cutoffs and improved
+  11. The signed improvement is finite-sample error cancellation, not evidence that forecast wind is
+  better than truth.
+- Load's mean delta was -0.275 EUR/MWh; it worsened 11 cutoffs and improved 11. This does not make an
   inaccurate load forecast desirable; smoothing or error compensation may help the imperfect price
   model on some days.
-- The isolated deltas sum to +1.868 EUR/MWh, while `forecast_all` adds +1.300. The approximately
-  **-0.568 EUR/MWh interaction** shows that errors currently compensate and do not add linearly.
+- The isolated deltas sum to +1.505 EUR/MWh, while `forecast_all` adds +1.205. The approximately
+  **-0.300 EUR/MWh interaction** shows that errors currently compensate and do not add linearly.
 - Wind/load effects are small enough to require multi-seed confirmation before strong conclusions.
 
-The richer solar inputs reduced solar MAE by 132 MW, its isolated oracle penalty by 0.080 EUR/MWh, and
-the full-chain price MAE by 0.096 EUR/MWh. The price model's `all_actual` score remained exactly 11.631,
-confirming that the comparison changed only the forecast supplied by the solar sub-model. The smaller
-downstream gain is not contradictory: MW MAE weights hours uniformly, whereas price impact depends on
-the timing, direction, and market regime of each error.
+At the earlier solar-feature milestone, richer solar inputs reduced solar MAE by 132 MW, its isolated
+oracle penalty by 0.080 EUR/MWh, and full-chain price MAE by 0.096 EUR/MWh. The smaller downstream gain
+is not contradictory: MW MAE weights hours uniformly, whereas price impact depends on the timing,
+direction, and market regime of each error.
 
-## What existing experiments show
+## Completed experiments and findings
 
 ### Solar
 
@@ -381,7 +400,7 @@ These are conditional single-price-model results using actual fundamentals. The 
 `none` is meaningful; the country-cube versus country-mean difference is too small to adopt from one seed
 and may change under forecast fundamentals.
 
-## Model improvement tracks
+## Active and proposed work
 
 ### 1. Solar physics and calibration
 
@@ -495,6 +514,8 @@ Do not overwrite `load_forecast_mw`; preserve provenance.
 
 #### Diversify domestic anchors
 
+**Status: adopted and validated in the production pipeline.**
+
 The current selector takes the top 20 points by individual Pearson correlation without domestic
 distance/regional constraints. Selected points are tightly clustered:
 
@@ -503,14 +524,67 @@ latitude:  51.82 to 53.64
 longitude:  6.60 to 10.64
 ```
 
-Test:
+The isolated anchor experiment held raw features, capacity scaling, tuned hyperparameters, and all 22
+frozen cutoffs fixed. The decisive five-seed comparison was:
 
-- minimum distance between retained points;
-- quotas for North Sea offshore, Baltic/east, northwest onshore, and central/south onshore;
-- point counts of 10, 20, 30, and 40;
-- optional greedy forward selection by development-cutoff wind MAE.
+| Selection | Wind MAE | Seed std | RMSE | Delta vs current | Trailing-365d MAE |
+|---|---:|---:|---:|---:|---:|
+| Current top 20 | 2,603 MW | 49 MW | 3,144 MW | — | 2,520 MW |
+| Minimum 125 km | 1,695 MW | 37 MW | 2,161 MW | −908 MW (−34.9%) | 1,688 MW |
+| Minimum 135 km | **1,620 MW** | 35 MW | **2,053 MW** | **−983 MW (−37.8%)** | **1,641 MW** |
+| Minimum 140 km | 1,704 MW | 34 MW | 2,152 MW | −899 MW (−34.5%) | 1,659 MW |
 
-Keep the raw-point representation initially; it already wins aggregation.
+The trailing window ends at the latest complete scored cutoff and contains 16 delivery days across the
+preceding 365 days; it avoids presenting the incomplete 2026 calendar year as a standalone comparison.
+The paired five-seed improvement of the 135 km set is −983 ±56 MW over all cutoffs and −879 ±59 MW in
+that trailing window.
+
+Several challenges were screened before choosing 135 km:
+
+- Fine spacing breakpoints at 131, 132, and 139.5 km did not beat it.
+- Nested budgets from 8 to 20 points improved toward all 20 points (one-seed MAE fell from 2,190 to
+  1,574 MW). Relaxing spacing to test up to 34 points also failed to improve on 135 km / 20: the best
+  expanded set was 100 km / 24 points at 1,691 MW.
+- An exact optimizer maximising summed point correlation subject to 135 km spacing was worse
+  (1,782 MW in the one-seed screen), showing that broader lower-ranked regimes matter.
+- Rejecting candidates by pairwise 2025 wind-series correlation was worse (1,702 MW). A smoother
+  relevance-minus-redundancy selector over the top 80 candidates was also worse across penalty weights
+  0.05–10 (best 1,766 MW).
+- Farthest-first selection balancing ranked relevance against geographic coverage was worse across
+  relevance weights 0–1 (best 1,755 MW). The hard distance threshold preserves more useful local
+  structure than maximizing spread continuously.
+- Adding national or regional summary statistics alongside every raw point was worse
+  (1,711–1,739 MW), so the raw representation remains preferred.
+
+The winning set spans the German land/EEZ footprint and contains 17 land and three offshore points,
+versus the former northwestern production cluster with 18 land and two offshore points. Three is also
+the natural maximum reached by the greedy 135 km selection while retaining 20 total points, so a simple
+offshore quota is not a useful further discriminator.
+
+Promotion replaced only the 20 configured wind anchors, then backfilled the `wind` role from 2023
+onward. A matched 20-trial retune improved the winning set's seed-42 MAE from 1,574 to **1,505 MW**.
+The production before/after comparison on the identical 22 cutoffs was:
+
+| Metric | Before promotion | After promotion | Change |
+|---|---:|---:|---:|
+| Wind MAE | 2,540.680 MW | **1,504.538 MW** | **−1,036.141 MW (−40.8%)** |
+| Wind RMSE | 3,097.944 MW | **1,925.817 MW** | **−1,172.127 MW (−37.8%)** |
+| End-to-end price MAE | 12.9306 EUR/MWh | **12.4204 EUR/MWh** | **−0.5102 (−3.9%)** |
+| End-to-end price RMSE | 16.6518 EUR/MWh | **15.9919 EUR/MWh** | **−0.6599 (−4.0%)** |
+
+Oracle diagnostics support the promotion. `forecast_wind` moved from 11.8436 MAE
+(`+0.2129` versus `all_actual`) to **11.1782** (`−0.0374`). The negative signed delta is finite-sample
+error cancellation, not a claim that forecast wind is intrinsically better than observed wind; the
+important result is that the former wind penalty disappeared. `all_actual` itself improved from 11.6307
+to 11.2156 because the price model directly consumes German wind-weather aggregates as well as the wind
+fundamental. The end-to-end price gain therefore combines a better wind sub-model with a better-spread
+direct wind-weather representation.
+
+The first live forecast fetched all 214 configured weather columns successfully. Its 312 future rows
+contained no null wind/solar/load/price predictions, and the fundamentals plot showed a continuous wind
+transition across the issue boundary. Open-Meteo ended partway through the fourteenth delivery day, so
+the existing completeness guard correctly retained 13 full days rather than publishing a partial final
+day; that endpoint limitation is independent of the anchor promotion.
 
 #### Separate onshore and offshore wind
 
@@ -706,16 +780,17 @@ choosing the booster iteration. Every reported metric and experiment score uses 
 6. **Completed:** daylight solar error slicing by hour, season, capacity factor, and cutoff.
 7. **Completed:** solar elevation and clear-sky radiation/index experiment.
 8. **Completed:** solar GTI/direct/diffuse/DNI/cloud experiment; adopted radiation components + cloud.
-9. **Next:** solar seasonal/capacity-factor calibration and capacity-drift experiments.
-10. Solar anchor diversity or PV-capacity-weighted geography.
-11. Compact lagged/rolling temperature features.
-12. Diverse wind-anchor selection.
-13. Separate onshore/offshore wind.
-14. Training-history learning curves and recency weighting.
-15. Robust objectives, interpretation diagnostics, and ensembles.
+9. **Completed:** diverse wind-anchor experiment; 135 km spacing cut wind MAE by ~38%.
+10. **Completed:** adopted/backfilled the 135 km anchors, retuned wind, and confirmed a 40.8% wind-MAE
+    and 3.9% end-to-end price-MAE reduction.
+11. **Next:** compact lagged/rolling temperature features for load.
+12. Separate onshore/offshore wind.
+13. Training-history learning curves and recency weighting.
+14. Robust objectives, interpretation diagnostics, and ensembles.
 
 Deferred:
 
+- solar seasonal/capacity-drift and further solar-geography work (preserved on a separate branch);
 - development versus untouched holdout cutoffs;
 - fixed-run historical weather;
 - cached forecast fundamentals for end-to-end price tuning/analysis.
@@ -751,6 +826,16 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-07-30
+
+- Tested wind-anchor spacing, point budgets, redundancy penalties, coverage weighting, and expanded
+  candidate sets without modifying production configuration.
+- Adopted 20 wind anchors with a 135 km minimum separation after the five-seed experiment cut wind MAE
+  by about 38% against the clustered point set.
+- Backfilled the promoted wind role, retuned wind, and confirmed a 40.8% wind-MAE reduction and a 3.9%
+  end-to-end price-MAE reduction on the same 22 frozen cutoffs.
+- Confirmed the promoted setup with a successful live forecast and complete wind coverage.
 
 ### 2026-07-29
 
