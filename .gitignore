@@ -9,6 +9,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.tmp_pytest*/
 .mypy_cache/
 .ruff_cache/
 .coverage
@@ -35,6 +36,8 @@ data/**
 !data/analysis/solar_error_slices.json
 !data/analysis/solar_feature_experiment.json
 !data/analysis/solar_irradiance_experiment.json
+!data/analysis/wind_anchor_experiment.json
+data/pytest_tmp/
 
 # OS / editor
 .DS_Store

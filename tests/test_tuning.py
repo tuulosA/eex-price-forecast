@@ -71,6 +71,7 @@ def test_walk_forward_metrics_seeded_reports_spread(timeseries_frame: pd.DataFra
         REGISTRY["wind"], timeseries_frame, TINY, days=DAYS, seeds=[42], cutoffs=CUTOFFS
     )
     assert one["std_mae"] == 0.0 and len(one["per_seed_mae"]) == 1  # single seed -> no spread
+    assert one["folds_by_seed"] == [one["folds"]]
     # The per-fold schema carries the DST-exact UTC delivery-day window.
     assert {"delivery_day", "start_utc", "end_utc", "test_rows", "mae", "rmse"} == set(
         one["folds"][0]
@@ -79,6 +80,8 @@ def test_walk_forward_metrics_seeded_reports_spread(timeseries_frame: pd.DataFra
         REGISTRY["wind"], timeseries_frame, TINY, days=DAYS, seeds=seed_list(4), cutoffs=CUTOFFS
     )
     assert len(many["per_seed_mae"]) == 4 and many["std_mae"] >= 0.0
+    assert len(many["folds_by_seed"]) == 4
+    assert all(len(folds) == len(CUTOFFS) for folds in many["folds_by_seed"])
     assert np.isfinite(many["mean_mae"]) and many["seeds"] == seed_list(4)
 
 

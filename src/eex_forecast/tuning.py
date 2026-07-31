@@ -303,10 +303,12 @@ def walk_forward_metrics_seeded(
     per_mae: list[float] = []
     per_rmse: list[float] = []
     folds0: list[dict[str, Any]] = []
+    folds_by_seed: list[list[dict[str, Any]]] = []
     for index, seed in enumerate(seeds):
         folds, mae, rmse = _fold_metrics(
             spec, data, {**params, "random_state": int(seed)}, cutoffs, days
         )
+        folds_by_seed.append(folds)
         per_mae.append(mae)
         per_rmse.append(rmse)
         if index == 0:
@@ -331,6 +333,7 @@ def walk_forward_metrics_seeded(
         "per_seed_rmse": per_rmse,
         "seeds": [int(seed) for seed in seeds],
         "folds": folds0,
+        "folds_by_seed": folds_by_seed,
     }
 
 
