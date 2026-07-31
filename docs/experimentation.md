@@ -118,23 +118,34 @@ direct/diffuse/DNI, and cloud features. Neighbour aggregation is a price-model e
 `--capacity-scaling` and `--no-capacity-scaling` compare capacity-factor learning with raw-MW learning
 for wind and solar. Both are scored back in MW.
 
-## Wind-anchor diversity
+## Weather-anchor diversity
 
 Individual target correlation can select many nearby points that describe the same weather regime.
-Anchor analysis compares the adopted 20-point wind set with spatial alternatives without modifying
-`config/weather_points.json` or the production database:
+Anchor analysis compares the adopted 20-point set for each sub-model with spatial alternatives without
+modifying `config/weather_points.json` or the production database:
 
 ```bash
 eex analyze anchors wind
+eex analyze anchors load
+eex analyze anchors solar
 eex analyze anchors wind --distances 125,135,140 --seeds 5
 eex analyze anchors wind --distances 135 --counts 10,15,20
 eex analyze anchors wind --coverage-weights 0,0.2,0.4 --candidate-pool 80
 eex analyze anchors wind --redundancy-penalties 0.5,1 --candidate-pool 80
 ```
 
-Alternative histories are cached under `data/weather_cache/wind_anchors/`. The adopted 135 km / 20-point
-set reduced wind MAE by about 38% in the isolated five-seed experiment and by 40.8% after production
-backfill and matched retuning. Exact results and the tested alternatives are recorded in the
+Alternative histories are cached under `data/weather_cache/<model>_anchors/`. Wind retains speed and
+co-located temperature; load retains temperature and irradiance; solar retains GHI plus its complete
+GTI/direct/diffuse/DNI/cloud contract. Reports are written to
+`data/analysis/<model>_anchor_experiment.json`.
+
+The analyzer explicitly marks each variant's weather columns before calling the shared feature builder.
+Normal training and forecasting instead use only columns belonging to `config/weather_points.json`;
+extra columns left in SQLite by an earlier experiment are intentionally ignored.
+
+The adopted 135 km / 20-point wind set reduced wind MAE by about 38% in the isolated five-seed
+experiment and by 40.8% after production backfill and matched retuning. Exact results and the tested
+alternatives are recorded in the
 [development record](model-development.md) and `data/analysis/wind_anchor_experiment.json`.
 
 ## Ablation
@@ -175,9 +186,9 @@ The current adopted-anchor result over 22 frozen days is:
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,504.538 MW | 1,925.817 MW |
-| Solar | 1,169.164 MW | 1,940.718 MW |
+| Solar | 847.183 MW | 1,417.605 MW |
 | Load | 1,488.821 MW | 1,746.757 MW |
-| Price | 12.420 EUR/MWh | 15.992 EUR/MWh |
+| Price | 11.327 EUR/MWh | 14.664 EUR/MWh |
 
 These are development benchmarks, not a guarantee of live 14-day accuracy.
 

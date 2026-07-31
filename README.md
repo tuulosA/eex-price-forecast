@@ -158,7 +158,7 @@ eex analyze eval                            # full weather -> fundamentals -> pr
 eex analyze oracle                          # isolate downstream fundamental effects
 eex analyze ablation --target price         # remove features and measure the change
 eex analyze aggregation wind                # compare weather representations
-eex analyze anchors wind                    # compare wind-anchor selections
+eex analyze anchors wind                    # compare anchor selections (also load / solar)
 eex model tune --target wind                # Optuna tuning with incumbent protection
 ```
 
@@ -167,9 +167,9 @@ The current 22-day end-to-end benchmark is:
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,504.538 MW | 1,925.817 MW |
-| Solar | 1,169.164 MW | 1,940.718 MW |
+| Solar | 847.183 MW | 1,417.605 MW |
 | Load | 1,488.821 MW | 1,746.757 MW |
-| Price | 12.420 EUR/MWh | 15.992 EUR/MWh |
+| Price | 11.327 EUR/MWh | 14.664 EUR/MWh |
 
 These are development benchmarks, not a claim of historical 14-day accuracy. Open-Meteo's archived
 forecast series has modest D+1 optimism because it stitches short-lead ECMWF run segments.

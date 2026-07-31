@@ -11,6 +11,7 @@ from tests.conftest import make_timeseries
 
 from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
+from eex_forecast.features import set_active_weather_columns
 from eex_forecast.forecast import (
     _first_market_day_start,
     _forecast_split,
@@ -128,6 +129,22 @@ def test_weather_coverage_end_finds_last_real_hour() -> None:
     frame = pd.DataFrame({"timestamp": times, "ws_de01": [1.0, 2, 3, np.nan, np.nan, np.nan]})
     # Weather runs out after the third hour; coverage_end is that last present hour.
     assert _weather_coverage_end(frame, pd.Series(times), now) == times[2]
+
+
+def test_weather_coverage_ignores_retired_anchor_columns() -> None:
+    now = pd.Timestamp("2026-08-01 00:00", tz="UTC")
+    times = pd.date_range(now, periods=6, freq="h", tz="UTC")
+    frame = pd.DataFrame(
+        {
+            "timestamp": times,
+            "ws_de01": [1.0, 2, 3, 4, 5, np.nan],
+            # A column retained by SQLite after an anchor rollback must not shorten coverage.
+            "t_de21": [1.0, 2, np.nan, np.nan, np.nan, np.nan],
+        }
+    )
+    set_active_weather_columns(frame, ["ws_de01"])
+
+    assert _weather_coverage_end(frame, pd.Series(times), now) == times[4]
 
 
 def test_weather_coverage_reserves_following_hour_for_radiation_alignment() -> None:

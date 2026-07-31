@@ -1,25 +1,38 @@
-"""Tests for the wind weather-anchor spatial-diversity experiment."""
+"""Tests for sub-model weather-anchor spatial-diversity experiments."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import pandas as pd
+import pytest
 from tests.conftest import make_timeseries
 
-from eex_forecast.weather.openmeteo import TEMPERATURE_2M, WIND_SPEED_100M
-from eex_forecast.wind_anchor_analysis import (
-    WindAnchor,
+from eex_forecast.anchor_analysis import (
+    ANCHOR_CONTRACTS,
+    AnchorModel,
+    WeatherAnchor,
     build_anchor_variants,
     build_coverage_variants,
     build_redundancy_variants,
     load_or_fetch_anchor_history,
-    run_wind_anchor_analysis,
-    save_wind_anchor_report,
+    run_anchor_analysis,
+    save_anchor_report,
     select_with_coverage_balance,
     select_with_minimum_distance,
     select_with_redundancy_penalty,
+)
+from eex_forecast.weather.openmeteo import (
+    CLOUD_COVER,
+    DIFFUSE_RADIATION,
+    DIRECT_NORMAL_IRRADIANCE,
+    DIRECT_RADIATION,
+    GLOBAL_TILTED_IRRADIANCE,
+    SHORTWAVE_RADIATION,
+    TEMPERATURE_2M,
+    WIND_SPEED_100M,
 )
 
 TINY = {
@@ -38,8 +51,8 @@ TINY = {
 }
 
 
-def _anchor(name: str, lat: float, pearson: float) -> WindAnchor:
-    return WindAnchor(name, lat, 10.0, pearson, 0)
+def _anchor(name: str, lat: float, pearson: float) -> WeatherAnchor:
+    return WeatherAnchor(name, lat, 10.0, pearson, 0)
 
 
 def test_distance_selection_is_correlation_ranked_but_skips_near_duplicates() -> None:
@@ -91,7 +104,7 @@ def test_anchor_history_cache_avoids_second_fetch(tmp_path: Path) -> None:
             }
         )
 
-    anchor = WindAnchor("candidate", 50.0, 10.0, 0.8, 0)
+    anchor = WeatherAnchor("candidate", 50.0, 10.0, 0.8, 0)
     kwargs = {
         "start": pd.Timestamp("2024-01-01", tz="UTC"),
         "end": pd.Timestamp("2024-01-02", tz="UTC"),
@@ -161,9 +174,9 @@ def test_redundancy_selection_avoids_meteorological_duplicate() -> None:
 
 def test_coverage_selection_can_prefer_spread_over_next_ranked_point() -> None:
     ranked = [
-        WindAnchor("best", 50.0, 10.0, 0.90, 0),
-        WindAnchor("near", 50.1, 10.0, 0.89, 0),
-        WindAnchor("far", 54.0, 10.0, 0.70, 0),
+        WeatherAnchor("best", 50.0, 10.0, 0.90, 0),
+        WeatherAnchor("near", 50.1, 10.0, 0.89, 0),
+        WeatherAnchor("far", 54.0, 10.0, 0.70, 0),
     ]
 
     spread = select_with_coverage_balance(ranked, count=2, relevance_weight=0.0)
@@ -203,7 +216,8 @@ def test_run_wind_anchor_analysis_scores_equal_sized_variants(tmp_path: Path) ->
             }
         )
 
-    result = run_wind_anchor_analysis(
+    result = run_anchor_analysis(
+        "wind",
         frame,
         ranked=ranked,
         current=current,
@@ -226,8 +240,73 @@ def test_run_wind_anchor_analysis_scores_equal_sized_variants(tmp_path: Path) ->
     )
     assert all(pd.notna(variant["mean_mae"]) for variant in result.variants)
 
-    path = save_wind_anchor_report(result, reports_dir=tmp_path / "reports")
+    path = save_anchor_report(result, reports_dir=tmp_path / "reports")
     payload = json.loads(path.read_text())
     assert payload["model"] == "wind"
     assert payload["compared"] == "weather-anchor spatial diversity"
     assert payload["best_variant"] == result.best_variant
+
+
+@pytest.mark.parametrize("model", ["load", "solar"])
+def test_run_anchor_analysis_preserves_full_production_weather_contract(
+    model: AnchorModel, tmp_path: Path
+) -> None:
+    frame = make_timeseries(periods=24 * 120, start="2024-01-01")
+    contract = ANCHOR_CONTRACTS[model]
+    source = {
+        TEMPERATURE_2M: frame["t_de01"],
+        SHORTWAVE_RADIATION: frame["ghi_de01"],
+        GLOBAL_TILTED_IRRADIANCE: frame["ghi_de01"] * 0.9,
+        DIRECT_RADIATION: frame["ghi_de01"] * 0.6,
+        DIFFUSE_RADIATION: frame["ghi_de01"] * 0.4,
+        DIRECT_NORMAL_IRRADIANCE: frame["ghi_de01"] * 0.7,
+        CLOUD_COVER: pd.Series(40.0, index=frame.index),
+    }
+    for point_index in (1, 2):
+        for variable in contract.variables:
+            frame[contract.column(variable, point_index)] = source[variable]
+
+    current = [_anchor("current_1", 50.0, 0.90), _anchor("current_2", 50.1, 0.89)]
+    ranked = [*current, _anchor("diverse", 51.0, 0.80)]
+    fetched_variables: list[tuple[str, ...]] = []
+
+    def fake_fetch(
+        lat: float,
+        lon: float,
+        *,
+        start: str,
+        end: str,
+        variables: Sequence[str],
+    ) -> pd.DataFrame:
+        del lat, lon
+        fetched_variables.append(tuple(variables))
+        times = pd.date_range(start, f"{end} 23:00", freq="h", tz="UTC")
+        return pd.DataFrame(
+            {
+                "timestamp": times,
+                **{
+                    variable: source[variable].iloc[: len(times)].to_numpy()
+                    for variable in variables
+                },
+            }
+        )
+
+    result = run_anchor_analysis(
+        model,
+        frame,
+        ranked=ranked,
+        current=current,
+        distances_km=(75.0,),
+        params=TINY,
+        cutoffs=("2024-03-01", "2024-04-01"),
+        cache_dir=tmp_path / f"{model}_cache",
+        history_fetcher=fake_fetch,
+    )
+
+    assert {variant["variant"] for variant in result.variants} == {"current", "min_75km"}
+    assert result.report["config"]["weather_variables"] == list(contract.variables)
+    assert fetched_variables == [contract.variables]
+    path = save_anchor_report(result, reports_dir=tmp_path / "reports")
+    payload = json.loads(path.read_text())
+    assert payload["model"] == model
+    assert path.name == f"{model}_anchor_experiment.json"

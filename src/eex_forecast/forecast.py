@@ -35,6 +35,7 @@ from eex_forecast.db import connect, read_frame, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.features import (
     TIMESTAMP,
+    active_weather_columns,
     calendar_features,
     neighbour_wind_block,
     ntc_features,
@@ -169,7 +170,12 @@ def _weather_coverage_end(
     following timestamp's GHI is also present. This prevents retaining a final hour whose aligned solar
     feature would be NaN even though the raw weather row at that hour exists.
     """
-    weather = [c for c in frame.columns if c.startswith(_DOMESTIC_WEATHER_PREFIXES)]
+    active = active_weather_columns(frame)
+    weather = [
+        column
+        for column in frame.columns
+        if column.startswith(_DOMESTIC_WEATHER_PREFIXES) and column in active
+    ]
     if not weather:
         return None
     present = frame[weather].notna().all(axis=1)

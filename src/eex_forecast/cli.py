@@ -15,7 +15,7 @@ Command groups:
 - eex analyze correlation: feature correlation matrix over the backfilled data.
 - eex analyze aggregation wind|solar|load|neighbour: A/B a fundamental's weather-aggregation strategies.
 - eex analyze ablation: remove chosen features and measure the loss (full vs reduced feature set).
-- eex analyze anchors wind: A/B current versus spatially diverse German wind weather anchors.
+- eex analyze anchors wind|load|solar: A/B current versus spatially diverse weather anchors.
 - eex analyze solar-errors: slice production-faithful solar errors by daylight regime.
 - eex analyze solar-features: A/B deterministic solar geometry and clear-sky features.
 - eex analyze solar-irradiance: A/B GTI/direct/diffuse/DNI/cloud solar inputs.
@@ -39,10 +39,10 @@ import typer
 from eex_forecast import (
     ablation,
     aggregation,
+    anchor_analysis,
     evaluation,
     solar_analysis,
     tuning,
-    wind_anchor_analysis,
 )
 from eex_forecast import backfill as backfill_ops
 from eex_forecast import forecast as forecast_ops
@@ -620,43 +620,44 @@ def aggregation_neighbour(
     )
 
 
-@anchors_app.command("wind")
-def anchors_wind(
-    distances: Annotated[
-        str,
-        typer.Option(help="Comma-separated minimum anchor distances in km."),
-    ] = "125,140",
-    counts: Annotated[
-        str | None,
-        typer.Option(
-            help="Optional comma-separated point counts for nested distance-selected subsets."
-        ),
-    ] = None,
-    redundancy_penalties: Annotated[
-        str | None,
-        typer.Option(
-            "--redundancy-penalties",
-            help="Optional relevance-minus-weather-redundancy penalty weights.",
-        ),
-    ] = None,
-    candidate_pool: Annotated[
-        int,
-        typer.Option(help="Top-ranked candidates considered by redundancy/coverage selection."),
-    ] = 80,
-    coverage_weights: Annotated[
-        str | None,
-        typer.Option(
-            "--coverage-weights",
-            help="Optional relevance weights (0=spread, 1=relevance) for farthest-first selection.",
-        ),
-    ] = None,
-    seeds: _SeedsOpt = 1,
-) -> None:
-    """Compare current wind anchors with correlation-ranked spatial alternatives.
+_AnchorDistancesOpt = Annotated[
+    str, typer.Option(help="Comma-separated minimum anchor distances in km.")
+]
+_AnchorCountsOpt = Annotated[
+    str | None,
+    typer.Option(
+        help="Optional comma-separated point counts for nested distance-selected subsets."
+    ),
+]
+_AnchorRedundancyOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--redundancy-penalties",
+        help="Optional relevance-minus-weather-redundancy penalty weights.",
+    ),
+]
+_AnchorPoolOpt = Annotated[
+    int, typer.Option(help="Top-ranked candidates considered by redundancy/coverage selection.")
+]
+_AnchorCoverageOpt = Annotated[
+    str | None,
+    typer.Option(
+        "--coverage-weights",
+        help="Optional relevance weights (0=spread, 1=relevance) for farthest-first selection.",
+    ),
+]
 
-    Alternative weather history is cached under ``data/weather_cache/wind_anchors``. The command does
-    not modify the production database or ``config/weather_points.json``.
-    """
+
+def _run_anchor_command(
+    model: anchor_analysis.AnchorModel,
+    distances: str,
+    counts: str | None,
+    redundancy_penalties: str | None,
+    candidate_pool: int,
+    coverage_weights: str | None,
+    seeds: int,
+) -> None:
+    """Parse shared anchor options, run one model, and print comparable full/trailing metrics."""
     try:
         distance_values = tuple(
             float(value.strip()) for value in distances.split(",") if value.strip()
@@ -711,7 +712,8 @@ def anchors_wind(
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
     try:
-        result = wind_anchor_analysis.run_wind_anchor_analysis(
+        result = anchor_analysis.run_anchor_analysis(
+            model,
             frame,
             distances_km=distance_values,
             point_counts=point_counts,
@@ -723,9 +725,9 @@ def anchors_wind(
         )
     except (FileNotFoundError, ValueError) as error:
         raise typer.BadParameter(str(error)) from error
-    path = wind_anchor_analysis.save_wind_anchor_report(result)
+    path = anchor_analysis.save_anchor_report(result)
     typer.echo(
-        f"Wind-anchor diversity "
+        f"{model.title()}-anchor diversity "
         f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
         f"production baseline {result.report['config']['point_count']} anchors):"
     )
@@ -754,6 +756,69 @@ def anchors_wind(
     typer.echo(
         f"  best: {result.best_variant}{_best_within_noise(result.variants, seeds)} "
         f"| report -> {path}"
+    )
+
+
+@anchors_app.command("wind")
+def anchors_wind(
+    distances: _AnchorDistancesOpt = "125,140",
+    counts: _AnchorCountsOpt = None,
+    redundancy_penalties: _AnchorRedundancyOpt = None,
+    candidate_pool: _AnchorPoolOpt = 80,
+    coverage_weights: _AnchorCoverageOpt = None,
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Compare current wind anchors with correlation-ranked spatial alternatives."""
+    _run_anchor_command(
+        "wind",
+        distances,
+        counts,
+        redundancy_penalties,
+        candidate_pool,
+        coverage_weights,
+        seeds,
+    )
+
+
+@anchors_app.command("load")
+def anchors_load(
+    distances: _AnchorDistancesOpt = "75,100",
+    counts: _AnchorCountsOpt = None,
+    redundancy_penalties: _AnchorRedundancyOpt = None,
+    candidate_pool: _AnchorPoolOpt = 80,
+    coverage_weights: _AnchorCoverageOpt = None,
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Compare current load-temperature anchors with spatial alternatives."""
+    _run_anchor_command(
+        "load",
+        distances,
+        counts,
+        redundancy_penalties,
+        candidate_pool,
+        coverage_weights,
+        seeds,
+    )
+
+
+@anchors_app.command("solar")
+def anchors_solar(
+    distances: _AnchorDistancesOpt = "75,100,125",
+    counts: _AnchorCountsOpt = None,
+    redundancy_penalties: _AnchorRedundancyOpt = None,
+    candidate_pool: _AnchorPoolOpt = 80,
+    coverage_weights: _AnchorCoverageOpt = None,
+    seeds: _SeedsOpt = 1,
+) -> None:
+    """Compare current solar anchors with production-faithful spatial alternatives."""
+    _run_anchor_command(
+        "solar",
+        distances,
+        counts,
+        redundancy_penalties,
+        candidate_pool,
+        coverage_weights,
+        seeds,
     )
 
 

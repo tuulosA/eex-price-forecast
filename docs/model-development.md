@@ -28,12 +28,17 @@ Last updated: **2026-07-31**
    wind MAE fell from **2,541 to 1,505 MW** and end-to-end price MAE fell from **12.931 to
    12.420 EUR/MWh**. The configuration survived spacing, point-budget, redundancy, representation, and
    live-forecast coverage checks.
-2. Improve load thermal-memory and exceptional-day features.
-3. Eventually separate onshore/offshore wind generation if the remaining wind error justifies the added
+2. **The 100 km / 31-point solar anchors are adopted and production-validated.** Solar MAE fell from
+   **1,169 to 847 MW**, its isolated oracle price penalty fell from **+1.817 to +0.509 EUR/MWh**, and
+   end-to-end price MAE fell from **12.420 to 11.327 EUR/MWh**.
+3. **The 100 km / 26-point load candidate was rejected at the end-to-end gate.** It improved load MAE
+   by 64 MW but worsened price MAE by 0.169 EUR/MWh, so production remains at 20 load anchors. Next,
+   improve load thermal-memory and exceptional-day features.
+4. Eventually separate onshore/offshore wind generation if the remaining wind error justifies the added
    model-chain complexity.
-4. Solar seasonal/capacity-drift work is parked on its own branch: it improved solar objectively but
+5. Solar seasonal/capacity-drift work is parked on its own branch: it improved solar objectively but
    changed downstream price MAE by only about 0.1 EUR/MWh, too little to justify the current complexity.
-5. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
+6. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
    objectives after the feature work.
 
 ### Completed evaluation work
@@ -82,38 +87,43 @@ Committed reports:
   [without MW fundamentals](../data/ablation/price_no_fundamentals_ablation.json)
 - Ranked domestic points: [wind](../data/rank/wind_rank.csv),
   [solar](../data/rank/solar_rank.csv), and [temperature](../data/rank/temp_rank.csv)
+- Anchor experiments: [wind](../data/analysis/wind_anchor_experiment.json),
+  [solar](../data/analysis/solar_anchor_experiment.json), and
+  [load](../data/analysis/load_anchor_experiment.json)
 
 ### Current end-to-end baseline
 
-The adopted 135 km / 20-point wind configuration and corrected solar/load pipeline were evaluated with
-one seed over all 22 frozen cutoffs:
+The adopted 135 km / 20-point wind and 100 km / 31-point solar configurations were evaluated with one
+seed over all 22 frozen cutoffs:
 
 | Model | MAE | RMSE | Unit |
 |---|---:|---:|---|
 | Wind | 1,504.538 | 1,925.817 | MW |
-| Solar | 1,169.164 | 1,940.718 | MW |
+| Solar | 847.183 | 1,417.605 | MW |
 | Load | 1,488.821 | 1,746.757 | MW |
-| Price | 12.420 | 15.992 | EUR/MWh |
+| Price | 11.327 | 14.664 | EUR/MWh |
 
-Compared with the immediately preceding report, which already included the adopted solar features but
-still used the old clustered wind anchors:
+Compared with the immediately preceding report, which already included the adopted wind anchors but
+still used the clustered 20-point solar set:
 
 | Model | Previous MAE | Current MAE | MAE change | RMSE change |
 |---|---:|---:|---:|---:|
-| Wind | 2,540.680 | 1,504.538 | -1,036.142 (-40.78%) | -1,172.127 (-37.84%) |
-| Solar | 1,169.164 | 1,169.164 | 0.000 (0.00%) | 0.000 (0.00%) |
+| Wind | 1,504.538 | 1,504.538 | 0.000 (0.00%) | 0.000 (0.00%) |
+| Solar | 1,169.164 | 847.183 | -321.981 (-27.54%) | -523.113 (-26.95%) |
 | Load | 1,488.821 | 1,488.821 | 0.000 (0.00%) | 0.000 (0.00%) |
-| Price | 12.931 | 12.420 | -0.510 (-3.95%) | -0.660 (-3.96%) |
+| Price | 12.420 | 11.327 | -1.094 (-8.80%) | -1.328 (-8.31%) |
 
-The geographically diverse wind anchors produced a large wind improvement and a meaningful downstream
-price gain. The earlier solar feature adoption also improved its sub-model substantially but moved price
-by only about 0.1 EUR/MWh; that milestone is documented under the solar findings.
+The expanded solar geography produced both a large sub-model improvement and a material downstream
+price gain. Because solar weather aggregates also enter the price model directly, the end-to-end change
+includes both the better fundamental and the changed direct irradiance representation; oracle scenarios
+below separate the fundamental substitution effect within the new configuration.
 
 `std_mae = 0` in this report means only one XGBoost seed was evaluated; it does not mean there is no
 seed-to-seed uncertainty.
 
-The corrected models have been trained and a real `eex forecast --plot` run visually confirmed that
-night-time solar now reaches zero and the evening decline behaves as intended.
+The corrected models have been trained and a real `eex forecast --plot` run fetched all 280 weather
+columns. All 336 out-of-sample hours had complete model predictions; night-time solar reached zero and
+the plot remained continuous across the forecast boundary.
 
 ### Earlier corrected-model tuning milestone
 
@@ -135,9 +145,10 @@ At that milestone, the generated JSON reports were internally consistent:
 - end-to-end eval price exactly matches oracle `forecast_all`.
 
 These equalities were useful regression checks for the shared prediction post-processing contract. The
-current eval/oracle reports include the later wind-anchor promotion, while the preserved solar/load/price
-tuning reports describe the earlier milestone; exact equality between those historical and current
-reports is therefore no longer expected.
+current solar tuning report reflects the later 31-anchor promotion and exactly matches current solar
+eval at 847.183 MW. The refreshed load report retained its incumbent and exactly matches current load
+eval at 1,488.821 MW. The price tuning report still describes an earlier milestone, so exact equality
+between that report and current oracle `all_actual` is no longer expected.
 
 ### Legacy actual-fundamentals reference
 
@@ -151,9 +162,10 @@ Keep the old evaluator values as a historical reference:
 | Price | 12.01 | 15.38 | EUR/MWh |
 
 The legacy price MAE was conditional on perfect wind, solar, and load and predates the calendar,
-radiation-alignment, retuning, and wind-anchor work. In the current report, the comparable `all_actual`
-oracle score is **11.216 EUR/MWh** and the production-like `forecast_all` score is **12.420 EUR/MWh**.
-The current fundamental-forecast penalty is therefore **1.205 EUR/MWh**.
+radiation-alignment, retuning, and anchor work. In the current report, the comparable `all_actual`
+oracle score is **11.426 EUR/MWh** and the production-like `forecast_all` score is **11.327 EUR/MWh**.
+The signed difference is **-0.099 EUR/MWh** on this finite stress-test sample; this is error cancellation,
+not evidence that imperfect fundamentals are intrinsically better than actuals.
 
 ### Known limits of the baseline
 
@@ -172,24 +184,22 @@ the price model sees:
 
 | Scenario | Price MAE | Price RMSE | MAE delta vs all-actual |
 |---|---:|---:|---:|
-| All actual | 11.216 | 14.551 | +0.000 EUR/MWh |
-| Forecast wind only | 11.178 | 14.473 | -0.037 EUR/MWh |
-| Forecast solar only | 13.033 | 16.674 | +1.817 EUR/MWh |
-| Forecast load only | 10.941 | 14.305 | -0.275 EUR/MWh |
-| Forecast all | 12.420 | 15.992 | +1.205 EUR/MWh |
+| All actual | 11.426 | 14.643 | +0.000 EUR/MWh |
+| Forecast wind only | 11.380 | 14.552 | -0.046 EUR/MWh |
+| Forecast solar only | 11.935 | 15.361 | +0.509 EUR/MWh |
+| Forecast load only | 11.055 | 14.371 | -0.371 EUR/MWh |
+| Forecast all | 11.327 | 14.664 | -0.099 EUR/MWh |
 
 Interpretation:
 
-- **Solar remains the clearest price-relevant priority.** It was harmful on 14 of 22 cutoffs, with a
-  +0.646 median cutoff delta and +1.817 mean delta.
-- Wind's mean delta was -0.037 EUR/MWh and its median was -0.030; it worsened 11 cutoffs and improved
-  11. The signed improvement is finite-sample error cancellation, not evidence that forecast wind is
-  better than truth.
-- Load's mean delta was -0.275 EUR/MWh; it worsened 11 cutoffs and improved 11. This does not make an
-  inaccurate load forecast desirable; smoothing or error compensation may help the imperfect price
-  model on some days.
-- The isolated deltas sum to +1.505 EUR/MWh, while `forecast_all` adds +1.205. The approximately
-  **-0.300 EUR/MWh interaction** shows that errors currently compensate and do not add linearly.
+- Solar's isolated mean penalty fell from **+1.817 to +0.509 EUR/MWh** after the anchor promotion. It
+  remains the largest positive isolated penalty, but most of the former downstream damage is gone.
+- Wind's mean delta is -0.046 EUR/MWh. The signed improvement is finite-sample error cancellation, not
+  evidence that forecast wind is better than truth.
+- Load's mean delta is -0.371 EUR/MWh. This does not make an inaccurate load forecast desirable;
+  smoothing or error compensation may help the imperfect price model on some days.
+- The isolated deltas sum to +0.092 EUR/MWh, while `forecast_all` changes MAE by -0.099. The difference
+  again shows that fundamental errors interact and do not add linearly.
 - Wind/load effects are small enough to require multi-seed confirmation before strong conclusions.
 
 At the earlier solar-feature milestone, richer solar inputs reduced solar MAE by 132 MW, its isolated
@@ -432,15 +442,65 @@ those production blocks fixed. A regression test verifies that the `stats` varia
 
 #### Revisit solar geography
 
-Current selected solar points are concentrated in central/eastern Germany:
+**Status: completed and adopted 2026-07-31; production uses 100 km / 31 points.**
+
+The pre-promotion solar points were concentrated in central/eastern Germany:
 
 ```text
 latitude:  49.10 to 51.85
 longitude:  9.75 to 13.28
 ```
 
-Test spatially diverse or PV-capacity-weighted points instead of ranking by individual GHI correlation
-alone.
+The production-faithful anchor experiment kept GHI, GTI, direct/diffuse/DNI, cloud cover, geometry,
+capacity scaling, tuned parameters, and frozen cutoffs fixed. Only point selection changed. The coarse
+one-seed screen found:
+
+| Selection | MAE | RMSE | Trailing-365d MAE |
+|---|---:|---:|---:|
+| Current 20 points | 1,169 MW | 1,941 MW | 908 MW |
+| 75 km / 20 points | 1,185 MW | 1,942 MW | 1,015 MW |
+| 100 km / 20 points | **986 MW** | **1,628 MW** | **866 MW** |
+| 125 km / 20 points | 917 MW | 1,545 MW | 907 MW |
+
+The apparently stronger 125 km full-set result was essentially tied on the trailing year. Fine spacing
+confirmed that 90, 95, and 105 km all regressed recently; 100 km was the only tested spacing with a
+material improvement in both views. At 100 km, reducing the budget to 10 or 15 points erased nearly all
+of the full-set gain and worsened the trailing-year result.
+
+The initial five-seed comparison confirmed that the 100 km / 20-point candidate was real rather than
+seed noise. Because the 10/15/20 screen improved sharply at 20, the point budget was then expanded to
+the geometric limit: the greedy ranked selector can retain at most 31 candidates at 100 km spacing.
+All three larger finalists were compared together across the same five seeds:
+
+| Selection | MAE | Seed std | RMSE | Delta vs current | Trailing-365d delta |
+|---|---:|---:|---:|---:|---:|
+| Current | 1,174.106 MW | 4.743 MW | 1,948.560 MW | — | — |
+| 100 km / 25 | 911.255 MW | 5.901 MW | 1,495.921 MW | -262.851 ± 7.979 MW | **-83.167 ± 7.826 MW** |
+| 100 km / 30 | 873.813 MW | 3.754 MW | 1,450.630 MW | -300.293 ± 7.812 MW | -54.057 ± 7.488 MW |
+| 100 km / 31 | **854.052 MW** | 7.259 MW | **1,431.687 MW** | **-320.053 ± 9.503 MW** | -72.309 ± 9.009 MW |
+
+The 31-point set won the full 22-cutoff evaluation by 57 MW over 25 points and improved the
+trailing-year slice by 72 MW versus production. The 25-point set is 11 MW better than 31 over the 16
+trailing-year cutoffs, a small trade-off relative to the much larger shared gain. Prefer 31 as the
+promotion candidate because it is best overall, remains strong recently, and is the tested 100 km
+boundary; keep 25 as the fallback if production cost or later end-to-end validation favors the smaller
+set.
+
+Promotion replaced only the solar points and backfilled all six weather variables for each point from
+2023 onward. A matched 20-trial retune retained the incumbent parameters at **847.183 MW**; the best new
+trial was 868.126 MW. Production validation on the same 22 cutoffs found:
+
+| Metric | Before promotion | After promotion | Change |
+|---|---:|---:|---:|
+| Solar MAE | 1,169.164 MW | **847.183 MW** | **-321.981 MW (-27.5%)** |
+| Solar RMSE | 1,940.718 MW | **1,417.605 MW** | **-523.113 MW (-27.0%)** |
+| End-to-end price MAE | 12.420 EUR/MWh | **11.327 EUR/MWh** | **-1.094 (-8.8%)** |
+| End-to-end price RMSE | 15.992 EUR/MWh | **14.664 EUR/MWh** | **-1.328 (-8.3%)** |
+
+The oracle's isolated solar penalty fell from **+1.817 to +0.509 EUR/MWh**. The live forecast fetched
+all 280 configured weather columns, produced 336 complete out-of-sample hours, and showed a continuous
+solar curve with 113 zero-output night hours. The 31-point set is therefore the adopted production
+configuration; the 25-point alternative remains only a documented fallback.
 
 #### Check calibration and capacity drift
 
@@ -471,6 +531,79 @@ The previous UTC-derived fields shifted German civil time by one/two hours and c
 date around local midnight. Because the calendar block is shared, the correction affects wind, solar,
 load, and price. Regression tests cover winter/summer offsets, local date boundaries, and both DST
 transitions. All four persisted models must be retrained before the next live forecast.
+
+#### Test load anchor diversity
+
+**Status: completed 2026-07-31; the 26-point candidate was tested and rejected downstream.**
+
+The load experiment retained raw per-point temperature and irradiance features and changed only anchor
+selection. Unlike wind and solar, wider spacing did not help:
+
+| Selection | MAE | RMSE | Trailing-365d MAE |
+|---|---:|---:|---:|
+| Current 20 points | **1,488.821 MW** | **1,746.757 MW** | **1,508.647 MW** |
+| 75 km / 20 points | 1,533.256 MW | 1,841.697 MW | 1,520.213 MW |
+| 100 km / 20 points | 1,545.004 MW | 1,845.752 MW | 1,538.181 MW |
+
+At 75 km, reducing the point budget to 10 or 15 worsened MAE further to 1,599 and 1,625 MW. The initial
+conclusion therefore retained production, but solar's later count result justified screening larger
+load budgets. The one-seed expansion found:
+
+| Selection | MAE | RMSE | Trailing-365d MAE |
+|---|---:|---:|---:|
+| 75 km / 25 | 1,482 MW | 1,755 MW | 1,455 MW |
+| 75 km / 30 | 1,529 MW | 1,829 MW | 1,506 MW |
+| 75 km / 40 | 1,481 MW | 1,759 MW | 1,462 MW |
+| 100 km / 25 | 1,465 MW | 1,753 MW | 1,443 MW |
+| 100 km / 26 | **1,458 MW** | **1,740 MW** | **1,437 MW** |
+| 100 km / 27 | 1,545 MW | 1,825 MW | 1,539 MW |
+| 100 km / 28 | 1,478 MW | 1,770 MW | 1,463 MW |
+
+The 27th nested point caused a sharp regression while the 28th recovered, so 25, 26, and 28 were all
+confirmed across the same five seeds:
+
+| Selection | MAE | Seed std | RMSE | Delta vs current | Trailing-365d delta |
+|---|---:|---:|---:|---:|---:|
+| Current 20 | 1,529.194 MW | 40.507 MW | 1,809.405 MW | — | — |
+| 100 km / 25 | 1,476.250 MW | 19.969 MW | 1,775.482 MW | -52.944 ± 44.978 MW | -109.907 ± 48.597 MW |
+| 100 km / 26 | 1,475.376 MW | 30.429 MW | 1,750.822 MW | -53.818 ± 32.696 MW | **-128.227 ± 41.993 MW** |
+| 100 km / 28 | **1,468.921 MW** | 30.485 MW | **1,750.795 MW** | **-60.273 ± 37.690 MW** | -113.446 ± 56.297 MW |
+
+All three alternatives beat production on every paired seed. The 26- and 28-point sets are effectively
+tied on full MAE and RMSE, but 26 is better over the trailing year and uses two fewer locations. The
+100 km / 26-point set was therefore selected for a complete promotion gate: its temperature and
+irradiance history was backfilled from 2023, load was retuned, and eval/oracle were rerun.
+
+The matched retune selected a fresh parameter set at **1,425.068 MW**, but the end-to-end result did not
+survive the project's actual objective:
+
+| Metric | Production 20 | Candidate 26 | Change |
+|---|---:|---:|---:|
+| Load MAE | 1,488.821 MW | **1,425.068 MW** | **-63.752 MW (-4.3%)** |
+| Load RMSE | 1,746.757 MW | **1,688.285 MW** | **-58.472 MW (-3.3%)** |
+| Price MAE | **11.327 EUR/MWh** | 11.496 EUR/MWh | **+0.169 (+1.5%)** |
+| Price RMSE | **14.664 EUR/MWh** | 14.739 EUR/MWh | **+0.075 (+0.5%)** |
+
+The candidate oracle also showed why isolated sub-model improvements are not sufficient. Its
+`forecast_load` scenario was strong at 10.947 EUR/MWh, but the combined `forecast_all` scenario rose to
+11.496 EUR/MWh; changes to the direct temperature/irradiance means and interactions among simultaneous
+fundamental errors outweighed the better load target score. The 26-point candidate was rejected,
+`config/weather_points.json` and load hyperparameters were restored, and the regenerated production
+reports exactly recovered 1,488.821 MW load MAE and 11.327 EUR/MWh price MAE.
+
+A rollback live run loaded the expected 280 configured weather columns and all four models predicted
+without a feature mismatch, but initially retained no out-of-sample day. Direct API and database checks
+showed that the active columns actually extended through August 15: the coverage guard was still
+including 12 retired 26-point load-candidate columns that stopped on July 31. The follow-up active-column
+filter below fixed that false truncation. The live rerun fetched all 280 configured weather columns and
+wrote 840 rows with the expected **336 genuinely out-of-sample hours**.
+
+Rollback exposed a separate correctness issue: SQLite retains columns from previously tested point
+sets. Feature construction now filters both German and neighbour weather columns through the committed
+point config, while anchor-analysis frames carry an explicit experimental override. The live coverage
+guard now uses that same active set; before this follow-up fix, the retired load columns falsely cut a
+complete Open-Meteo response back to July 31. Retired columns can remain in the database without
+silently influencing models or truncating forecasts.
 
 #### Add compact thermal-memory features
 
@@ -783,10 +916,21 @@ choosing the booster iteration. Every reported metric and experiment score uses 
 9. **Completed:** diverse wind-anchor experiment; 135 km spacing cut wind MAE by ~38%.
 10. **Completed:** adopted/backfilled the 135 km anchors, retuned wind, and confirmed a 40.8% wind-MAE
     and 3.9% end-to-end price-MAE reduction.
-11. **Next:** compact lagged/rolling temperature features for load.
-12. Separate onshore/offshore wind.
-13. Training-history learning curves and recency weighting.
-14. Robust objectives, interpretation diagnostics, and ensembles.
+11. **Completed:** generalized anchor analysis to load and solar while preserving each production
+    weather contract.
+12. **Completed:** initial load spacing/count experiments through 20 points; retained the current set.
+13. **Completed:** solar spacing/count experiments through the 100 km geometric limit; 31 points won
+    the five-seed full-set comparison, with 25 points narrowly best on the trailing-year slice.
+14. **Completed:** promoted/backfilled the 31-point solar set, retained the incumbent in a matched
+    retune, and confirmed a 27.5% solar-MAE and 8.8% end-to-end price-MAE reduction plus live coverage.
+15. **Completed:** expanded load budgets through 40 points at 75 km and the 28-point 100 km boundary;
+    selected 100 km / 26 points as the balanced five-seed candidate.
+16. **Completed, rejected:** promoted/backfilled and retuned the 26-point load candidate; it improved
+    load MAE by 4.3% but worsened end-to-end price MAE by 1.5%, so production returned to 20 points.
+17. **Next:** add compact lagged/rolling temperature features for load.
+18. Separate onshore/offshore wind.
+19. Training-history learning curves and recency weighting.
+20. Robust objectives, interpretation diagnostics, and ensembles.
 
 Deferred:
 
@@ -826,6 +970,30 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-07-31
+
+- Generalized the non-mutating anchor analyzer from wind to load and solar, retaining each model's full
+  primary and auxiliary weather contract.
+- Rejected wider-spaced and smaller load-anchor sets through 20 points; production initially remained
+  unchanged.
+- Expanded load budgets through 40 points at 75 km and the 28-point 100 km boundary. All 100 km
+  finalists improved on production across every paired seed; selected 26 points as the balanced
+  candidate at -53.818 ± 32.696 MW overall and -128.227 ± 41.993 MW over the trailing-year cutoffs.
+- Fully backfilled and retuned the 26-point load candidate. Load MAE improved from 1,488.821 to
+  1,425.068 MW, but end-to-end price MAE worsened from 11.327 to 11.496 EUR/MWh, so the candidate was
+  rejected and the 20-point production configuration was restored.
+- Fixed stale SQLite weather columns remaining active after a point-count rollback. Production feature
+  builders now use only columns belonging to the committed points; controlled anchor experiments carry
+  an explicit active-column override. The restored eval/oracle scores reproduce the prior baseline.
+- Expanded the 100 km solar budget through 25, 30, and the 31-point geometric limit. Selected 31 points
+  as the promotion candidate after it improved five-seed MAE by 320.053 ± 9.503 MW overall and
+  72.309 ± 9.009 MW over the trailing-year cutoffs; retained the slightly better recent-year 25-point
+  set as a fallback.
+- Promoted and fully backfilled the 31-point solar set. A matched 20-trial retune retained the incumbent;
+  end-to-end solar MAE fell from 1,169.164 to 847.183 MW and price MAE from 12.420 to 11.327 EUR/MWh.
+- Oracle solar impact fell from +1.817 to +0.509 EUR/MWh. A live forecast fetched all 280 weather
+  columns and produced 336 complete out-of-sample hours with correct night-time solar behavior.
 
 ### 2026-07-30
 
