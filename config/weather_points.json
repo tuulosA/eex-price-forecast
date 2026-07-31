@@ -384,24 +384,6 @@
     },
     {
       "column": "ghi_de03",
-      "lat": 50.9346,
-      "lon": 11.8654,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_083",
-      "pearson": 0.9244,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de04",
-      "lat": 49.5604,
-      "lon": 11.5126,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_114",
-      "pearson": 0.9241,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de05",
       "lat": 49.5604,
       "lon": 12.2183,
       "variable": "shortwave_radiation",
@@ -410,61 +392,7 @@
       "best_lag_hours": 0
     },
     {
-      "column": "ghi_de06",
-      "lat": 50.0185,
-      "lon": 11.1598,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_105",
-      "pearson": 0.9235,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de07",
-      "lat": 50.0185,
-      "lon": 10.4541,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_104",
-      "pearson": 0.9234,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de08",
-      "lat": 50.9346,
-      "lon": 10.4541,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_081",
-      "pearson": 0.9233,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de09",
-      "lat": 49.1024,
-      "lon": 10.4541,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_120",
-      "pearson": 0.9232,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de10",
-      "lat": 50.9346,
-      "lon": 12.5711,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_084",
-      "pearson": 0.9231,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de11",
-      "lat": 49.1024,
-      "lon": 11.8654,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_122",
-      "pearson": 0.9224,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de12",
+      "column": "ghi_de04",
       "lat": 50.4766,
       "lon": 12.2183,
       "variable": "shortwave_radiation",
@@ -473,75 +401,246 @@
       "best_lag_hours": 0
     },
     {
-      "column": "ghi_de13",
-      "lat": 49.1024,
-      "lon": 11.1598,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_121",
-      "pearson": 0.9219,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de14",
-      "lat": 51.3927,
-      "lon": 10.807,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_069",
-      "pearson": 0.9217,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de15",
-      "lat": 50.4766,
-      "lon": 10.807,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_094",
-      "pearson": 0.9215,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de16",
-      "lat": 51.3927,
-      "lon": 12.2183,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_071",
-      "pearson": 0.9213,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de17",
-      "lat": 49.5604,
-      "lon": 10.1013,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_112",
-      "pearson": 0.9213,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de18",
-      "lat": 50.0185,
-      "lon": 9.7485,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_103",
-      "pearson": 0.9205,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de19",
-      "lat": 51.3927,
-      "lon": 12.9239,
-      "variable": "shortwave_radiation",
-      "candidate_id": "de_land_072",
-      "pearson": 0.9205,
-      "best_lag_hours": 0
-    },
-    {
-      "column": "ghi_de20",
+      "column": "ghi_de05",
       "lat": 51.8508,
       "lon": 13.2768,
       "variable": "shortwave_radiation",
       "candidate_id": "de_land_061",
       "pearson": 0.9204,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de06",
+      "lat": 50.9346,
+      "lon": 9.7485,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_080",
+      "pearson": 0.9186,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de07",
+      "lat": 48.6443,
+      "lon": 12.2183,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_131",
+      "pearson": 0.9184,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de08",
+      "lat": 50.0185,
+      "lon": 9.0428,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_102",
+      "pearson": 0.9165,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de09",
+      "lat": 52.3088,
+      "lon": 10.807,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_045",
+      "pearson": 0.916,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de10",
+      "lat": 50.9346,
+      "lon": 13.9824,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_086",
+      "pearson": 0.916,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de11",
+      "lat": 48.6443,
+      "lon": 10.807,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_129",
+      "pearson": 0.9148,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de12",
+      "lat": 48.6443,
+      "lon": 13.6296,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_133",
+      "pearson": 0.9142,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de13",
+      "lat": 49.1024,
+      "lon": 9.0428,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_118",
+      "pearson": 0.9138,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de14",
+      "lat": 53.2249,
+      "lon": 11.5126,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_025",
+      "pearson": 0.912,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de15",
+      "lat": 52.7669,
+      "lon": 13.9824,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_039",
+      "pearson": 0.9096,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de16",
+      "lat": 51.8508,
+      "lon": 9.0428,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_055",
+      "pearson": 0.909,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de17",
+      "lat": 53.2249,
+      "lon": 9.3956,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_022",
+      "pearson": 0.9063,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de18",
+      "lat": 53.683,
+      "lon": 13.2768,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_017",
+      "pearson": 0.9054,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de19",
+      "lat": 54.1411,
+      "lon": 10.807,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_006",
+      "pearson": 0.9052,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de20",
+      "lat": 50.0185,
+      "lon": 7.6315,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_100",
+      "pearson": 0.9021,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de21",
+      "lat": 48.1862,
+      "lon": 9.0428,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_136",
+      "pearson": 0.8979,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de22",
+      "lat": 49.1024,
+      "lon": 7.6315,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_116",
+      "pearson": 0.8978,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de23",
+      "lat": 54.5991,
+      "lon": 13.2768,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_003",
+      "pearson": 0.8972,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de24",
+      "lat": 51.3927,
+      "lon": 7.2787,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_064",
+      "pearson": 0.8965,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de25",
+      "lat": 47.7282,
+      "lon": 12.2183,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_147",
+      "pearson": 0.8964,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de26",
+      "lat": 47.7282,
+      "lon": 10.807,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_145",
+      "pearson": 0.8937,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de27",
+      "lat": 52.7669,
+      "lon": 7.6315,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_030",
+      "pearson": 0.8884,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de28",
+      "lat": 48.1862,
+      "lon": 7.6315,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_134",
+      "pearson": 0.8865,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de29",
+      "lat": 54.5991,
+      "lon": 9.0428,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_001",
+      "pearson": 0.8857,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de30",
+      "lat": 50.0185,
+      "lon": 6.2202,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_098",
+      "pearson": 0.8838,
+      "best_lag_hours": 0
+    },
+    {
+      "column": "ghi_de31",
+      "lat": 53.683,
+      "lon": 7.6315,
+      "variable": "shortwave_radiation",
+      "candidate_id": "de_land_010",
+      "pearson": 0.874,
       "best_lag_hours": 0
     }
   ],

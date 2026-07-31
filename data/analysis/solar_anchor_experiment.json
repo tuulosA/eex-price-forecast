@@ -1,0 +1,1766 @@
+{
+  "model": "solar",
+  "compared": "weather-anchor spatial diversity",
+  "run_at": "2026-07-31T10:19:01.801764+00:00",
+  "best_variant": "min_100km_n31",
+  "horizon": "24h",
+  "config": {
+    "model": "solar",
+    "point_role": "solar",
+    "weather_variables": [
+      "shortwave_radiation",
+      "global_tilted_irradiance",
+      "direct_radiation",
+      "diffuse_radiation",
+      "direct_normal_irradiance",
+      "cloud_cover"
+    ],
+    "n_cutoffs": 22,
+    "days": 1,
+    "seeds": [
+      42,
+      1055,
+      2068,
+      3081,
+      4094
+    ],
+    "point_count": 20,
+    "point_counts": [
+      25,
+      30,
+      31
+    ],
+    "distances_km": [
+      100.0
+    ],
+    "redundancy_penalties": [],
+    "redundancy_candidate_pool": 80,
+    "redundancy_start": "2025-01-01",
+    "redundancy_end": "2025-12-31",
+    "coverage_relevance_weights": [],
+    "coverage_candidate_pool": 80,
+    "history_start": "2023-01-01",
+    "history_end": "2026-07-07",
+    "trailing_window_days": 365,
+    "trailing_window_start": "2025-07-08",
+    "trailing_window_end": "2026-07-07",
+    "params": {
+      "n_estimators": 300,
+      "max_depth": 7,
+      "learning_rate": 0.010673179760209477,
+      "subsample": 0.6662225125541511,
+      "colsample_bytree": 0.6185797583220249,
+      "min_child_weight": 15.406248723248392,
+      "reg_alpha": 0.010457444245943309,
+      "reg_lambda": 1.0138114683601502,
+      "objective": "reg:squarederror",
+      "tree_method": "hist",
+      "random_state": 42,
+      "n_jobs": 0
+    }
+  },
+  "cutoffs": [
+    "2025-01-01",
+    "2025-02-17",
+    "2025-03-19",
+    "2025-04-17",
+    "2025-05-16",
+    "2025-06-14",
+    "2025-07-22",
+    "2025-08-17",
+    "2025-08-18",
+    "2025-09-18",
+    "2025-10-03",
+    "2025-10-24",
+    "2025-11-08",
+    "2025-11-19",
+    "2025-12-25",
+    "2026-01-23",
+    "2026-02-09",
+    "2026-03-15",
+    "2026-04-06",
+    "2026-05-21",
+    "2026-06-17",
+    "2026-07-07"
+  ],
+  "variants": [
+    {
+      "variant": "min_100km_n31",
+      "selection_method": "minimum_distance",
+      "redundancy_penalty": null,
+      "coverage_relevance_weight": null,
+      "configured_min_distance_km": 100.0,
+      "actual_min_pair_distance_km": 100.832,
+      "n_anchors": 31,
+      "n_features": 39,
+      "mean_point_pearson": 0.906265,
+      "mean_mae": 854.0522,
+      "std_mae": 7.2593,
+      "mean_rmse": 1431.6865,
+      "per_seed_mae": [
+        847.183,
+        862.7856,
+        856.4673,
+        857.9269,
+        845.8982
+      ],
+      "per_seed_rmse": [
+        1417.6054,
+        1444.9986,
+        1438.1305,
+        1437.9317,
+        1419.7661
+      ],
+      "trailing_365d": {
+        "start": "2025-07-08",
+        "end": "2026-07-07",
+        "n_cutoffs": 16,
+        "mean_mae": 842.081,
+        "std_mae": 7.4317,
+        "mean_rmse": 1398.94,
+        "per_seed_mae": [
+          835.0955,
+          849.3003,
+          841.8727,
+          849.8131,
+          834.3236
+        ],
+        "per_seed_rmse": [
+          1384.3939,
+          1412.3882,
+          1398.701,
+          1412.7008,
+          1386.5161
+        ],
+        "mae_delta_vs_current": -72.3086,
+        "mae_delta_std_vs_current": 9.0088
+      },
+      "anchors": [
+        {
+          "candidate_id": "de_land_113",
+          "lat": 49.5604,
+          "lon": 10.807,
+          "pearson": 0.9268,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_070",
+          "lat": 51.3927,
+          "lon": 11.5126,
+          "pearson": 0.9251,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_115",
+          "lat": 49.5604,
+          "lon": 12.2183,
+          "pearson": 0.9241,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_096",
+          "lat": 50.4766,
+          "lon": 12.2183,
+          "pearson": 0.922,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_061",
+          "lat": 51.8508,
+          "lon": 13.2768,
+          "pearson": 0.9204,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_080",
+          "lat": 50.9346,
+          "lon": 9.7485,
+          "pearson": 0.9186,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_131",
+          "lat": 48.6443,
+          "lon": 12.2183,
+          "pearson": 0.9184,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_102",
+          "lat": 50.0185,
+          "lon": 9.0428,
+          "pearson": 0.9165,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_045",
+          "lat": 52.3088,
+          "lon": 10.807,
+          "pearson": 0.916,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_086",
+          "lat": 50.9346,
+          "lon": 13.9824,
+          "pearson": 0.916,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_129",
+          "lat": 48.6443,
+          "lon": 10.807,
+          "pearson": 0.9148,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_133",
+          "lat": 48.6443,
+          "lon": 13.6296,
+          "pearson": 0.9142,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_118",
+          "lat": 49.1024,
+          "lon": 9.0428,
+          "pearson": 0.9138,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_025",
+          "lat": 53.2249,
+          "lon": 11.5126,
+          "pearson": 0.912,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_039",
+          "lat": 52.7669,
+          "lon": 13.9824,
+          "pearson": 0.9096,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_055",
+          "lat": 51.8508,
+          "lon": 9.0428,
+          "pearson": 0.909,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_022",
+          "lat": 53.2249,
+          "lon": 9.3956,
+          "pearson": 0.9063,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_017",
+          "lat": 53.683,
+          "lon": 13.2768,
+          "pearson": 0.9054,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_006",
+          "lat": 54.1411,
+          "lon": 10.807,
+          "pearson": 0.9052,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_100",
+          "lat": 50.0185,
+          "lon": 7.6315,
+          "pearson": 0.9021,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_136",
+          "lat": 48.1862,
+          "lon": 9.0428,
+          "pearson": 0.8979,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_116",
+          "lat": 49.1024,
+          "lon": 7.6315,
+          "pearson": 0.8978,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_003",
+          "lat": 54.5991,
+          "lon": 13.2768,
+          "pearson": 0.8972,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_064",
+          "lat": 51.3927,
+          "lon": 7.2787,
+          "pearson": 0.8965,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_147",
+          "lat": 47.7282,
+          "lon": 12.2183,
+          "pearson": 0.8964,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_145",
+          "lat": 47.7282,
+          "lon": 10.807,
+          "pearson": 0.8937,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_030",
+          "lat": 52.7669,
+          "lon": 7.6315,
+          "pearson": 0.8884,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_134",
+          "lat": 48.1862,
+          "lon": 7.6315,
+          "pearson": 0.8865,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_001",
+          "lat": 54.5991,
+          "lon": 9.0428,
+          "pearson": 0.8857,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_098",
+          "lat": 50.0185,
+          "lon": 6.2202,
+          "pearson": 0.8838,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_010",
+          "lat": 53.683,
+          "lon": 7.6315,
+          "pearson": 0.874,
+          "best_lag_hours": 0
+        }
+      ],
+      "folds": [
+        {
+          "delivery_day": "2025-01-01",
+          "start_utc": "2024-12-31T23:00:00+00:00",
+          "end_utc": "2025-01-01T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 145.9271,
+          "rmse": 344.9368
+        },
+        {
+          "delivery_day": "2025-02-17",
+          "start_utc": "2025-02-16T23:00:00+00:00",
+          "end_utc": "2025-02-17T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 784.2174,
+          "rmse": 1670.9188
+        },
+        {
+          "delivery_day": "2025-03-19",
+          "start_utc": "2025-03-18T23:00:00+00:00",
+          "end_utc": "2025-03-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 477.5686,
+          "rmse": 858.6529
+        },
+        {
+          "delivery_day": "2025-04-17",
+          "start_utc": "2025-04-16T22:00:00+00:00",
+          "end_utc": "2025-04-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1751.0559,
+          "rmse": 2638.06
+        },
+        {
+          "delivery_day": "2025-05-16",
+          "start_utc": "2025-05-15T22:00:00+00:00",
+          "end_utc": "2025-05-16T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 702.2566,
+          "rmse": 1098.1511
+        },
+        {
+          "delivery_day": "2025-06-14",
+          "start_utc": "2025-06-13T22:00:00+00:00",
+          "end_utc": "2025-06-14T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1415.4726,
+          "rmse": 2426.2985
+        },
+        {
+          "delivery_day": "2025-07-22",
+          "start_utc": "2025-07-21T22:00:00+00:00",
+          "end_utc": "2025-07-22T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 586.8167,
+          "rmse": 853.5302
+        },
+        {
+          "delivery_day": "2025-08-17",
+          "start_utc": "2025-08-16T22:00:00+00:00",
+          "end_utc": "2025-08-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 675.6114,
+          "rmse": 1065.4773
+        },
+        {
+          "delivery_day": "2025-08-18",
+          "start_utc": "2025-08-17T22:00:00+00:00",
+          "end_utc": "2025-08-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 846.9005,
+          "rmse": 1452.3161
+        },
+        {
+          "delivery_day": "2025-09-18",
+          "start_utc": "2025-09-17T22:00:00+00:00",
+          "end_utc": "2025-09-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 323.7248,
+          "rmse": 535.3858
+        },
+        {
+          "delivery_day": "2025-10-03",
+          "start_utc": "2025-10-02T22:00:00+00:00",
+          "end_utc": "2025-10-03T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 981.5496,
+          "rmse": 1619.7866
+        },
+        {
+          "delivery_day": "2025-10-24",
+          "start_utc": "2025-10-23T22:00:00+00:00",
+          "end_utc": "2025-10-24T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 773.8424,
+          "rmse": 1352.7383
+        },
+        {
+          "delivery_day": "2025-11-08",
+          "start_utc": "2025-11-07T23:00:00+00:00",
+          "end_utc": "2025-11-08T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 488.6852,
+          "rmse": 861.8283
+        },
+        {
+          "delivery_day": "2025-11-19",
+          "start_utc": "2025-11-18T23:00:00+00:00",
+          "end_utc": "2025-11-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 293.062,
+          "rmse": 629.5071
+        },
+        {
+          "delivery_day": "2025-12-25",
+          "start_utc": "2025-12-24T23:00:00+00:00",
+          "end_utc": "2025-12-25T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 268.5423,
+          "rmse": 616.1693
+        },
+        {
+          "delivery_day": "2026-01-23",
+          "start_utc": "2026-01-22T23:00:00+00:00",
+          "end_utc": "2026-01-23T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 375.3292,
+          "rmse": 755.1216
+        },
+        {
+          "delivery_day": "2026-02-09",
+          "start_utc": "2026-02-08T23:00:00+00:00",
+          "end_utc": "2026-02-09T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 219.5491,
+          "rmse": 402.366
+        },
+        {
+          "delivery_day": "2026-03-15",
+          "start_utc": "2026-03-14T23:00:00+00:00",
+          "end_utc": "2026-03-15T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 388.4453,
+          "rmse": 599.1941
+        },
+        {
+          "delivery_day": "2026-04-06",
+          "start_utc": "2026-04-05T22:00:00+00:00",
+          "end_utc": "2026-04-06T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1563.9258,
+          "rmse": 2562.6523
+        },
+        {
+          "delivery_day": "2026-05-21",
+          "start_utc": "2026-05-20T22:00:00+00:00",
+          "end_utc": "2026-05-21T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 2668.4324,
+          "rmse": 4212.7438
+        },
+        {
+          "delivery_day": "2026-06-17",
+          "start_utc": "2026-06-16T22:00:00+00:00",
+          "end_utc": "2026-06-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1195.9253,
+          "rmse": 1788.408
+        },
+        {
+          "delivery_day": "2026-07-07",
+          "start_utc": "2026-07-06T22:00:00+00:00",
+          "end_utc": "2026-07-07T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1711.1859,
+          "rmse": 2843.077
+        }
+      ],
+      "mae_delta_vs_current": -320.0535,
+      "mae_delta_std_vs_current": 9.5028
+    },
+    {
+      "variant": "min_100km_n30",
+      "selection_method": "minimum_distance",
+      "redundancy_penalty": null,
+      "coverage_relevance_weight": null,
+      "configured_min_distance_km": 100.0,
+      "actual_min_pair_distance_km": 100.832,
+      "n_anchors": 30,
+      "n_features": 39,
+      "mean_point_pearson": 0.90734,
+      "mean_mae": 873.8132,
+      "std_mae": 3.754,
+      "mean_rmse": 1450.6302,
+      "per_seed_mae": [
+        878.0905,
+        870.661,
+        876.3123,
+        874.7696,
+        869.2329
+      ],
+      "per_seed_rmse": [
+        1456.528,
+        1444.7062,
+        1453.1835,
+        1450.4179,
+        1448.3152
+      ],
+      "trailing_365d": {
+        "start": "2025-07-08",
+        "end": "2026-07-07",
+        "n_cutoffs": 16,
+        "mean_mae": 860.333,
+        "std_mae": 2.8924,
+        "mean_rmse": 1420.4873,
+        "per_seed_mae": [
+          865.1421,
+          859.9891,
+          858.8845,
+          860.1606,
+          857.4885
+        ],
+        "per_seed_rmse": [
+          1426.8406,
+          1417.3778,
+          1415.9955,
+          1422.2786,
+          1419.9438
+        ],
+        "mae_delta_vs_current": -54.0566,
+        "mae_delta_std_vs_current": 7.4883
+      },
+      "anchors": [
+        {
+          "candidate_id": "de_land_113",
+          "lat": 49.5604,
+          "lon": 10.807,
+          "pearson": 0.9268,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_070",
+          "lat": 51.3927,
+          "lon": 11.5126,
+          "pearson": 0.9251,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_115",
+          "lat": 49.5604,
+          "lon": 12.2183,
+          "pearson": 0.9241,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_096",
+          "lat": 50.4766,
+          "lon": 12.2183,
+          "pearson": 0.922,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_061",
+          "lat": 51.8508,
+          "lon": 13.2768,
+          "pearson": 0.9204,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_080",
+          "lat": 50.9346,
+          "lon": 9.7485,
+          "pearson": 0.9186,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_131",
+          "lat": 48.6443,
+          "lon": 12.2183,
+          "pearson": 0.9184,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_102",
+          "lat": 50.0185,
+          "lon": 9.0428,
+          "pearson": 0.9165,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_045",
+          "lat": 52.3088,
+          "lon": 10.807,
+          "pearson": 0.916,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_086",
+          "lat": 50.9346,
+          "lon": 13.9824,
+          "pearson": 0.916,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_129",
+          "lat": 48.6443,
+          "lon": 10.807,
+          "pearson": 0.9148,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_133",
+          "lat": 48.6443,
+          "lon": 13.6296,
+          "pearson": 0.9142,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_118",
+          "lat": 49.1024,
+          "lon": 9.0428,
+          "pearson": 0.9138,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_025",
+          "lat": 53.2249,
+          "lon": 11.5126,
+          "pearson": 0.912,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_039",
+          "lat": 52.7669,
+          "lon": 13.9824,
+          "pearson": 0.9096,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_055",
+          "lat": 51.8508,
+          "lon": 9.0428,
+          "pearson": 0.909,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_022",
+          "lat": 53.2249,
+          "lon": 9.3956,
+          "pearson": 0.9063,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_017",
+          "lat": 53.683,
+          "lon": 13.2768,
+          "pearson": 0.9054,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_006",
+          "lat": 54.1411,
+          "lon": 10.807,
+          "pearson": 0.9052,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_100",
+          "lat": 50.0185,
+          "lon": 7.6315,
+          "pearson": 0.9021,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_136",
+          "lat": 48.1862,
+          "lon": 9.0428,
+          "pearson": 0.8979,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_116",
+          "lat": 49.1024,
+          "lon": 7.6315,
+          "pearson": 0.8978,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_003",
+          "lat": 54.5991,
+          "lon": 13.2768,
+          "pearson": 0.8972,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_064",
+          "lat": 51.3927,
+          "lon": 7.2787,
+          "pearson": 0.8965,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_147",
+          "lat": 47.7282,
+          "lon": 12.2183,
+          "pearson": 0.8964,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_145",
+          "lat": 47.7282,
+          "lon": 10.807,
+          "pearson": 0.8937,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_030",
+          "lat": 52.7669,
+          "lon": 7.6315,
+          "pearson": 0.8884,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_134",
+          "lat": 48.1862,
+          "lon": 7.6315,
+          "pearson": 0.8865,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_001",
+          "lat": 54.5991,
+          "lon": 9.0428,
+          "pearson": 0.8857,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_098",
+          "lat": 50.0185,
+          "lon": 6.2202,
+          "pearson": 0.8838,
+          "best_lag_hours": 0
+        }
+      ],
+      "folds": [
+        {
+          "delivery_day": "2025-01-01",
+          "start_utc": "2024-12-31T23:00:00+00:00",
+          "end_utc": "2025-01-01T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 179.8644,
+          "rmse": 394.7351
+        },
+        {
+          "delivery_day": "2025-02-17",
+          "start_utc": "2025-02-16T23:00:00+00:00",
+          "end_utc": "2025-02-17T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 759.3704,
+          "rmse": 1616.1997
+        },
+        {
+          "delivery_day": "2025-03-19",
+          "start_utc": "2025-03-18T23:00:00+00:00",
+          "end_utc": "2025-03-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 476.1186,
+          "rmse": 874.1322
+        },
+        {
+          "delivery_day": "2025-04-17",
+          "start_utc": "2025-04-16T22:00:00+00:00",
+          "end_utc": "2025-04-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1904.497,
+          "rmse": 2872.6124
+        },
+        {
+          "delivery_day": "2025-05-16",
+          "start_utc": "2025-05-15T22:00:00+00:00",
+          "end_utc": "2025-05-16T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 734.7096,
+          "rmse": 1129.9828
+        },
+        {
+          "delivery_day": "2025-06-14",
+          "start_utc": "2025-06-13T22:00:00+00:00",
+          "end_utc": "2025-06-14T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1421.1563,
+          "rmse": 2326.5047
+        },
+        {
+          "delivery_day": "2025-07-22",
+          "start_utc": "2025-07-21T22:00:00+00:00",
+          "end_utc": "2025-07-22T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 678.3433,
+          "rmse": 1009.2051
+        },
+        {
+          "delivery_day": "2025-08-17",
+          "start_utc": "2025-08-16T22:00:00+00:00",
+          "end_utc": "2025-08-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 613.8615,
+          "rmse": 918.9529
+        },
+        {
+          "delivery_day": "2025-08-18",
+          "start_utc": "2025-08-17T22:00:00+00:00",
+          "end_utc": "2025-08-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 890.4866,
+          "rmse": 1478.0121
+        },
+        {
+          "delivery_day": "2025-09-18",
+          "start_utc": "2025-09-17T22:00:00+00:00",
+          "end_utc": "2025-09-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 289.8868,
+          "rmse": 465.0856
+        },
+        {
+          "delivery_day": "2025-10-03",
+          "start_utc": "2025-10-02T22:00:00+00:00",
+          "end_utc": "2025-10-03T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 893.6111,
+          "rmse": 1516.9258
+        },
+        {
+          "delivery_day": "2025-10-24",
+          "start_utc": "2025-10-23T22:00:00+00:00",
+          "end_utc": "2025-10-24T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 822.4107,
+          "rmse": 1449.3657
+        },
+        {
+          "delivery_day": "2025-11-08",
+          "start_utc": "2025-11-07T23:00:00+00:00",
+          "end_utc": "2025-11-08T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 551.0032,
+          "rmse": 941.1018
+        },
+        {
+          "delivery_day": "2025-11-19",
+          "start_utc": "2025-11-18T23:00:00+00:00",
+          "end_utc": "2025-11-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 296.3798,
+          "rmse": 588.3001
+        },
+        {
+          "delivery_day": "2025-12-25",
+          "start_utc": "2025-12-24T23:00:00+00:00",
+          "end_utc": "2025-12-25T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 300.968,
+          "rmse": 732.5062
+        },
+        {
+          "delivery_day": "2026-01-23",
+          "start_utc": "2026-01-22T23:00:00+00:00",
+          "end_utc": "2026-01-23T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 366.3816,
+          "rmse": 698.9897
+        },
+        {
+          "delivery_day": "2026-02-09",
+          "start_utc": "2026-02-08T23:00:00+00:00",
+          "end_utc": "2026-02-09T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 286.3427,
+          "rmse": 468.6022
+        },
+        {
+          "delivery_day": "2026-03-15",
+          "start_utc": "2026-03-14T23:00:00+00:00",
+          "end_utc": "2026-03-15T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 394.6612,
+          "rmse": 614.2711
+        },
+        {
+          "delivery_day": "2026-04-06",
+          "start_utc": "2026-04-05T22:00:00+00:00",
+          "end_utc": "2026-04-06T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1574.8056,
+          "rmse": 2633.5832
+        },
+        {
+          "delivery_day": "2026-05-21",
+          "start_utc": "2026-05-20T22:00:00+00:00",
+          "end_utc": "2026-05-21T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 2579.2225,
+          "rmse": 4118.0568
+        },
+        {
+          "delivery_day": "2026-06-17",
+          "start_utc": "2026-06-16T22:00:00+00:00",
+          "end_utc": "2026-06-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1398.8849,
+          "rmse": 2058.1559
+        },
+        {
+          "delivery_day": "2026-07-07",
+          "start_utc": "2026-07-06T22:00:00+00:00",
+          "end_utc": "2026-07-07T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1905.0245,
+          "rmse": 3138.3354
+        }
+      ],
+      "mae_delta_vs_current": -300.2925,
+      "mae_delta_std_vs_current": 7.8124
+    },
+    {
+      "variant": "min_100km_n25",
+      "selection_method": "minimum_distance",
+      "redundancy_penalty": null,
+      "coverage_relevance_weight": null,
+      "configured_min_distance_km": 100.0,
+      "actual_min_pair_distance_km": 100.832,
+      "n_anchors": 25,
+      "n_features": 39,
+      "mean_point_pearson": 0.911284,
+      "mean_mae": 911.2552,
+      "std_mae": 5.901,
+      "mean_rmse": 1495.9213,
+      "per_seed_mae": [
+        906.724,
+        913.0324,
+        919.1508,
+        913.1585,
+        904.21
+      ],
+      "per_seed_rmse": [
+        1486.218,
+        1497.8848,
+        1506.0025,
+        1499.8532,
+        1489.6478
+      ],
+      "trailing_365d": {
+        "start": "2025-07-08",
+        "end": "2026-07-07",
+        "n_cutoffs": 16,
+        "mean_mae": 831.223,
+        "std_mae": 7.9912,
+        "mean_rmse": 1369.7037,
+        "per_seed_mae": [
+          820.2008,
+          836.6586,
+          835.4599,
+          838.4377,
+          825.3577
+        ],
+        "per_seed_rmse": [
+          1354.3808,
+          1377.7986,
+          1373.2763,
+          1378.0363,
+          1365.0265
+        ],
+        "mae_delta_vs_current": -83.1667,
+        "mae_delta_std_vs_current": 7.826
+      },
+      "anchors": [
+        {
+          "candidate_id": "de_land_113",
+          "lat": 49.5604,
+          "lon": 10.807,
+          "pearson": 0.9268,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_070",
+          "lat": 51.3927,
+          "lon": 11.5126,
+          "pearson": 0.9251,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_115",
+          "lat": 49.5604,
+          "lon": 12.2183,
+          "pearson": 0.9241,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_096",
+          "lat": 50.4766,
+          "lon": 12.2183,
+          "pearson": 0.922,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_061",
+          "lat": 51.8508,
+          "lon": 13.2768,
+          "pearson": 0.9204,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_080",
+          "lat": 50.9346,
+          "lon": 9.7485,
+          "pearson": 0.9186,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_131",
+          "lat": 48.6443,
+          "lon": 12.2183,
+          "pearson": 0.9184,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_102",
+          "lat": 50.0185,
+          "lon": 9.0428,
+          "pearson": 0.9165,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_045",
+          "lat": 52.3088,
+          "lon": 10.807,
+          "pearson": 0.916,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_086",
+          "lat": 50.9346,
+          "lon": 13.9824,
+          "pearson": 0.916,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_129",
+          "lat": 48.6443,
+          "lon": 10.807,
+          "pearson": 0.9148,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_133",
+          "lat": 48.6443,
+          "lon": 13.6296,
+          "pearson": 0.9142,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_118",
+          "lat": 49.1024,
+          "lon": 9.0428,
+          "pearson": 0.9138,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_025",
+          "lat": 53.2249,
+          "lon": 11.5126,
+          "pearson": 0.912,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_039",
+          "lat": 52.7669,
+          "lon": 13.9824,
+          "pearson": 0.9096,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_055",
+          "lat": 51.8508,
+          "lon": 9.0428,
+          "pearson": 0.909,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_022",
+          "lat": 53.2249,
+          "lon": 9.3956,
+          "pearson": 0.9063,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_017",
+          "lat": 53.683,
+          "lon": 13.2768,
+          "pearson": 0.9054,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_006",
+          "lat": 54.1411,
+          "lon": 10.807,
+          "pearson": 0.9052,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_100",
+          "lat": 50.0185,
+          "lon": 7.6315,
+          "pearson": 0.9021,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_136",
+          "lat": 48.1862,
+          "lon": 9.0428,
+          "pearson": 0.8979,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_116",
+          "lat": 49.1024,
+          "lon": 7.6315,
+          "pearson": 0.8978,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_003",
+          "lat": 54.5991,
+          "lon": 13.2768,
+          "pearson": 0.8972,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_064",
+          "lat": 51.3927,
+          "lon": 7.2787,
+          "pearson": 0.8965,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_147",
+          "lat": 47.7282,
+          "lon": 12.2183,
+          "pearson": 0.8964,
+          "best_lag_hours": 0
+        }
+      ],
+      "folds": [
+        {
+          "delivery_day": "2025-01-01",
+          "start_utc": "2024-12-31T23:00:00+00:00",
+          "end_utc": "2025-01-01T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 159.9372,
+          "rmse": 343.4815
+        },
+        {
+          "delivery_day": "2025-02-17",
+          "start_utc": "2025-02-16T23:00:00+00:00",
+          "end_utc": "2025-02-17T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 967.0868,
+          "rmse": 1860.5092
+        },
+        {
+          "delivery_day": "2025-03-19",
+          "start_utc": "2025-03-18T23:00:00+00:00",
+          "end_utc": "2025-03-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 509.5628,
+          "rmse": 991.2727
+        },
+        {
+          "delivery_day": "2025-04-17",
+          "start_utc": "2025-04-16T22:00:00+00:00",
+          "end_utc": "2025-04-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 2637.7725,
+          "rmse": 4016.7146
+        },
+        {
+          "delivery_day": "2025-05-16",
+          "start_utc": "2025-05-15T22:00:00+00:00",
+          "end_utc": "2025-05-16T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1037.6372,
+          "rmse": 1524.5123
+        },
+        {
+          "delivery_day": "2025-06-14",
+          "start_utc": "2025-06-13T22:00:00+00:00",
+          "end_utc": "2025-06-14T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1512.7187,
+          "rmse": 2290.2122
+        },
+        {
+          "delivery_day": "2025-07-22",
+          "start_utc": "2025-07-21T22:00:00+00:00",
+          "end_utc": "2025-07-22T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 717.9938,
+          "rmse": 1133.8982
+        },
+        {
+          "delivery_day": "2025-08-17",
+          "start_utc": "2025-08-16T22:00:00+00:00",
+          "end_utc": "2025-08-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 642.0741,
+          "rmse": 913.6506
+        },
+        {
+          "delivery_day": "2025-08-18",
+          "start_utc": "2025-08-17T22:00:00+00:00",
+          "end_utc": "2025-08-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1003.9731,
+          "rmse": 1616.4572
+        },
+        {
+          "delivery_day": "2025-09-18",
+          "start_utc": "2025-09-17T22:00:00+00:00",
+          "end_utc": "2025-09-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 367.9557,
+          "rmse": 568.0584
+        },
+        {
+          "delivery_day": "2025-10-03",
+          "start_utc": "2025-10-02T22:00:00+00:00",
+          "end_utc": "2025-10-03T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 584.4763,
+          "rmse": 1149.8505
+        },
+        {
+          "delivery_day": "2025-10-24",
+          "start_utc": "2025-10-23T22:00:00+00:00",
+          "end_utc": "2025-10-24T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 807.3136,
+          "rmse": 1404.8109
+        },
+        {
+          "delivery_day": "2025-11-08",
+          "start_utc": "2025-11-07T23:00:00+00:00",
+          "end_utc": "2025-11-08T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 491.0533,
+          "rmse": 829.2489
+        },
+        {
+          "delivery_day": "2025-11-19",
+          "start_utc": "2025-11-18T23:00:00+00:00",
+          "end_utc": "2025-11-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 228.5112,
+          "rmse": 487.7458
+        },
+        {
+          "delivery_day": "2025-12-25",
+          "start_utc": "2025-12-24T23:00:00+00:00",
+          "end_utc": "2025-12-25T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 332.2857,
+          "rmse": 722.8728
+        },
+        {
+          "delivery_day": "2026-01-23",
+          "start_utc": "2026-01-22T23:00:00+00:00",
+          "end_utc": "2026-01-23T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 324.9943,
+          "rmse": 708.807
+        },
+        {
+          "delivery_day": "2026-02-09",
+          "start_utc": "2026-02-08T23:00:00+00:00",
+          "end_utc": "2026-02-09T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 227.1052,
+          "rmse": 400.2496
+        },
+        {
+          "delivery_day": "2026-03-15",
+          "start_utc": "2026-03-14T23:00:00+00:00",
+          "end_utc": "2026-03-15T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 214.3779,
+          "rmse": 353.2605
+        },
+        {
+          "delivery_day": "2026-04-06",
+          "start_utc": "2026-04-05T22:00:00+00:00",
+          "end_utc": "2026-04-06T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1507.7253,
+          "rmse": 2574.4139
+        },
+        {
+          "delivery_day": "2026-05-21",
+          "start_utc": "2026-05-20T22:00:00+00:00",
+          "end_utc": "2026-05-21T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 2084.2695,
+          "rmse": 3206.5447
+        },
+        {
+          "delivery_day": "2026-06-17",
+          "start_utc": "2026-06-16T22:00:00+00:00",
+          "end_utc": "2026-06-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1775.2003,
+          "rmse": 2508.9057
+        },
+        {
+          "delivery_day": "2026-07-07",
+          "start_utc": "2026-07-06T22:00:00+00:00",
+          "end_utc": "2026-07-07T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1813.904,
+          "rmse": 3091.3188
+        }
+      ],
+      "mae_delta_vs_current": -262.8505,
+      "mae_delta_std_vs_current": 7.979
+    },
+    {
+      "variant": "current",
+      "selection_method": "minimum_distance",
+      "redundancy_penalty": null,
+      "coverage_relevance_weight": null,
+      "configured_min_distance_km": 0.0,
+      "actual_min_pair_distance_km": 48.9567,
+      "n_anchors": 20,
+      "n_features": 39,
+      "mean_point_pearson": 0.922725,
+      "mean_mae": 1174.1057,
+      "std_mae": 4.743,
+      "mean_rmse": 1948.5601,
+      "per_seed_mae": [
+        1169.1639,
+        1174.0287,
+        1176.5355,
+        1170.0945,
+        1180.7059
+      ],
+      "per_seed_rmse": [
+        1940.7179,
+        1952.4675,
+        1950.6151,
+        1941.732,
+        1957.2682
+      ],
+      "trailing_365d": {
+        "start": "2025-07-08",
+        "end": "2026-07-07",
+        "n_cutoffs": 16,
+        "mean_mae": 914.3896,
+        "std_mae": 4.8053,
+        "mean_rmse": 1515.2226,
+        "per_seed_mae": [
+          907.9137,
+          914.8244,
+          919.5322,
+          911.4192,
+          918.2585
+        ],
+        "per_seed_rmse": [
+          1502.3301,
+          1523.2587,
+          1517.7687,
+          1512.9746,
+          1519.7809
+        ],
+        "mae_delta_vs_current": 0.0,
+        "mae_delta_std_vs_current": 0.0
+      },
+      "anchors": [
+        {
+          "candidate_id": "de_land_113",
+          "lat": 49.5604,
+          "lon": 10.807,
+          "pearson": 0.9268,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_070",
+          "lat": 51.3927,
+          "lon": 11.5126,
+          "pearson": 0.9251,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_083",
+          "lat": 50.9346,
+          "lon": 11.8654,
+          "pearson": 0.9244,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_114",
+          "lat": 49.5604,
+          "lon": 11.5126,
+          "pearson": 0.9241,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_115",
+          "lat": 49.5604,
+          "lon": 12.2183,
+          "pearson": 0.9241,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_105",
+          "lat": 50.0185,
+          "lon": 11.1598,
+          "pearson": 0.9235,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_104",
+          "lat": 50.0185,
+          "lon": 10.4541,
+          "pearson": 0.9234,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_081",
+          "lat": 50.9346,
+          "lon": 10.4541,
+          "pearson": 0.9233,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_120",
+          "lat": 49.1024,
+          "lon": 10.4541,
+          "pearson": 0.9232,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_084",
+          "lat": 50.9346,
+          "lon": 12.5711,
+          "pearson": 0.9231,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_122",
+          "lat": 49.1024,
+          "lon": 11.8654,
+          "pearson": 0.9224,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_096",
+          "lat": 50.4766,
+          "lon": 12.2183,
+          "pearson": 0.922,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_121",
+          "lat": 49.1024,
+          "lon": 11.1598,
+          "pearson": 0.9219,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_069",
+          "lat": 51.3927,
+          "lon": 10.807,
+          "pearson": 0.9217,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_094",
+          "lat": 50.4766,
+          "lon": 10.807,
+          "pearson": 0.9215,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_071",
+          "lat": 51.3927,
+          "lon": 12.2183,
+          "pearson": 0.9213,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_112",
+          "lat": 49.5604,
+          "lon": 10.1013,
+          "pearson": 0.9213,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_103",
+          "lat": 50.0185,
+          "lon": 9.7485,
+          "pearson": 0.9205,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_072",
+          "lat": 51.3927,
+          "lon": 12.9239,
+          "pearson": 0.9205,
+          "best_lag_hours": 0
+        },
+        {
+          "candidate_id": "de_land_061",
+          "lat": 51.8508,
+          "lon": 13.2768,
+          "pearson": 0.9204,
+          "best_lag_hours": 0
+        }
+      ],
+      "folds": [
+        {
+          "delivery_day": "2025-01-01",
+          "start_utc": "2024-12-31T23:00:00+00:00",
+          "end_utc": "2025-01-01T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 145.5582,
+          "rmse": 267.847
+        },
+        {
+          "delivery_day": "2025-02-17",
+          "start_utc": "2025-02-16T23:00:00+00:00",
+          "end_utc": "2025-02-17T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1325.8098,
+          "rmse": 2722.1868
+        },
+        {
+          "delivery_day": "2025-03-19",
+          "start_utc": "2025-03-18T23:00:00+00:00",
+          "end_utc": "2025-03-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 978.4159,
+          "rmse": 1587.2791
+        },
+        {
+          "delivery_day": "2025-04-17",
+          "start_utc": "2025-04-16T22:00:00+00:00",
+          "end_utc": "2025-04-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 5001.8043,
+          "rmse": 7894.7376
+        },
+        {
+          "delivery_day": "2025-05-16",
+          "start_utc": "2025-05-15T22:00:00+00:00",
+          "end_utc": "2025-05-16T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 2125.6359,
+          "rmse": 3563.1789
+        },
+        {
+          "delivery_day": "2025-06-14",
+          "start_utc": "2025-06-13T22:00:00+00:00",
+          "end_utc": "2025-06-14T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1617.7634,
+          "rmse": 2623.2833
+        },
+        {
+          "delivery_day": "2025-07-22",
+          "start_utc": "2025-07-21T22:00:00+00:00",
+          "end_utc": "2025-07-22T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1372.2727,
+          "rmse": 2100.6937
+        },
+        {
+          "delivery_day": "2025-08-17",
+          "start_utc": "2025-08-16T22:00:00+00:00",
+          "end_utc": "2025-08-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 844.9145,
+          "rmse": 1327.7879
+        },
+        {
+          "delivery_day": "2025-08-18",
+          "start_utc": "2025-08-17T22:00:00+00:00",
+          "end_utc": "2025-08-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1149.6805,
+          "rmse": 1852.5775
+        },
+        {
+          "delivery_day": "2025-09-18",
+          "start_utc": "2025-09-17T22:00:00+00:00",
+          "end_utc": "2025-09-18T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 538.6439,
+          "rmse": 1010.1415
+        },
+        {
+          "delivery_day": "2025-10-03",
+          "start_utc": "2025-10-02T22:00:00+00:00",
+          "end_utc": "2025-10-03T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 837.263,
+          "rmse": 1432.0507
+        },
+        {
+          "delivery_day": "2025-10-24",
+          "start_utc": "2025-10-23T22:00:00+00:00",
+          "end_utc": "2025-10-24T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 420.5897,
+          "rmse": 879.6692
+        },
+        {
+          "delivery_day": "2025-11-08",
+          "start_utc": "2025-11-07T23:00:00+00:00",
+          "end_utc": "2025-11-08T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 229.7234,
+          "rmse": 404.7089
+        },
+        {
+          "delivery_day": "2025-11-19",
+          "start_utc": "2025-11-18T23:00:00+00:00",
+          "end_utc": "2025-11-19T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 230.4504,
+          "rmse": 404.4132
+        },
+        {
+          "delivery_day": "2025-12-25",
+          "start_utc": "2025-12-24T23:00:00+00:00",
+          "end_utc": "2025-12-25T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 652.2617,
+          "rmse": 1343.2146
+        },
+        {
+          "delivery_day": "2026-01-23",
+          "start_utc": "2026-01-22T23:00:00+00:00",
+          "end_utc": "2026-01-23T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 225.213,
+          "rmse": 463.68
+        },
+        {
+          "delivery_day": "2026-02-09",
+          "start_utc": "2026-02-08T23:00:00+00:00",
+          "end_utc": "2026-02-09T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 162.1623,
+          "rmse": 282.1971
+        },
+        {
+          "delivery_day": "2026-03-15",
+          "start_utc": "2026-03-14T23:00:00+00:00",
+          "end_utc": "2026-03-15T22:00:00+00:00",
+          "test_rows": 24,
+          "mae": 555.4729,
+          "rmse": 952.8312
+        },
+        {
+          "delivery_day": "2026-04-06",
+          "start_utc": "2026-04-05T22:00:00+00:00",
+          "end_utc": "2026-04-06T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1655.6528,
+          "rmse": 2816.0946
+        },
+        {
+          "delivery_day": "2026-05-21",
+          "start_utc": "2026-05-20T22:00:00+00:00",
+          "end_utc": "2026-05-21T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1575.6271,
+          "rmse": 2364.1678
+        },
+        {
+          "delivery_day": "2026-06-17",
+          "start_utc": "2026-06-16T22:00:00+00:00",
+          "end_utc": "2026-06-17T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 1079.8711,
+          "rmse": 1537.2409
+        },
+        {
+          "delivery_day": "2026-07-07",
+          "start_utc": "2026-07-06T22:00:00+00:00",
+          "end_utc": "2026-07-07T21:00:00+00:00",
+          "test_rows": 24,
+          "mae": 2996.8197,
+          "rmse": 4865.8126
+        }
+      ],
+      "mae_delta_vs_current": 0.0,
+      "mae_delta_std_vs_current": 0.0
+    }
+  ]
+}
