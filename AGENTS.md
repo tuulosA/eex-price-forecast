@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Guidance for LLM coding agents working in this repo. Human-facing usage lives in `README.md`; this
-file is the orientation and the rules an agent needs before changing code.
+Guidance for LLM coding agents working in this repo. Human-facing usage starts in `README.md` and
+continues in `docs/`; this file is the orientation and the rules an agent needs before changing code.
 
 ## What this project is
 
@@ -43,20 +43,29 @@ src/eex_forecast/
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # correlation matrix + candidate/ranked point maps
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
+  quality.py           # reject gross upstream actual-data corruption before hourly resampling
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
   backtest_cutoffs.py  # frozen cutoffs from config/backtest_cutoffs.yaml + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning; single-model backtest engine + seed averaging (reused by aggregation/ablation)
   aggregation.py       # A/B weather-aggregation strategies per fundamental + neighbour (eex analyze aggregation)
   ablation.py          # remove chosen features and measure the loss, any model (eex analyze ablation)
+  wind_anchor_analysis.py # wind anchor spacing/count/redundancy/coverage experiments
   evaluation.py        # end-to-end 24h eval + oracle-substitution price diagnostics
   solar_analysis.py    # solar error slices + physics/irradiance feature A/B commands
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
-tests/                 # one test_*.py per module; external APIs mocked
-config/                # hyperparams.json (tuned params), weather_points.json (chosen points)
-data/                  # gitignored runtime artifacts: eex.db, models/, forecast/, tuning/, aggregation/, ablation/, analysis/
+tests/                 # focused unit/regression tests; external APIs mocked
+config/
+  hyperparams.json     # adopted tuned parameters
+  weather_points.json  # adopted German and neighbour weather anchors
+  backtest_cutoffs.yaml  # shared frozen walk-forward delivery days
+data/                  # runtime data is ignored; selected plots/reports are re-included as evidence
+docs/
+  data-pipeline.md      # sources, update windows, timestamps, weather alignment, cross-border inputs
+  experimentation.md   # point selection, tuning, aggregation, ablation, eval, oracle, diagnostics
+  model-development.md  # experiment findings, decisions, current priorities, and deferred research
 ```
 
 ## Invariants — do not break these
@@ -112,6 +121,11 @@ data/                  # gitignored runtime artifacts: eex.db, models/, forecast
 - **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
   parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
+- **The adopted wind anchors are spatially selected, not the plain correlation top 20.**
+  `config/weather_points.json` contains 20 German wind points with roughly 135 km minimum separation.
+  Running `eex points rank --target wind` directly would replace them with the clustered correlation
+  ranking. Do not change the production set without a controlled anchor comparison, weather backfill,
+  wind retune, end-to-end/oracle evaluation, and live forecast coverage check.
 - **D+1 weather backtests have a modest optimistic bias.** Open-Meteo's Historical Forecast API stitches
   the short first hours of successive ECMWF runs, not the older coherent run available at the real issue
   time. ECMWF is usually already strong one to two days out, so frozen-cutoff feature/model comparisons
@@ -133,10 +147,32 @@ mypy src                         # strict mode
 pytest                           # APIs are mocked; no key needed
 ```
 
-Runtime pipeline (needs data + an ENTSO-E key in `.env.local`; see README for the full first-run
-sequence): `eex db init` → geometry/points setup → `eex backfill ...` → `eex model train` →
-`eex forecast --plot`. `eex run` chains update → optional retrain → forecast. `eex model tune` writes
-tuned params to `config/hyperparams.json`.
+Runtime pipeline (needs an ENTSO-E key in `.env.local`; see README for the full first-run sequence):
+`eex db init` → `eex backfill ...` → `eex update` → `eex model train` → `eex forecast --plot`.
+Geometry generation and point ranking are needed only when rebuilding the committed selections.
+`eex run` chains update → optional retrain → forecast. `eex model tune` writes tuned params to
+`config/hyperparams.json`.
+
+## Documentation ownership and synchronization
+
+Documentation is part of the behavior being changed. Keep these sources aligned in the same change:
+
+- `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
+  forecast outputs, and headline evaluation.
+- `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
+  radiation alignment, and cross-border inputs.
+- `docs/experimentation.md` owns point rebuilding, tuning, aggregation, ablation, eval/oracle, analysis
+  commands, report locations, and interpretation.
+- `docs/model-development.md` owns current benchmarks, experiment findings, decisions, priorities, and
+  explicitly deferred work.
+- `AGENTS.md` owns code orientation, invariants, test expectations, and this documentation map.
+
+When CLI syntax, setup order, output columns/files, source behavior, feature semantics, adopted
+configuration, or evaluation methodology changes, update every affected document before finishing.
+Keep the detailed explanation in its canonical document and link to it elsewhere instead of copying
+large sections. Where concise facts are intentionally repeated—especially commands and headline
+benchmarks—cross-check every copy against the CLI and committed JSON reports. Clearly label historical
+results, and update all repository links when a document is renamed or moved.
 
 ## Conventions
 
@@ -144,7 +180,8 @@ tuned params to `config/hyperparams.json`.
   Match that density; a one-line docstring on a subtle function is under-documented here.
 - Strict typing (mypy `strict = true`); ruff rule set `E,F,W,I,B,UP,C4,N,SIM`, line length 100.
 - Prefer pure, unit-tested helpers (see `features.py`, `backtest_cutoffs.load_cutoffs`) over logic buried
-  in I/O or CLI code. Every `src` module has a matching `tests/test_*.py`.
+  in I/O or CLI code. Add focused tests beside behavioral changes, following the existing
+  `tests/test_*.py` organization.
 - All timestamps are **UTC**, hourly, ISO-8601; the DB primary key is the `timestamp` string.
 - Add a test alongside any behavioral change and keep `ruff`/`mypy`/`pytest` green before finishing.
 
@@ -158,4 +195,6 @@ tuned params to `config/hyperparams.json`.
 - **New data source / column** → extend `sources/`, add the column in `db/schema.py::TARGET_COLUMNS`
   (or let `ensure_columns` add weather columns), and thread it through `backfill.py`.
 - **Tuning search space** → `tuning.suggest_params` / `FIXED_PARAMS`.
+- **CLI / pipeline / model-contract change** → update the canonical document listed above, then
+  cross-check any repeated command, output, invariant, or benchmark in the other documents.
 ```
