@@ -49,6 +49,8 @@ _CHAIN: tuple[str, ...] = (*SUBMODELS, "price")
 # published horizon uncovered, and those hours then fall back to the deterministic weather with every
 # member identical.
 FORECAST_DAY_BUFFER = 2
+# Propagation is ~20s of solid compute for 51 members; report often enough that it never looks stalled.
+_PROGRESS_EVERY_MEMBERS = 10
 
 
 def fetch_member_weather(*, horizon_days: int) -> pd.DataFrame:
@@ -75,8 +77,12 @@ def fetch_member_weather(*, horizon_days: int) -> pd.DataFrame:
         budget,
     )
     merged: pd.DataFrame | None = None
-    for role, point in plan:
+    total = len(plan)
+    # Per-point progress, because pacing makes this the longest silent stretch in the whole command:
+    # roughly two and a half minutes over ~85 requests, most of it the limiter deliberately sleeping.
+    for index, (role, point) in enumerate(plan, start=1):
         columns = point_columns(role, point)  # Open-Meteo variable -> database column
+        logger.info("  ensemble weather %d/%d %s", index, total, point.column)
         members = fetch_ensemble_forecast(
             point.lat,
             point.lon,
@@ -181,8 +187,11 @@ def propagate_members(
         )
 
     member_ids = sorted(int(value) for value in pd.unique(member_weather[MEMBER_COLUMN]))
+    logger.info("Propagating %d members through %d models", len(member_ids), len(_CHAIN))
     results: list[pd.DataFrame] = []
-    for member in member_ids:
+    for position, member in enumerate(member_ids, start=1):
+        if position % _PROGRESS_EVERY_MEMBERS == 0 or position == len(member_ids):
+            logger.info("  propagated %d/%d members", position, len(member_ids))
         group = member_weather[member_weather[MEMBER_COLUMN] == member]
         frame = _member_frame(base, group, weather_columns)
         for name in _CHAIN:  # sub-models first: price reads their forecast fundamentals

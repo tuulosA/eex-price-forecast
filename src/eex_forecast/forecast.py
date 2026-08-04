@@ -77,13 +77,18 @@ def fetch_forecast_weather(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
     forecast_days = min(horizon_days + 2, _OPEN_METEO_MAX_FORECAST_DAYS)
     counts: dict[str, int] = {}
+    total = len(plan)
+    logger.info("Fetching forward weather for %d points", total)
     with connect(db_path) as conn:
         create_schema(conn)
-        for role, point in plan:
+        # Progress is logged per point, not just at the end: this loop is ~85 sequential HTTP requests
+        # and roughly a minute and a half of wall time, which without output reads as a hung command.
+        for index, (role, point) in enumerate(plan, start=1):
             columns = point_columns(role, point)
             forecast = fetch_forecast(
                 point.lat, point.lon, variables=list(columns), forecast_days=forecast_days
             )
+            logger.info("  forward weather %d/%d %s", index, total, point.column)
             if forecast.empty:
                 continue
             frame = forecast[["timestamp", *columns]].rename(columns=columns)
