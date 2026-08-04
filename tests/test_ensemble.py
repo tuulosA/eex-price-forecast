@@ -582,3 +582,45 @@ def test_bands_start_where_members_actually_cover() -> None:
     out = propagate_members(base, weather, forward_from=now, models=models)
 
     assert pd.to_datetime(out[TIMESTAMP], utc=True).min() == covered_from
+
+
+# -- plotting -------------------------------------------------------------------
+def test_ensemble_is_drawn_distinctly_from_the_deterministic_line() -> None:
+    """Deterministic and ensemble must not share a colour, or they read as one series."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from eex_forecast.forecast import ENSEMBLE_COLOR, _draw_ensemble
+
+    summary = summarise_members(_forecast_frame(members=5, hours=6))
+    fig, ax = plt.subplots()
+    try:
+        assert _draw_ensemble(ax, summary, "price") is True
+        labels = [str(line.get_label()) for line in ax.get_lines()]
+        assert "ensemble mean" in labels
+        mean_line = next(ln for ln in ax.get_lines() if ln.get_label() == "ensemble mean")
+        assert mean_line.get_linestyle() == "--"  # distinguishable without relying on hue
+        assert mean_line.get_color() == ENSEMBLE_COLOR
+        assert ENSEMBLE_COLOR != "#4910bc"  # the deterministic price colour
+        band_labels = {str(c.get_label()) for c in ax.collections}
+        assert band_labels == {"ensemble p10-p90", "ensemble p25-p75"}
+    finally:
+        plt.close(fig)
+
+
+def test_draw_ensemble_is_a_noop_without_a_summary() -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from eex_forecast.forecast import _draw_ensemble
+
+    fig, ax = plt.subplots()
+    try:
+        assert _draw_ensemble(ax, None, "price") is False
+        assert not ax.get_lines() and not ax.collections
+    finally:
+        plt.close(fig)
