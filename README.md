@@ -144,6 +144,28 @@ fresh.
 
 `--write-db` also stores forecasts in SQLite without touching actual columns.
 
+### Weather ensemble (optional)
+
+`eex forecast --ensemble` additionally runs the same trained models once per member of ECMWF's
+51-member weather ensemble, giving a spread around the deterministic forecast:
+
+```bash
+eex forecast --ensemble --plot
+```
+
+This writes `forecast_ensemble.csv` (per-hour mean and p10/p25/p50/p75/p90 for wind, solar, load, and
+price) and, with `--plot`, draws those bands behind the deterministic line, which remains the headline
+forecast. Per-member predictions are stored in `data/eex_ensemble.db`; the raw member weather is
+archived to `data/eex_ensemble_weather.db` on a rolling 30-run window.
+
+> **These bands are weather-driven spread only.** Members differ solely in their weather realisation, so
+> the bands exclude sub-model error, price-model error, plant outages, and demand shocks, and are
+> therefore narrower than realised forecast error. They are not calibrated predictive intervals.
+
+The ensemble runs after the deterministic forecast is written and cannot affect it — if the ensemble
+endpoint fails, the run still produces a normal forecast. Expect it to take a few minutes: each request
+returns 51 series per variable, so requests are paced against Open-Meteo's per-minute budget.
+
 The forward window begins one hour after the final published day-ahead price and targets the next 14
 unknown German delivery days. If ECMWF ends partway through the final delivery day, the incomplete day
 is discarded. A run may therefore contain 13 complete days rather than a partially populated

@@ -31,6 +31,9 @@ the corresponding sub-model forecast.
   actual generation, actual load, installed capacity, French nuclear outages, and forecast transfer
   capacity.
 - [Open-Meteo ECMWF Forecast API](https://open-meteo.com/en/docs/ecmwf-api) supplies forward weather.
+- [Open-Meteo Ensemble API](https://open-meteo.com/en/docs/ensemble-api) supplies the optional
+  51-member ECMWF ensemble used by `eex forecast --ensemble` (see
+  [Weather ensemble](#weather-ensemble)).
 - [Open-Meteo Historical Forecast API](https://open-meteo.com/en/docs/historical-forecast-api) supplies
   archived ECMWF IFS forecasts used for training. The project does not use ERA5 or other reanalysis.
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) supplies country land polygons.
@@ -193,6 +196,46 @@ Per-border values are stored as `ntc_imp_<border>` and `ntc_exp_<border>`. For e
 week-ahead capacity is preferred and month-ahead capacity fills the remaining far horizon. The price
 model currently consumes `ntc_imp_total` and `ntc_exp_total`, while per-border detail remains available
 in SQLite for experiments.
+
+## Weather ensemble
+
+`eex forecast --ensemble` adds an optional second product: the same trained models run once per ECMWF
+ensemble member, giving a weather-driven spread around the deterministic forecast.
+
+| Property | Value |
+|---|---|
+| Endpoint | `https://ensemble-api.open-meteo.com/v1/ensemble` |
+| Model | `ecmwf_ifs025` — the ensemble counterpart of the deterministic `ecmwf_ifs` |
+| Members | 51 (the bare variable column is the control; `_member01`…`_member50` are perturbed) |
+| Resolution / horizon | 0.25°, data through day 16 |
+| Member history | **~3 days only** — see below |
+| Cost | ~5 weighted API calls per requested variable; a full run is ~1,400 against a 600/min free budget |
+
+Requests send the same `wind_speed_unit=ms` and GTI tilt/azimuth as the deterministic client, because a
+difference there would silently change the units or panel geometry the models were fitted on.
+
+**There is no ensemble archive.** Open-Meteo retains individual members for roughly three days;
+`past_days` caps at 93 and returns empty member columns beyond that window, and the Previous Runs API
+(archived from January 2024) covers deterministic models only. This is why nothing is trained on
+ensemble features and why the ensemble cannot be backtested against the frozen cutoffs — and why the
+per-member outputs are archived locally, since that is the only way such a history can ever accumulate.
+
+**Rate limiting is mandatory, not defensive.** Each request returns one series per variable *per
+member*, so 20 consecutive six-variable requests exhaust the free tier's 600-per-minute budget. The
+client paces requests through a rolling-window limiter and backs off in minutes rather than seconds,
+because the throttle is minutely. An unpaced first implementation failed with HTTP 429 partway through
+the points.
+
+Storage is split by retention policy, and neither file is the production database:
+
+| File | Contents | Retention |
+|---|---|---|
+| `data/eex_ensemble.db` | run metadata + per-member predictions (~2 MB/run) | permanent |
+| `data/eex_ensemble_weather.db` | raw member weather (~30 MB/run measured) | rolling `ENSEMBLE_RETENTION_RUNS` (30) |
+
+The per-member predictions are what a future interval calibration needs, so they are never pruned. The
+raw weather is optional — it exists to allow re-propagating old ensembles through retrained models, or
+one day training on ensemble spread — so it is bounded and can be deleted outright without loss.
 
 ## Forecast outputs
 

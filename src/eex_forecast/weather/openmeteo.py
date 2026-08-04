@@ -72,10 +72,34 @@ def _prepare_request(url: str, params: dict[str, Any]) -> tuple[str, dict[str, A
     return url, params
 
 
-def _get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
+def get_json(
+    url: str,
+    params: dict[str, Any],
+    *,
+    attempts: int = _RETRY_ATTEMPTS,
+    backoff_s: float = _RETRY_BACKOFF_S,
+) -> dict[str, Any]:
+    """Public alias of the retrying, key-aware GET used by every Open-Meteo endpoint.
+
+    The ensemble client (:mod:`eex_forecast.ensemble.client`) reuses this so retry/backoff and
+    customer-endpoint routing are defined once rather than reimplemented per endpoint. It passes a longer
+    ``backoff_s`` because Open-Meteo's ensemble throttle is a *minutely* budget: its 429 says "try again
+    in one minute", so the default few-second backoff would exhaust its attempts still inside the same
+    blocked minute.
+    """
+    return _get_json(url, params, attempts=attempts, backoff_s=backoff_s)
+
+
+def _get_json(
+    url: str,
+    params: dict[str, Any],
+    *,
+    attempts: int = _RETRY_ATTEMPTS,
+    backoff_s: float = _RETRY_BACKOFF_S,
+) -> dict[str, Any]:
     url, params = _prepare_request(url, params)
     last_exc: Exception | None = None
-    for attempt in range(_RETRY_ATTEMPTS):
+    for attempt in range(attempts):
         try:
             response = requests.get(url, params=params, timeout=_TIMEOUT_S)
             response.raise_for_status()
@@ -83,14 +107,14 @@ def _get_json(url: str, params: dict[str, Any]) -> dict[str, Any]:
             return payload
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
-            if status in _RETRYABLE_STATUS and attempt < _RETRY_ATTEMPTS - 1:
-                time.sleep(_RETRY_BACKOFF_S * 2**attempt)
+            if status in _RETRYABLE_STATUS and attempt < attempts - 1:
+                time.sleep(backoff_s * 2**attempt)
                 last_exc = exc
                 continue
             raise
         except (requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout) as exc:
-            if attempt < _RETRY_ATTEMPTS - 1:
-                time.sleep(_RETRY_BACKOFF_S * 2**attempt)
+            if attempt < attempts - 1:
+                time.sleep(backoff_s * 2**attempt)
                 last_exc = exc
                 continue
             raise
