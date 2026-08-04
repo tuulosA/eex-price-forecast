@@ -523,7 +523,6 @@ def plot_forecast(
         label="forecast (deterministic)" if drew_fan else "forecast",
         zorder=4,  # above the ensemble mean: the deterministic run stays the published series
     )
-    ax.axvline(split, color="0.7", linestyle="--", linewidth=0.8)
     ax.set_xlabel("time (UTC)")
     ax.set_ylabel("EUR / MWh")
     title = f"DE day-ahead price: {HORIZON_DAYS}-day forecast"
@@ -591,7 +590,6 @@ def plot_fundamentals(
             label="forecast (deterministic)" if drew else "forecast",
             zorder=4,
         )
-        ax.axvline(now, color="0.7", linestyle="--", linewidth=0.8)
         ax.set_ylabel(ylabel)
         ax.grid(True, color="0.92")
         ax.legend(loc="upper left", fontsize=8)
@@ -668,12 +666,11 @@ def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path:
             ax.plot(
                 times, pd.to_numeric(data[column], errors="coerce"), linewidth=1.0, label=column
             )
-        ax.axvline(now, color="0.5", linestyle="--", linewidth=0.8)
         ax.set_ylabel(label, fontsize=8)
         ax.grid(True, color="0.93")
         if data.shape[1] > 1:
             ax.legend(loc="upper left", fontsize=7, ncol=min(4, data.shape[1]))
-    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple; split at now)")
+    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple)")
     axes[-1, 0].set_xlabel("time (UTC)")
     fig.autofmt_xdate()
     fig.tight_layout()
