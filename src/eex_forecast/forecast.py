@@ -404,13 +404,26 @@ def _forecast_split(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> p
     return times[has_actual.to_numpy()].max() if bool(has_actual.any()) else now
 
 
-def _draw_ensemble_fan(ax: object, summary: pd.DataFrame | None, prefix: str, color: str) -> bool:
-    """Shade the p10-p90 and p25-p75 ensemble bands for one model behind the deterministic line.
+# One colour identifies "the ensemble" across every panel, so the deterministic series can keep the
+# per-panel colour it has always had and the two are never confused. Teal is unused elsewhere in these
+# plots (price purple, wind blue, solar orange, load red, actuals black/grey), and the ensemble mean is
+# additionally dashed - so the two series remain distinguishable without relying on hue alone, which
+# matters in the load panel where red and teal-green are a red/green-deficient pairing.
+ENSEMBLE_COLOR = "#0f766e"
+
+
+def _draw_ensemble(ax: object, summary: pd.DataFrame | None, prefix: str) -> bool:
+    """Draw one model's ensemble: the p10-p90 and p25-p75 bands plus the ensemble mean.
 
     Two nested bands rather than one: the inner quartile band is where half the members sit, and the
-    contrast between them shows whether the spread is a broad plateau or a tight core with tails. Drawn
-    at low ``zorder`` so the deterministic forecast - which remains the published number - stays on top
-    and legible. Returns whether anything was drawn, so callers only add a legend entry when there is one.
+    contrast between them shows whether the spread is a broad plateau or a tight core with tails.
+
+    The mean is drawn because the *gap* between it and the deterministic line is the most useful thing on
+    the plot - a deterministic run sitting near the edge of its own ensemble is a warning that the
+    published number is an atypical draw. The two genuinely differ (measured: ~10 EUR/MWh mean absolute
+    difference, rising past 25 at long lead times) and that difference is expected, not a defect. The
+    ensemble mean is nonetheless *not* the headline: averaging 51 nonlinear paths shaves peaks, so it is
+    drawn thinner and dashed, below the deterministic line's ``zorder``.
     """
     if summary is None or summary.empty:
         return False
@@ -420,13 +433,12 @@ def _draw_ensemble_fan(ax: object, summary: pd.DataFrame | None, prefix: str, co
     if not {names["p10"], names["p90"]} <= set(summary.columns):
         return False
     moments = pd.to_datetime(summary[TIMESTAMP], utc=True)
-    outer = (pd.to_numeric(summary[names["p10"]]), pd.to_numeric(summary[names["p90"]]))
     ax.fill_between(  # type: ignore[attr-defined]
         moments,
-        outer[0],
-        outer[1],
-        color=color,
-        alpha=0.16,
+        pd.to_numeric(summary[names["p10"]]),
+        pd.to_numeric(summary[names["p90"]]),
+        color=ENSEMBLE_COLOR,
+        alpha=0.14,
         linewidth=0,
         zorder=1,
         label="ensemble p10-p90",
@@ -436,11 +448,21 @@ def _draw_ensemble_fan(ax: object, summary: pd.DataFrame | None, prefix: str, co
             moments,
             pd.to_numeric(summary[names["p25"]]),
             pd.to_numeric(summary[names["p75"]]),
-            color=color,
+            color=ENSEMBLE_COLOR,
             alpha=0.26,
             linewidth=0,
             zorder=2,
             label="ensemble p25-p75",
+        )
+    if names["mean"] in summary.columns:
+        ax.plot(  # type: ignore[attr-defined]
+            moments,
+            pd.to_numeric(summary[names["mean"]]),
+            color=ENSEMBLE_COLOR,
+            linewidth=1.1,
+            linestyle="--",
+            zorder=3,
+            label="ensemble mean",
         )
     return True
 
@@ -470,7 +492,7 @@ def plot_forecast(
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(12.0, 5.0))
-    drew_fan = _draw_ensemble_fan(ax, summary, "price", "#4910bc")
+    drew_fan = _draw_ensemble(ax, summary, "price")
     actual_price = _numeric_column(frame, "price_actual_eur_mwh")
     # Split at the last known price (actuals run past `now` to D+1), and show the forecast only from there
     # on, so the in-sample history is not drawn shadowing the actual - see `_forecast_split`.
@@ -489,8 +511,9 @@ def plot_forecast(
         times,
         forecast_price,
         color="#4910bc",
-        linewidth=1.3,
-        label="forecast",
+        linewidth=1.5,
+        label="forecast (deterministic)" if drew_fan else "forecast",
+        zorder=4,  # above the ensemble mean: the deterministic run stays the published series
     )
     ax.axvline(split, color="0.7", linestyle="--", linewidth=0.8)
     ax.set_xlabel("time (UTC)")
@@ -543,16 +566,22 @@ def plot_fundamentals(
     for ax, (prefix, actual_col, forecast_col, ylabel, color) in zip(
         axes, _FUNDAMENTAL_PANELS, strict=True
     ):
-        _draw_ensemble_fan(ax, summary, prefix, color)
+        drew = _draw_ensemble(ax, summary, prefix)
         ax.plot(
-            times, _numeric_column(frame, actual_col), color="0.45", linewidth=1.0, label="actual"
+            times,
+            _numeric_column(frame, actual_col),
+            color="0.45",
+            linewidth=1.0,
+            label="actual",
+            zorder=5,
         )
         ax.plot(
             times,
             _numeric_column(frame, forecast_col),
             color=color,
-            linewidth=1.3,
-            label="forecast",
+            linewidth=1.4,
+            label="forecast (deterministic)" if drew else "forecast",
+            zorder=4,
         )
         ax.axvline(now, color="0.7", linestyle="--", linewidth=0.8)
         ax.set_ylabel(ylabel)
