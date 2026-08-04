@@ -226,6 +226,14 @@ client paces requests through a rolling-window limiter and backs off in minutes 
 because the throttle is minutely. An unpaced first implementation failed with HTTP 429 partway through
 the points.
 
+The limiter covers the **minutely** budget only. The free tier also caps at 5,000 calls/hour and 10,000
+calls/day, and one ensemble run costs ~1,400, so roughly **three runs per hour and seven per day** are
+possible. That is ample for the intended one-run-a-day use, but repeated runs while developing will hit
+the hourly ceiling — which surfaces as a 429 on the very first point rather than partway through.
+Tracking the hourly budget would require state that outlives the process, which is not worth it for a
+limit a production schedule never approaches; when it does trigger, the run degrades to a normal
+deterministic forecast.
+
 Storage is split by retention policy, and neither file is the production database:
 
 | File | Contents | Retention |
@@ -249,3 +257,15 @@ load. Actual columns are populated only where measurements exist.
 - `drivers.png`: weather and cross-border driver panels.
 
 `--write-db` additionally stores forecasts in the separate forecast columns of SQLite.
+
+`--ensemble` adds `data/forecast/forecast_ensemble.csv`: one row per forward hour with `timestamp`,
+`n_members`, and `<model>_mean` plus `<model>_p10/p25/p50/p75/p90` for `wind`, `solar`, `load`, and
+`price` (26 columns). The first line is a `#` comment restating that the bands are weather-driven
+spread. With `--plot` the same bands and the ensemble mean are drawn behind the deterministic line on
+`forecast.png` and `fundamentals.png`; the deterministic series remains the headline and keeps its own
+colour, while the whole ensemble family is drawn in teal with a dashed mean.
+
+The ensemble CSV covers only the hours members actually cover, which begins at the ensemble run's own
+start rather than at the last settled price. `forecast.csv` therefore starts earlier than
+`forecast_ensemble.csv`, by design — emitting the intervening hours would imply ensemble information
+where the members all carry the same already-observed weather.
