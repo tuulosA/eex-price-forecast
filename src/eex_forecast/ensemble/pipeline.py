@@ -47,6 +47,7 @@ def run_ensemble_forecast(
     base: pd.DataFrame,
     *,
     forward_from: pd.Timestamp,
+    forward_until: pd.Timestamp | None = None,
     horizon_days: int = HORIZON_DAYS,
     archive_weather: bool = True,
     retention_runs: int = ENSEMBLE_RETENTION_RUNS,
@@ -54,14 +55,18 @@ def run_ensemble_forecast(
 ) -> pd.DataFrame | None:
     """Run the ensemble over ``base`` and write its CSV; returns the per-hour summary, or ``None``.
 
-    ``base`` is the trimmed production forecast frame, which already carries the history the price lag
-    needs. ``forward_from`` is the first hour with no settled price - the point where the fan should
-    begin, matching where the deterministic plot hands over from actual to forecast.
+    ``base`` must be the **untrimmed, buffered** forecast frame - the same one the deterministic models
+    predict on. It carries the history the price lag needs *and* the row after the last published hour,
+    without which the preceding-hour radiation lookup yields NaN irradiance on the final hour and
+    corrupts its price. ``forward_from`` is the first hour with no settled price, and ``forward_until``
+    is the exclusive end of the published window, so the bands cover exactly the hours the deterministic
+    forecast does.
     """
     try:
         forecasts, weather = run_ensemble(
             base,
             forward_from=forward_from,
+            forward_until=forward_until,
             horizon_days=horizon_days,
             member_weather=member_weather,
         )

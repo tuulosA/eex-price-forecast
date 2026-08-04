@@ -339,6 +339,12 @@ def run_forecast(
             requested_hours,
             retained_hours,
         )
+    # Keep the untrimmed, buffered frame for the ensemble. Trimming drops the row *after* the last
+    # published hour, and radiation is stamped at the end of its averaging interval - so a feature build
+    # over the trimmed frame has no `t + 1 h` row to read and silently yields NaN irradiance on the final
+    # hour, corrupting that hour's price. The deterministic path never hits this because it predicts
+    # before trimming; the ensemble must be given the same buffered frame and trimmed afterwards.
+    full_frame = frame
     keep = ((times >= start) & (times < end)).to_numpy()
     frame = frame[keep].reset_index(drop=True)
     times = pd.to_datetime(frame[TIMESTAMP], utc=True)
@@ -365,8 +371,9 @@ def run_forecast(
         from eex_forecast.ensemble.pipeline import run_ensemble_forecast
 
         summary = run_ensemble_forecast(
-            frame,
+            full_frame,
             forward_from=_forecast_split(_numeric_column(frame, PRICE_ACTUAL), times, now),
+            forward_until=end,  # the same published window the deterministic result was trimmed to
             horizon_days=horizon_days,
         )
 
