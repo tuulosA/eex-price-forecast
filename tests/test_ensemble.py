@@ -678,3 +678,58 @@ def test_final_hour_is_not_corrupted_by_a_trimmed_frame() -> None:
     # The trimmed frame loses irradiance on its final row; the buffered frame does not.
     assert pd.isna(last_trimmed["irr_solar"])
     assert pd.notna(last_buffered["irr_solar"])
+
+
+def test_run_ensemble_forwards_the_window_bound_to_propagation() -> None:
+    """Regression: run_ensemble accepted forward_until but dropped it before propagating.
+
+    Testing propagate_members directly missed this - the bound was correct there and lost one layer up,
+    so the published bands ran a day past the deterministic forecast. Assert through the public entry
+    point that actually gets called.
+    """
+    from eex_forecast.ensemble.propagate import run_ensemble
+
+    base, models, now = _base_and_models()
+    times = pd.to_datetime(base["timestamp"], utc=True)
+    weather = _member_weather(times[times >= now])
+    published_end = now + pd.Timedelta(hours=24)  # exclusive
+
+    forecasts, _ = run_ensemble(
+        base,
+        forward_from=now,
+        forward_until=published_end,
+        horizon_days=1,
+        member_weather=weather,
+        models=models,
+    )
+
+    assert pd.to_datetime(forecasts[TIMESTAMP], utc=True).max() == published_end - pd.Timedelta(
+        hours=1
+    )
+
+
+def test_ensemble_csv_never_extends_past_the_deterministic_forecast(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: the two published products must cover the same forward window."""
+    from eex_forecast.ensemble import pipeline as ensemble_pipeline
+    from eex_forecast.forecast import run_forecast
+
+    db_path, now, _ = _stub_forecast_env(tmp_path, monkeypatch)
+
+    def fake_fetch(*, horizon_days: int) -> pd.DataFrame:
+        # Deliberately over-long, as the real +2 day buffer is: it must be clipped, not published.
+        times = pd.date_range(now, periods=24 * 20, freq="h", tz="UTC")
+        return _member_weather(pd.Series(times), members=4)
+
+    monkeypatch.setattr("eex_forecast.ensemble.propagate.fetch_member_weather", fake_fetch)
+    monkeypatch.setattr(ensemble_pipeline, "FORECAST_DIR", tmp_path / "out")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_DB_PATH", tmp_path / "ens.db")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_WEATHER_DB_PATH", tmp_path / "ens_w.db")
+
+    result = run_forecast(str(db_path), horizon_days=3, history_days=30, ensemble=True)
+
+    summary = pd.read_csv(tmp_path / "out" / "forecast_ensemble.csv", comment="#")
+    summary["timestamp"] = pd.to_datetime(summary["timestamp"], utc=True)
+    deterministic_end = pd.to_datetime(result["timestamp"], utc=True).max()
+    assert summary["timestamp"].max() <= deterministic_end
