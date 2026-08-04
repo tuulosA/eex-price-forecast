@@ -177,8 +177,12 @@ returns 51 series per variable, so requests are paced against Open-Meteo's per-m
 
 The forward window begins one hour after the final published day-ahead price and targets the next 14
 unknown German delivery days. If ECMWF ends partway through the final delivery day, the incomplete day
-is discarded. A run may therefore contain 13 complete days rather than a partially populated
-fourteenth.
+is discarded rather than padded with missing weather.
+
+In practice that depends on when you run. The window's anchor jumps forward a day once the day-ahead
+auction clears around midday, while the weather fetch window stays anchored to today's midnight — so a
+**morning run publishes 14 unknown days, and an evening run publishes 13**. Seeing 13 after the auction
+is expected, not a fault.
 
 ## Evaluation
 

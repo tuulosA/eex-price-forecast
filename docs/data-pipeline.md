@@ -62,8 +62,15 @@ The live horizon is anchored to the last published German day-ahead price:
 - after publication, it starts at D+2;
 - the target is the next 14 unknown German delivery days.
 
-If ECMWF ends partway through the last delivery day, that incomplete day is discarded. A run may
-therefore publish 13 complete days instead of padding a fourteenth day with missing weather.
+If ECMWF ends partway through the last delivery day, that incomplete day is discarded rather than
+padded with missing weather.
+
+Which case you get is determined by the run time, not by chance. The horizon is anchored to the hour
+after the last settled price, so it moves forward a whole day when the auction clears; the weather
+request is anchored to today's local midnight and does not move. A run before publication therefore
+publishes **14** unknown delivery days, and a run after publication publishes **13** — the fourteenth
+would need weather one day beyond what ECMWF supplies. The preceding-hour radiation alignment is part
+of this: the final hour is only retained when the *following* hour's radiation is also present.
 
 ## Backfill and update windows
 

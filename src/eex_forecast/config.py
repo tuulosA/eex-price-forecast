@@ -61,6 +61,11 @@ AREA_CODE = "DE"
 ENTSOE_ZONE = "DE_LU"  # entsoe-py area key for the German-Luxembourg bidding zone
 ENTSOE_ZONE_EIC = "10Y1001A1001A82H"
 MARKET_TIMEZONE = "Europe/Berlin"
+# Unknown delivery days per run, counted from the hour after the last *settled* price. That anchor jumps
+# forward a day when the day-ahead auction clears around midday, while the weather fetch window stays
+# anchored to today's midnight - so an evening run reaches one day further than ECMWF does, the
+# incomplete final day is dropped whole, and 13 days are published instead of 14. That is expected, not
+# a fault; a morning run on the same data publishes all 14.
 HORIZON_DAYS = 14
 # How much settled history the forecast run reads, and therefore shows. One value governs every output
 # that displays history - forecast.csv and all three plots are built from the same trimmed frame - so
