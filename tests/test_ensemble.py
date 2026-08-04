@@ -624,3 +624,57 @@ def test_draw_ensemble_is_a_noop_without_a_summary() -> None:
         assert not ax.get_lines() and not ax.collections
     finally:
         plt.close(fig)
+
+
+# -- coverage / trimming regressions --------------------------------------------
+def test_bands_never_extend_past_member_coverage() -> None:
+    """Uncovered tail hours fall back to identical weather; emitting them fakes a zero-width band."""
+    base, models, now = _base_and_models()
+    times = pd.to_datetime(base["timestamp"], utc=True)
+    covered_until = times.max() - pd.Timedelta(hours=30)
+    weather = _member_weather(times[(times >= now) & (times <= covered_until)])
+
+    out = propagate_members(base, weather, forward_from=now, models=models)
+
+    assert pd.to_datetime(out[TIMESTAMP], utc=True).max() == covered_until
+    # And every emitted hour genuinely has spread, i.e. members differ.
+    spread = out.groupby(TIMESTAMP)["wind_forecast_mw"].nunique()
+    assert (spread > 1).all()
+
+
+def test_forward_until_clips_to_the_published_window() -> None:
+    base, models, now = _base_and_models()
+    times = pd.to_datetime(base["timestamp"], utc=True)
+    weather = _member_weather(times[times >= now])
+    published_end = now + pd.Timedelta(hours=24)  # exclusive
+
+    out = propagate_members(
+        base, weather, forward_from=now, forward_until=published_end, models=models
+    )
+
+    emitted = pd.to_datetime(out[TIMESTAMP], utc=True)
+    assert emitted.max() == published_end - pd.Timedelta(hours=1)
+
+
+def test_final_hour_is_not_corrupted_by_a_trimmed_frame() -> None:
+    """Radiation is stamped at interval end, so the frame must keep the row after the last output hour.
+
+    Feeding the ensemble a frame trimmed to the published window leaves the final hour's irradiance
+    lookup with no `t + 1 h` row, silently yielding NaN and a wrong price for that hour.
+    """
+    from eex_forecast.features import price_features
+
+    base, _, now = _base_and_models()
+    times = pd.to_datetime(base["timestamp"], utc=True)
+    published_end = times.max() - pd.Timedelta(hours=5)
+
+    trimmed = base[(times <= published_end).to_numpy()].reset_index(drop=True)
+    buffered = base
+
+    last_trimmed = price_features(trimmed).iloc[-1]
+    index = int(pd.to_datetime(buffered["timestamp"], utc=True).searchsorted(published_end))
+    last_buffered = price_features(buffered).iloc[index]
+
+    # The trimmed frame loses irradiance on its final row; the buffered frame does not.
+    assert pd.isna(last_trimmed["irr_solar"])
+    assert pd.notna(last_buffered["irr_solar"])

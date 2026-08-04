@@ -43,6 +43,14 @@ logger = logging.getLogger(__name__)
 _CHAIN: tuple[str, ...] = (*SUBMODELS, "price")
 
 
+# The deterministic path requests horizon + 2 days because "forecast_days" counts calendar days from
+# today's local midnight, so a mid-day run needs buffer to actually reach now + horizon. The ensemble
+# must request the same window: asking for exactly `horizon_days` leaves the last delivery day of the
+# published horizon uncovered, and those hours then fall back to the deterministic weather with every
+# member identical.
+FORECAST_DAY_BUFFER = 2
+
+
 def fetch_member_weather(*, horizon_days: int) -> pd.DataFrame:
     """Fetch every configured weather point's ensemble forecast into one member-keyed frame.
 
@@ -73,7 +81,7 @@ def fetch_member_weather(*, horizon_days: int) -> pd.DataFrame:
             point.lat,
             point.lon,
             variables=list(columns),
-            forecast_days=horizon_days,
+            forecast_days=horizon_days + FORECAST_DAY_BUFFER,
             limiter=limiter,
         )
         if members.empty:
@@ -126,6 +134,7 @@ def propagate_members(
     member_weather: pd.DataFrame,
     *,
     forward_from: pd.Timestamp,
+    forward_until: pd.Timestamp | None = None,
     models: dict[str, TrainedModel] | None = None,
 ) -> pd.DataFrame:
     """Run the full chain for every member; returns frame[``member``, ``timestamp``, *forecast columns].
@@ -134,11 +143,17 @@ def propagate_members(
     needs them) but not returned. ``models`` is an injection seam for tests; production loads the
     persisted artifacts.
 
-    Output is additionally clipped to the hours the member weather actually covers. The ensemble run
-    starts at the current day's midnight, while ``forward_from`` is the last settled price - which can be
-    a day or more earlier, since day-ahead prices are known through D+1. Those in-between hours would
-    otherwise be returned with every member carrying identical (already-observed) weather, producing a
-    zero-width band that looks like a bug and implies ensemble information where there is none.
+    Output is additionally clipped to the hours the member weather actually covers, **at both ends**, and
+    to ``forward_until`` when given.
+
+    The start matters because the ensemble run begins at the current day's midnight while
+    ``forward_from`` is the last settled price, which can be a day or more earlier since day-ahead prices
+    are known through D+1. The end matters for the same reason in reverse: the base frame is fetched with
+    a buffer beyond the published horizon, so its final rows can fall outside the ensemble's coverage.
+
+    In both cases the uncovered rows would otherwise be emitted with every member carrying identical
+    weather - :func:`_member_frame` leaves the base frame's values where a member has none - producing a
+    zero-width band that looks like broken data and implies ensemble information where there is none.
     """
     loaded = models or {name: TrainedModel.load(REGISTRY[name]) for name in _CHAIN}
     missing = [name for name in _CHAIN if name not in loaded]
@@ -153,8 +168,11 @@ def propagate_members(
             "the members would not change the forecast."
         )
 
-    covered_from = pd.to_datetime(member_weather[TIMESTAMP], utc=True).min()
-    start = max(forward_from, covered_from)
+    covered = pd.to_datetime(member_weather[TIMESTAMP], utc=True)
+    start = max(forward_from, covered.min())
+    end = covered.max()
+    if forward_until is not None:
+        end = min(end, forward_until - pd.Timedelta(hours=1))
     if start > forward_from:
         logger.info(
             "Ensemble bands start at %s rather than %s: members do not cover the earlier hours",
@@ -171,7 +189,7 @@ def propagate_members(
             spec = REGISTRY[name]
             frame[spec.forecast_column] = loaded[name].predict(frame)
         times = pd.to_datetime(frame[TIMESTAMP], utc=True)
-        forward = frame[(times >= start).to_numpy()]
+        forward = frame[((times >= start) & (times <= end)).to_numpy()]
         out = forward[[TIMESTAMP, *FORECAST_COLUMNS]].copy()
         out.insert(0, MEMBER_COLUMN, member)
         results.append(out.reset_index(drop=True))
@@ -193,6 +211,7 @@ def run_ensemble(
     *,
     forward_from: pd.Timestamp,
     horizon_days: int,
+    forward_until: pd.Timestamp | None = None,
     member_weather: pd.DataFrame | None = None,
     models: dict[str, TrainedModel] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
