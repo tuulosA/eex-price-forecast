@@ -153,6 +153,15 @@ eex run --train --plot --ensemble
 
 `--write-db` also stores forecasts in SQLite without touching actual columns.
 
+The forward window begins one hour after the final published day-ahead price and targets the next 14
+unknown German delivery days. If ECMWF ends partway through the final delivery day, the incomplete day
+is discarded rather than padded with missing weather.
+
+In practice that depends on when you run. The window's anchor jumps forward a day once the day-ahead
+auction clears around midday, while the weather fetch window stays anchored to today's midnight — so a
+**morning run publishes 14 unknown days, and an evening run publishes 13**. Seeing 13 after the auction
+is expected, not a fault.
+
 ### Weather ensemble (optional)
 
 `eex forecast --ensemble` additionally runs the same trained models once per member of ECMWF's
@@ -174,15 +183,6 @@ archived to `data/eex_ensemble_weather.db` on a rolling 30-run window.
 The ensemble runs after the deterministic forecast is written and cannot affect it — if the ensemble
 endpoint fails, the run still produces a normal forecast. Expect it to take a few minutes: each request
 returns 51 series per variable, so requests are paced against Open-Meteo's per-minute budget.
-
-The forward window begins one hour after the final published day-ahead price and targets the next 14
-unknown German delivery days. If ECMWF ends partway through the final delivery day, the incomplete day
-is discarded rather than padded with missing weather.
-
-In practice that depends on when you run. The window's anchor jumps forward a day once the day-ahead
-auction clears around midday, while the weather fetch window stays anchored to today's midnight — so a
-**morning run publishes 14 unknown days, and an evening run publishes 13**. Seeing 13 after the auction
-is expected, not a fault.
 
 ## Evaluation
 
