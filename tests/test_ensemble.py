@@ -418,9 +418,8 @@ def test_ensemble_run_writes_summary_and_stores_members(
 
     csv_path = tmp_path / "out" / "forecast_ensemble.csv"
     assert csv_path.exists()
-    header = csv_path.read_text(encoding="utf-8").splitlines()[0]
-    assert header.startswith("#") and "weather-driven spread" in header
-    summary = pd.read_csv(csv_path, comment="#")
+    summary = pd.read_csv(csv_path)
+    assert list(summary.columns[:2]) == ["timestamp", "n_members"]
     for prefix in ("wind", "solar", "load", "price"):
         assert (summary[f"{prefix}_p10"] <= summary[f"{prefix}_p90"] + 1e-9).all()
 
@@ -762,7 +761,7 @@ def test_ensemble_csv_never_extends_past_the_deterministic_forecast(
 
     result = run_forecast(str(db_path), horizon_days=3, history_days=30, ensemble=True)
 
-    summary = pd.read_csv(tmp_path / "out" / "forecast_ensemble.csv", comment="#")
+    summary = pd.read_csv(tmp_path / "out" / "forecast_ensemble.csv")
     summary["timestamp"] = pd.to_datetime(summary["timestamp"], utc=True)
     deterministic_end = pd.to_datetime(result["timestamp"], utc=True).max()
     assert summary["timestamp"].max() <= deterministic_end

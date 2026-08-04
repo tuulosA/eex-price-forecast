@@ -36,7 +36,7 @@ from eex_forecast.ensemble.store import (
     write_member_forecasts,
     write_member_weather,
 )
-from eex_forecast.ensemble.summary import SPREAD_CAVEAT, log_spread_summary, summarise_members
+from eex_forecast.ensemble.summary import log_spread_summary, summarise_members
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +107,6 @@ def run_ensemble_forecast(
 
     FORECAST_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = FORECAST_DIR / ENSEMBLE_CSV
-    written_summary = summary.copy()
-    written_summary.attrs["caveat"] = SPREAD_CAVEAT
-    with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        handle.write(f"# {SPREAD_CAVEAT}\n")
-        written_summary.to_csv(handle, index=False)
+    summary.to_csv(csv_path, index=False)
     logger.info("Wrote %d ensemble summary rows to %s", len(summary), csv_path)
     return summary
