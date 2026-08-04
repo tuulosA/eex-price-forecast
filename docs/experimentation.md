@@ -53,6 +53,12 @@ Freezing the days makes runs comparable: a score changes because the model chang
 sample of dates was generated. There is deliberately no general `--cutoffs` or `--horizon` option. The
 tools score D+1 because that is the horizon historical weather can represent reasonably faithfully.
 
+The weather ensemble (`eex forecast --ensemble`) is deliberately **outside** this design and cannot be
+added to it. Open-Meteo retains individual ensemble members for only about three days, so there is no
+history to replay at the frozen cutoffs; the ensemble ships as a diagnostic rather than a scored result.
+See [Weather ensemble](data-pipeline.md#weather-ensemble) for the source contract and
+[the development record](model-development.md#weather-ensemble-forecasting) for what was measured.
+
 ### Known weather optimism
 
 Open-Meteo's Historical Forecast API stitches short, accurate segments from successive ECMWF runs. It

@@ -19,7 +19,9 @@ wind/solar/load fundamentals, and cross-border market drivers.
 3. forecasts German day-ahead price from those fundamentals, calendar and lag features, German weather,
    and cross-border conditions;
 4. writes a forecast CSV and optional price, fundamentals, and driver plots;
-5. includes reproducible walk-forward evaluation and experimentation tools for model development.
+5. optionally propagates ECMWF's 51-member weather ensemble through the same trained models to show a
+   weather-driven spread around the forecast;
+6. includes reproducible walk-forward evaluation and experimentation tools for model development.
 
 Actuals and forecasts always use separate database and CSV columns, so prediction never overwrites a
 measurement.
@@ -123,6 +125,13 @@ eex forecast --plot                         # forecast with existing model artif
 Retraining is the sensible daily default. A forecast-only run is useful when the artifacts are already
 fresh.
 
+Both `eex run` and `eex forecast` accept `--ensemble`, which adds the weather-ensemble spread described
+in [Weather ensemble](#weather-ensemble-optional) below:
+
+```bash
+eex run --train --plot --ensemble
+```
+
 > Retrain after changing features, weather points, feature semantics, or hyperparameters. Persisted
 > feature order protects column alignment, but it cannot make an artifact trained under old semantics
 > valid under new ones.
@@ -146,8 +155,34 @@ fresh.
 
 The forward window begins one hour after the final published day-ahead price and targets the next 14
 unknown German delivery days. If ECMWF ends partway through the final delivery day, the incomplete day
-is discarded. A run may therefore contain 13 complete days rather than a partially populated
-fourteenth.
+is discarded rather than padded with missing weather.
+
+In practice that depends on when you run. The window's anchor jumps forward a day once the day-ahead
+auction clears around midday, while the weather fetch window stays anchored to today's midnight — so a
+**morning run publishes 14 unknown days, and an evening run publishes 13**. Seeing 13 after the auction
+is expected, not a fault.
+
+### Weather ensemble (optional)
+
+`eex forecast --ensemble` additionally runs the same trained models once per member of ECMWF's
+51-member weather ensemble, giving a spread around the deterministic forecast:
+
+```bash
+eex forecast --ensemble --plot
+```
+
+This writes `forecast_ensemble.csv` (per-hour mean and p10/p25/p50/p75/p90 for wind, solar, load, and
+price) and, with `--plot`, draws those bands behind the deterministic line, which remains the headline
+forecast. Per-member predictions are stored in `data/eex_ensemble.db`; the raw member weather is
+archived to `data/eex_ensemble_weather.db` on a rolling 30-run window.
+
+> **These bands are weather-driven spread only.** Members differ solely in their weather realisation, so
+> the bands exclude sub-model error, price-model error, plant outages, and demand shocks, and are
+> therefore narrower than realised forecast error. They are not calibrated predictive intervals.
+
+The ensemble runs after the deterministic forecast is written and cannot affect it — if the ensemble
+endpoint fails, the run still produces a normal forecast. Expect it to take a few minutes: each request
+returns 51 series per variable, so requests are paced against Open-Meteo's per-minute budget.
 
 ## Evaluation
 
@@ -182,7 +217,7 @@ locations, and interpretation.
 | Document | Purpose |
 |---|---|
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
-| [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, and source details |
+| [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |
 | [Model development](docs/model-development.md) | Findings, rejected alternatives, decisions, and next research priorities |
 | [AGENTS.md](AGENTS.md) | Repository invariants and guidance for coding agents |
 

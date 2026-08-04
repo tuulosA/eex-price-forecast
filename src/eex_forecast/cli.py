@@ -23,7 +23,7 @@ Command groups:
 - eex analyze oracle: diagnose each sub-model's downstream price effect with actual substitutions.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
-- eex forecast: run the pipeline and write the 14-day price forecast.
+- eex forecast: run the pipeline and write the 14-day price forecast (--ensemble adds spread bands).
 - eex run: whole pipeline end to end (fetch all inputs -> optional retrain -> pure predict).
 """
 
@@ -1157,10 +1157,36 @@ def forecast_cmd(
         bool, typer.Option(help="Also upsert the forecast into the database.")
     ] = False,
     plot: Annotated[bool, typer.Option(help="Also write a price-forecast plot.")] = False,
+    ensemble: Annotated[
+        bool,
+        typer.Option(
+            "--ensemble",
+            help="Also propagate the 51-member ECMWF weather ensemble and write spread bands.",
+        ),
+    ] = False,
 ) -> None:
-    """Run the pipeline (weather forecast -> sub-models -> price) and write the forecast to CSV."""
+    """Run the pipeline (weather forecast -> sub-models -> price) and write the forecast to CSV.
+
+    With --ensemble the same trained models are additionally run once per ECMWF ensemble member,
+    producing data/forecast/forecast_ensemble.csv and, with --plot, p10-p90 and p25-p75 bands behind the
+    deterministic line. Those bands are weather-driven spread only: they exclude model error, outages and
+    demand shocks, so they are narrower than realised forecast error. The deterministic forecast is
+    written first and is unaffected if the ensemble step fails.
+    """
+    # Stage banners mirror `eex run`. This command makes ~85 sequential weather requests before it
+    # predicts anything, and ~85 more (paced) with --ensemble, so without them the first minutes look
+    # like a hang rather than work.
+    stages = "fetch -> forecast -> ensemble" if ensemble else "fetch -> forecast"
+    typer.echo(f"Forecast ({stages})")
+    typer.echo(f"[fetch] forward weather, nuclear, and NTC for {horizon_days} days ...")
+    if ensemble:
+        typer.echo("[ensemble] 51 members are fetched after the forecast; expect a few minutes")
     result = forecast_ops.run_forecast(
-        str(get_settings().db_path), horizon_days=horizon_days, write_db=write_db, plot=plot
+        str(get_settings().db_path),
+        horizon_days=horizon_days,
+        write_db=write_db,
+        plot=plot,
+        ensemble=ensemble,
     )
     ahead = result[result["price_actual_eur_mwh"].isna()]["price_forecast_eur_mwh"]
     typer.echo(
@@ -1183,6 +1209,13 @@ def run_cmd(
         int, typer.Option(help="Rolling refresh window (days).")
     ] = DEFAULT_REFRESH_DAYS,
     horizon_days: Annotated[int, typer.Option(help="Forecast horizon in days.")] = HORIZON_DAYS,
+    ensemble: Annotated[
+        bool,
+        typer.Option(
+            "--ensemble",
+            help="Also propagate the 51-member ECMWF weather ensemble and write spread bands.",
+        ),
+    ] = False,
 ) -> None:
     """Run the whole pipeline end to end: fetch all inputs, optionally retrain, then forecast."""
     db_path = str(get_settings().db_path)
@@ -1212,7 +1245,12 @@ def run_cmd(
 
     typer.echo(f"[forecast] predicting the {horizon_days}-day forecast ...")
     result = forecast_ops.run_forecast(
-        db_path, horizon_days=horizon_days, write_db=write_db, plot=plot, fetch_inputs=False
+        db_path,
+        horizon_days=horizon_days,
+        write_db=write_db,
+        plot=plot,
+        fetch_inputs=False,
+        ensemble=ensemble,
     )
     ahead = result[result["price_actual_eur_mwh"].isna()]["price_forecast_eur_mwh"]
     typer.echo(

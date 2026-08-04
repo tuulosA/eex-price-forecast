@@ -248,3 +248,43 @@ def test_forecast_window_end_is_dst_aware() -> None:
     end = _forecast_window_end(actual, times, now, 3)
     # Three Berlin delivery days include the 25-hour DST-ending Sunday.
     assert end - pd.Timestamp("2026-10-23 22:00", tz="UTC") == pd.Timedelta(hours=73)
+
+
+def test_history_days_defaults_to_the_config_value_and_governs_every_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One config value controls how much history reaches the CSV and the plots alike."""
+    from eex_forecast import config
+
+    assert forecast_ops.run_forecast.__defaults__ is None  # keyword-only, so inspect the signature
+    import inspect
+
+    default = inspect.signature(forecast_ops.run_forecast).parameters["history_days"].default
+    assert default == config.FORECAST_HISTORY_DAYS
+
+    now = pd.Timestamp.now(tz="UTC").floor("h")
+    frame = make_timeseries(periods=24 * 45 + 1, start=now - pd.Timedelta(days=40))
+    times = pd.to_datetime(frame["timestamp"], utc=True)
+    frame.loc[times >= now, _ACTUAL_COLUMNS] = np.nan
+    db_path = tmp_path / "eex.db"
+    write_frame(db_path, frame)
+
+    history = frame.loc[times < now]
+    models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
+    monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
+    monkeypatch.setattr(
+        forecast_ops.TrainedModel,
+        "load",
+        classmethod(lambda cls, spec, models_dir=None: models[spec.name]),
+    )
+    monkeypatch.setattr(forecast_ops, "FORECAST_DIR", tmp_path / "out")
+
+    short = run_forecast(str(db_path), horizon_days=2, history_days=10)
+    long = run_forecast(str(db_path), horizon_days=2, history_days=20)
+
+    short_start = pd.to_datetime(short["timestamp"], utc=True).min()
+    long_start = pd.to_datetime(long["timestamp"], utc=True).min()
+    assert long_start < short_start  # more history requested -> earlier first row
+    # Both still start on a whole German delivery day.
+    for start in (short_start, long_start):
+        assert start.tz_convert("Europe/Berlin").hour == 0

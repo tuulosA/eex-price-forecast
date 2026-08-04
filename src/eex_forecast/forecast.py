@@ -28,6 +28,7 @@ import pandas as pd
 from eex_forecast.config import (
     DEFAULT_REFRESH_DAYS,
     FORECAST_DIR,
+    FORECAST_HISTORY_DAYS,
     HORIZON_DAYS,
     MARKET_TIMEZONE,
 )
@@ -76,13 +77,18 @@ def fetch_forecast_weather(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
     forecast_days = min(horizon_days + 2, _OPEN_METEO_MAX_FORECAST_DAYS)
     counts: dict[str, int] = {}
+    total = len(plan)
+    logger.info("Fetching forward weather for %d points", total)
     with connect(db_path) as conn:
         create_schema(conn)
-        for role, point in plan:
+        # Progress is logged per point, not just at the end: this loop is ~85 sequential HTTP requests
+        # and roughly a minute and a half of wall time, which without output reads as a hung command.
+        for index, (role, point) in enumerate(plan, start=1):
             columns = point_columns(role, point)
             forecast = fetch_forecast(
                 point.lat, point.lon, variables=list(columns), forecast_days=forecast_days
             )
+            logger.info("  forward weather %d/%d %s", index, total, point.column)
             if forecast.empty:
                 continue
             frame = forecast[["timestamp", *columns]].rename(columns=columns)
@@ -274,15 +280,21 @@ def run_forecast(
     db_path: str,
     *,
     horizon_days: int = HORIZON_DAYS,
-    history_days: int = 21,
+    history_days: int = FORECAST_HISTORY_DAYS,
     write_db: bool = False,
     plot: bool = False,
     fetch_inputs: bool = True,
+    ensemble: bool = False,
 ) -> pd.DataFrame:
     """Produce the 14-day hourly price forecast and write it to CSV (and optionally the DB / a plot).
 
     ``fetch_inputs`` fetches the forward-looking inputs first (the standalone ``eex forecast`` default);
     ``eex run`` sets it False because it has already fetched them up front, so prediction does no I/O.
+
+    ``ensemble`` additionally propagates ECMWF's 51-member weather ensemble through the same trained
+    models to produce a weather-driven spread. It is a single delegating call into
+    :mod:`eex_forecast.ensemble` *after* the deterministic forecast is complete and written, so the
+    published forecast is unaffected by anything the ensemble path does - including its failure.
     """
     if fetch_inputs:
         fetch_forecast_inputs(db_path, horizon_days=horizon_days)
@@ -333,6 +345,12 @@ def run_forecast(
             requested_hours,
             retained_hours,
         )
+    # Keep the untrimmed, buffered frame for the ensemble. Trimming drops the row *after* the last
+    # published hour, and radiation is stamped at the end of its averaging interval - so a feature build
+    # over the trimmed frame has no `t + 1 h` row to read and silently yields NaN irradiance on the final
+    # hour, corrupting that hour's price. The deterministic path never hits this because it predicts
+    # before trimming; the ensemble must be given the same buffered frame and trimmed afterwards.
+    full_frame = frame
     keep = ((times >= start) & (times < end)).to_numpy()
     frame = frame[keep].reset_index(drop=True)
     times = pd.to_datetime(frame[TIMESTAMP], utc=True)
@@ -350,11 +368,28 @@ def run_forecast(
     csv_path = FORECAST_DIR / "forecast.csv"
     result.to_csv(csv_path, index=False)
     logger.info("Wrote %d rows to %s", len(result), csv_path)
+
+    # The deterministic forecast is complete and written before this point. The ensemble is a separate,
+    # optional product layered on top; `summary` stays None when it is not requested, and the plots below
+    # then draw exactly what they always did.
+    summary: pd.DataFrame | None = None
+    if ensemble:
+        from eex_forecast.ensemble.pipeline import run_ensemble_forecast
+
+        summary = run_ensemble_forecast(
+            full_frame,
+            forward_from=_forecast_split(_numeric_column(frame, PRICE_ACTUAL), times, now),
+            forward_until=end,  # the same published window the deterministic result was trimmed to
+            horizon_days=horizon_days,
+        )
+
     if plot:
         # The historical edge is aligned to a delivery day; the forward edge retains the full horizon.
-        plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png")
-        plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png")
-        plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
+        # Only the price plot needs `now`: it splits the actual and forecast lines at the last settled
+        # hour. The other two draw the whole window, so they do not take it.
+        plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png", summary=summary)
+        plot_fundamentals(frame, times, FORECAST_DIR / "fundamentals.png", summary=summary)
+        plot_drivers(frame, times, FORECAST_DIR / "drivers.png")
     return result
 
 
@@ -384,13 +419,87 @@ def _forecast_split(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> p
     return times[has_actual.to_numpy()].max() if bool(has_actual.any()) else now
 
 
-def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
+# One colour identifies "the ensemble" across every panel, so the deterministic series can keep the
+# per-panel colour it has always had and the two are never confused. Teal is unused elsewhere in these
+# plots (price purple, wind blue, solar orange, load red, actuals black/grey), and the ensemble mean is
+# additionally dashed - so the two series remain distinguishable without relying on hue alone, which
+# matters in the load panel where red and teal-green are a red/green-deficient pairing.
+ENSEMBLE_COLOR = "#0f766e"
+
+
+def _draw_ensemble(ax: object, summary: pd.DataFrame | None, prefix: str) -> bool:
+    """Draw one model's ensemble: the p10-p90 and p25-p75 bands plus the ensemble mean.
+
+    Two nested bands rather than one: the inner quartile band is where half the members sit, and the
+    contrast between them shows whether the spread is a broad plateau or a tight core with tails.
+
+    The mean is drawn because the *gap* between it and the deterministic line is the most useful thing on
+    the plot - a deterministic run sitting near the edge of its own ensemble is a warning that the
+    published number is an atypical draw. The two genuinely differ (measured: ~10 EUR/MWh mean absolute
+    difference, rising past 25 at long lead times) and that difference is expected, not a defect. The
+    ensemble mean is nonetheless *not* the headline: averaging 51 nonlinear paths shaves peaks, so it is
+    drawn thinner and dashed, below the deterministic line's ``zorder``.
+    """
+    if summary is None or summary.empty:
+        return False
+    from eex_forecast.ensemble.summary import band_columns
+
+    names = band_columns(prefix)
+    if not {names["p10"], names["p90"]} <= set(summary.columns):
+        return False
+    moments = pd.to_datetime(summary[TIMESTAMP], utc=True)
+    ax.fill_between(  # type: ignore[attr-defined]
+        moments,
+        pd.to_numeric(summary[names["p10"]]),
+        pd.to_numeric(summary[names["p90"]]),
+        color=ENSEMBLE_COLOR,
+        alpha=0.14,
+        linewidth=0,
+        zorder=1,
+        label="ensemble p10-p90",
+    )
+    if {names["p25"], names["p75"]} <= set(summary.columns):
+        ax.fill_between(  # type: ignore[attr-defined]
+            moments,
+            pd.to_numeric(summary[names["p25"]]),
+            pd.to_numeric(summary[names["p75"]]),
+            color=ENSEMBLE_COLOR,
+            alpha=0.26,
+            linewidth=0,
+            zorder=2,
+            label="ensemble p25-p75",
+        )
+    if names["mean"] in summary.columns:
+        ax.plot(  # type: ignore[attr-defined]
+            moments,
+            pd.to_numeric(summary[names["mean"]]),
+            color=ENSEMBLE_COLOR,
+            linewidth=1.1,
+            linestyle="--",
+            zorder=3,
+            label="ensemble mean",
+        )
+    return True
+
+
+def plot_forecast(
+    frame: pd.DataFrame,
+    times: pd.Series,
+    now: pd.Timestamp,
+    path: object,
+    *,
+    summary: pd.DataFrame | None = None,
+) -> object:
     """Plot recent actual price and the forecast on one axis, split where the known price ends.
 
     Only the **out-of-sample tail** of the forecast is drawn - from the last settled actual onward. Over
     the history the model produces an in-sample prediction that hugs the actual, but plotting it would
     misrepresent the forecast as a saved day-ahead track record and look implausibly accurate; the honest
     picture is actuals up to the split and the genuine forward forecast after it, with no overlap.
+
+    ``summary`` optionally adds the ensemble fan behind both lines. The deterministic forecast stays the
+    headline series; the fan is context, and is labelled as weather-driven spread rather than as a
+    predictive interval.
     """
     import matplotlib
 
@@ -398,6 +507,7 @@ def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(12.0, 5.0))
+    drew_fan = _draw_ensemble(ax, summary, "price")
     actual_price = _numeric_column(frame, "price_actual_eur_mwh")
     # Split at the last known price (actuals run past `now` to D+1), and show the forecast only from there
     # on, so the in-sample history is not drawn shadowing the actual - see `_forecast_split`.
@@ -416,13 +526,20 @@ def plot_forecast(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
         times,
         forecast_price,
         color="#4910bc",
-        linewidth=1.3,
-        label="forecast",
+        linewidth=1.5,
+        label="forecast (deterministic)" if drew_fan else "forecast",
+        zorder=4,  # above the ensemble mean: the deterministic run stays the published series
     )
-    ax.axvline(split, color="0.7", linestyle="--", linewidth=0.8)
     ax.set_xlabel("time (UTC)")
     ax.set_ylabel("EUR / MWh")
-    ax.set_title(f"DE day-ahead price: {HORIZON_DAYS}-day forecast")
+    title = f"DE day-ahead price: {HORIZON_DAYS}-day forecast"
+    if drew_fan:
+        from eex_forecast.ensemble.summary import SPREAD_CAVEAT
+
+        ax.set_title(title, loc="left")
+        ax.set_title(SPREAD_CAVEAT, loc="right", fontsize=7, color="0.4")
+    else:
+        ax.set_title(title)
     ax.legend(loc="upper left")
     ax.grid(True, color="0.92")
     fig.autofmt_xdate()
@@ -441,29 +558,44 @@ _FUNDAMENTAL_PANELS = [
 
 
 def plot_fundamentals(
-    frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object
+    frame: pd.DataFrame,
+    times: pd.Series,
+    path: object,
+    *,
+    summary: pd.DataFrame | None = None,
 ) -> object:
-    """Plot the wind / solar / load sub-model forecasts against recent actuals, one panel each."""
+    """Plot the wind / solar / load sub-model forecasts against recent actuals, one panel each.
+
+    ``summary`` optionally adds each fundamental's ensemble fan. The wind fan in particular is usually
+    more interpretable than the price fan, because it shows the weather uncertainty before the price
+    model's nonlinearity has folded it together with load and cross-border effects.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(len(_FUNDAMENTAL_PANELS), 1, figsize=(12.0, 9.0), sharex=True)
-    for ax, (_, actual_col, forecast_col, ylabel, color) in zip(
+    for ax, (prefix, actual_col, forecast_col, ylabel, color) in zip(
         axes, _FUNDAMENTAL_PANELS, strict=True
     ):
+        drew = _draw_ensemble(ax, summary, prefix)
         ax.plot(
-            times, _numeric_column(frame, actual_col), color="0.45", linewidth=1.0, label="actual"
+            times,
+            _numeric_column(frame, actual_col),
+            color="0.45",
+            linewidth=1.0,
+            label="actual",
+            zorder=5,
         )
         ax.plot(
             times,
             _numeric_column(frame, forecast_col),
             color=color,
-            linewidth=1.3,
-            label="forecast",
+            linewidth=1.4,
+            label="forecast (deterministic)" if drew else "forecast",
+            zorder=4,
         )
-        ax.axvline(now, color="0.7", linestyle="--", linewidth=0.8)
         ax.set_ylabel(ylabel)
         ax.grid(True, color="0.92")
         ax.legend(loc="upper left", fontsize=8)
@@ -515,7 +647,7 @@ def _driver_panels(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
     return [(label, data) for label, data in candidates if not data.empty]
 
 
-def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
+def plot_drivers(frame: pd.DataFrame, times: pd.Series, path: object) -> object:
     """Plot every price-model driver group over the window, one panel each, weekends/holidays shaded.
 
     A diagnostic dashboard of the model's inputs (weather means, neighbour wind, nuclear, NTC) so the
@@ -540,12 +672,11 @@ def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path:
             ax.plot(
                 times, pd.to_numeric(data[column], errors="coerce"), linewidth=1.0, label=column
             )
-        ax.axvline(now, color="0.5", linestyle="--", linewidth=0.8)
         ax.set_ylabel(label, fontsize=8)
         ax.grid(True, color="0.93")
         if data.shape[1] > 1:
             ax.legend(loc="upper left", fontsize=7, ncol=min(4, data.shape[1]))
-    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple; split at now)")
+    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple)")
     axes[-1, 0].set_xlabel("time (UTC)")
     fig.autofmt_xdate()
     fig.tight_layout()

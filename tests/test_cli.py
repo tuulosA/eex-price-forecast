@@ -51,7 +51,13 @@ def test_run_fetches_then_forecasts_without_training(monkeypatch: pytest.MonkeyP
         order.append(("fetch_inputs", horizon_days))
 
     def fake_forecast(
-        db_path: Any, *, horizon_days: int, write_db: bool, plot: bool, fetch_inputs: bool
+        db_path: Any,
+        *,
+        horizon_days: int,
+        write_db: bool,
+        plot: bool,
+        fetch_inputs: bool,
+        ensemble: bool = False,
     ) -> pd.DataFrame:
         order.append(("forecast", plot, fetch_inputs))
         return _forecast_df()

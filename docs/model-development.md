@@ -8,7 +8,7 @@ It complements the user-facing [README](../README.md), the reproducible commands
 [Experimentation and evaluation](experimentation.md), and the implementation rules in
 [AGENTS.md](../AGENTS.md). Generated JSON/CSV reports remain the source of truth for exact results.
 
-Last updated: **2026-07-31**
+Last updated: **2026-08-04**
 
 ## Contents
 
@@ -16,8 +16,11 @@ Last updated: **2026-07-31**
 - [Current evidence and benchmarks](#current-evidence-and-benchmarks)
 - [Completed experiments and findings](#completed-experiments-and-findings)
 - [Active and proposed work](#active-and-proposed-work)
+- [Weather-ensemble forecasting](#weather-ensemble-forecasting)
 - [Evaluation and architecture decisions](#evaluation-and-architecture-decisions)
 - [Recommended sequence](#recommended-sequence)
+- [Useful commands](#useful-commands)
+- [Adoption checklist](#adoption-checklist)
 - [Decision history](#decision-history)
 
 ## Executive summary
@@ -62,6 +65,9 @@ Last updated: **2026-07-31**
 - Fixed-run historical weather evaluation.
 - Forecast fundamentals inside price tuning, price ablation, and neighbour aggregation.
 - A local archive of live weather snapshots.
+- Calibrating the weather-ensemble bands against realised error. The bands currently express weather
+  uncertainty only; calibration needs realised-error history that does not exist yet, which is what the
+  archived per-member predictions are accumulating.
 
 ## Current evidence and benchmarks
 
@@ -813,6 +819,62 @@ Treat both methods as descriptive rather than causal. SHAP distributes credit am
 while permutation measures dependence of the fitted model without showing whether retraining without the
 feature would improve it. Existing retrained ablation remains the stronger feature-adoption test.
 
+## Weather-ensemble forecasting
+
+**Status: implemented as an optional product (`eex forecast --ensemble`), deliberately unvalidated
+against the frozen cutoffs.**
+
+The same trained models are run once per member of ECMWF's 51-member ensemble, and the resulting price
+paths reduced to a mean and p10/p25/p50/p75/p90 bands. Nothing is trained or retrained.
+
+Why no training and no backtest: Open-Meteo retains **individual ensemble members for only about three
+days**. `past_days` caps at 93 and returns empty member columns beyond the recent window; the Previous
+Runs API (archived from January 2024) is deterministic-only; ensemble means are retained longer but
+only from March 2026 and still behind the 93-day cap. Fewer than a quarter of the 22 frozen cutoffs are
+reachable even in principle, so the ensemble product cannot be scored the way every other change in
+this record was. It ships as a diagnostic, not as a measured improvement.
+
+Design points worth keeping:
+
+- **Propagate per member, aggregate the outputs.** Wind power is roughly cubic in speed, so
+  `f(mean(v)) != mean(f(v))`. Measured at a German wind anchor over 240 forward hours, the ensemble
+  *mean* wind field correlates 0.697 with the deterministic feed (it is heavily smoothed), while the
+  ensemble *control* correlates 0.975 with bias −0.10 m/s. Feeding the mean into models fitted on
+  deterministic weather would systematically damp generation extremes.
+- **The members are a distribution the models recognise.** Control and deterministic snap to adjacent
+  grid cells at identical elevation, which is what makes reusing the trained models defensible.
+- **Rate limiting is functional, not defensive.** Each request returns one series per variable per
+  member; 20 consecutive six-variable requests exhaust the free tier's 600-per-minute budget, and a full
+  run costs ~1,400 weighted calls. The first live run failed with HTTP 429 partway through; the client
+  now paces requests through a rolling-window limiter and backs off in minutes.
+
+First fully clean run — after the window-coverage fixes, so no zero-spread hours and no overhang past
+the deterministic forecast (2026-08-04, 51 members, 313 forward hours):
+
+| Model | Mean p10-p90 width |
+|---|---:|
+| Wind | 11,304.3 MW |
+| Solar | 3,343.2 MW |
+| Load | 1,893.7 MW |
+| Price | 34.8 EUR/MWh |
+
+The shape is physically right: wind spread widens sharply with lead time, solar stays tight because
+deterministic geometry and clear-sky dominate its features, and load barely moves because it is
+calendar-driven. As a consistency check, the deterministic forecast fell inside the ensemble p10-p90
+band for **85.9%** of hours and inside p25-p75 for **59.4%** — close to what a well-behaved ensemble
+containing the deterministic run as a typical member should give.
+
+These are one run's numbers, not a benchmark. Absolute widths track that day's weather regime: an
+earlier run over a calmer period gave a wind width of 9,127 MW and a price width of 30.7 EUR/MWh. Only
+the qualitative pattern — wind widest, solar and load tight, everything widening with lead time — is a
+stable property.
+
+**These bands are weather-driven spread only** and exclude sub-model error, price-model error, outages,
+and demand shocks. Against a price MAE of 11.3 EUR/MWh they are certainly too narrow to be read as
+predictive intervals. Calibrating them requires realised-error history that does not exist yet, which
+is precisely why per-member predictions are archived permanently: that table is what a future
+calibration would be fitted on.
+
 ## Evaluation and architecture decisions
 
 ### Actual versus forecast fundamentals
@@ -970,6 +1032,18 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-08-04
+
+- Added `eex forecast --ensemble`: the trained chain run once per ECMWF ensemble member, reduced to a
+  mean and p10/p25/p50/p75/p90 bands, stored in a separate pair of SQLite files.
+- Established that Open-Meteo has no usable ensemble history (members ~3 days, `past_days` capped at
+  93, Previous Runs deterministic-only), so nothing is trained on ensemble inputs and the product is
+  deliberately not backtestable against the frozen cutoffs.
+- Measured the per-request API weighting (~5 weighted calls per variable) after a live HTTP 429, and
+  added a rolling-window rate limiter plus minute-scale backoff.
+- Clipped the bands to the hours members actually cover, so the ~27 hours between the last settled
+  price and the ensemble run's start are no longer emitted as a zero-width band.
 
 ### 2026-07-31
 

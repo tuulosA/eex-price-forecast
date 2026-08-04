@@ -36,19 +36,26 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def existing_columns(conn: sqlite3.Connection) -> set[str]:
-    """Return the set of column names currently on the table."""
-    return {row[1] for row in conn.execute(f'PRAGMA table_info("{TABLE}")')}
+def existing_columns(conn: sqlite3.Connection, table: str = TABLE) -> set[str]:
+    """Return the set of column names currently on ``table``."""
+    return {row[1] for row in conn.execute(f'PRAGMA table_info("{table}")')}
 
 
-def ensure_columns(conn: sqlite3.Connection, columns: list[str]) -> list[str]:
-    """Add any missing ``REAL`` columns (e.g. newly chosen weather points). Returns the names added."""
-    present = existing_columns(conn)
+def ensure_columns(
+    conn: sqlite3.Connection, columns: list[str], *, table: str = TABLE
+) -> list[str]:
+    """Add any missing ``REAL`` columns (e.g. newly chosen weather points). Returns the names added.
+
+    ``table`` defaults to the production time-series table. The ensemble store passes its own member
+    weather table so that on-demand weather-column creation is defined once; the semantics are identical
+    because that table uses the same weather column names as production.
+    """
+    present = existing_columns(conn, table)
     added: list[str] = []
     for name in columns:
         if name == TIMESTAMP or name in present:
             continue
-        conn.execute(f'ALTER TABLE "{TABLE}" ADD COLUMN "{name}" REAL')
+        conn.execute(f'ALTER TABLE "{table}" ADD COLUMN "{name}" REAL')
         added.append(name)
     if added:
         conn.commit()
