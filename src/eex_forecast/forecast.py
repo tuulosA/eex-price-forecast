@@ -534,10 +534,12 @@ def plot_forecast(
     ax.set_ylabel("EUR / MWh")
     title = f"DE day-ahead price: {HORIZON_DAYS}-day forecast"
     if drew_fan:
-        from eex_forecast.ensemble.summary import SPREAD_CAVEAT
+        # Only when bands were actually drawn: `drew_fan` is false whenever no ensemble summary was
+        # passed, so a plain `eex forecast --plot` never carries a caption about bands it does not show.
+        from eex_forecast.ensemble.summary import SPREAD_CAPTION
 
         ax.set_title(title, loc="left")
-        ax.set_title(SPREAD_CAVEAT, loc="right", fontsize=7, color="0.4")
+        ax.set_title(SPREAD_CAPTION, loc="right", fontsize=7, color="0.4")
     else:
         ax.set_title(title)
     ax.legend(loc="upper left")
