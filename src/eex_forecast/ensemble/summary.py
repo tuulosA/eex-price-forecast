@@ -11,8 +11,8 @@ lowest and highest member - one draw each, which would look precise while being 
 Everything produced here describes **weather-driven spread only**. The members differ solely in their
 weather realisation, so the bands exclude sub-model error, price-model error, plant outages, and demand
 shocks. They are therefore narrower than realised forecast error and must not be presented as predictive
-intervals. :data:`SPREAD_CAVEAT` is the full wording carried into the CSV header; :data:`SPREAD_CAPTION`
-is the short form for plots, where there is only room for the one thing a reader must not get wrong.
+intervals. :data:`SPREAD_CAPTION` says so on the price plot, which is the one output that travels
+without its documentation.
 """
 
 from __future__ import annotations
@@ -29,13 +29,9 @@ logger = logging.getLogger(__name__)
 
 # Outer band then inner band; p50 is the ensemble median.
 QUANTILES: tuple[float, ...] = (0.10, 0.25, 0.50, 0.75, 0.90)
-SPREAD_CAVEAT = (
-    "weather-driven spread only: excludes model error, outages and demand shocks, "
-    "so these bands are narrower than realised forecast error"
-)
-# The plot version. A chart caption is read at a glance, so it states only what a reader must not get
-# wrong - that the ensemble varies the weather and nothing else - and leaves the consequences to the CSV
-# header and the documentation.
+# Caption for the price plot. A chart is read at a glance, so it states the one thing a reader must not
+# get wrong - that the members differ in weather and nothing else - and leaves the consequences to the
+# documentation.
 SPREAD_CAPTION = "ensemble varies weather only; all other inputs held fixed"
 
 # Short model names used as the CSV column prefix, in chain order.
