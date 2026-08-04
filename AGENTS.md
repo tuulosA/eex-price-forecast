@@ -29,7 +29,7 @@ Forecasting is two-stage: **weather → three generation sub-models → price mo
 
 ```
 src/eex_forecast/
-  config.py            # paths, DE constants (HORIZON_DAYS=14), env Settings (API keys, db_path)
+  config.py            # paths, DE constants (HORIZON_DAYS=14, FORECAST_HISTORY_DAYS=21), env Settings
   db/
     schema.py          # `timeseries` table; separate actual/forecast columns; ensure_columns adds weather cols
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
