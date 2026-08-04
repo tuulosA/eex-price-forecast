@@ -766,3 +766,50 @@ def test_ensemble_csv_never_extends_past_the_deterministic_forecast(
     summary["timestamp"] = pd.to_datetime(summary["timestamp"], utc=True)
     deterministic_end = pd.to_datetime(result["timestamp"], utc=True).max()
     assert summary["timestamp"].max() <= deterministic_end
+
+
+def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
+    """A run without --ensemble must not carry a caption about bands it does not show."""
+    import io
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from eex_forecast.ensemble.summary import SPREAD_CAPTION
+    from eex_forecast.forecast import plot_forecast
+
+    frame = make_timeseries(periods=24 * 10)
+    times = pd.to_datetime(frame["timestamp"], utc=True)
+    now = times.iloc[-24]
+
+    hours = pd.date_range(now, periods=12, freq="h", tz="UTC")
+    rows = []
+    for member in range(4):
+        part = pd.DataFrame({TIMESTAMP: hours, MEMBER_COLUMN: member})
+        for index, column in enumerate(FORECAST_COLUMNS):
+            part[column] = float(member * 5 + index)
+        rows.append(part)
+    summary = summarise_members(pd.concat(rows, ignore_index=True))
+
+    def right_title(passed: pd.DataFrame | None) -> str:
+        """Draw once and read the caption back. plot_forecast closes its own figure, so the axis is
+        captured as it is created rather than fetched afterwards."""
+        captured: list[Any] = []
+        original = plt.subplots
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            figure, axes = original(*args, **kwargs)
+            captured.append(axes)
+            return figure, axes
+
+        plt.subplots = spy  # type: ignore[assignment]
+        try:
+            plot_forecast(frame, times, now, io.BytesIO(), summary=passed)
+        finally:
+            plt.subplots = original  # type: ignore[assignment]
+        return str(captured[0].get_title(loc="right"))
+
+    assert right_title(None) == ""
+    assert right_title(summary) == SPREAD_CAPTION
