@@ -235,5 +235,11 @@ def run_ensemble(
             ENSEMBLE_MEMBERS,
             ENSEMBLE_MODEL,
         )
-    forecasts = propagate_members(base, weather, forward_from=forward_from, models=models)
+    forecasts = propagate_members(
+        base,
+        weather,
+        forward_from=forward_from,
+        forward_until=forward_until,
+        models=models,
+    )
     return forecasts, weather
