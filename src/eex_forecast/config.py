@@ -76,7 +76,7 @@ HORIZON_DAYS = 14
 # days the 168 h price lag starts resolving to NaN on the near horizon, which does change the forecast.
 # The window start is snapped forward to a Europe/Berlin midnight, so the retained span is whole German
 # delivery days rather than exactly this many 24 h blocks.
-FORECAST_HISTORY_DAYS = 21
+FORECAST_HISTORY_DAYS = 14
 # Rolling window (days) that `eex update` re-fetches each run. ENTSO-E publishes actuals with a lag and
 # revises them, so re-pulling the last couple of weeks keeps the database current without a full backfill.
 DEFAULT_REFRESH_DAYS = 14
