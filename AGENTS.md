@@ -187,7 +187,8 @@ Documentation is part of the behavior being changed. Keep these sources aligned 
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
 - `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
-  radiation alignment, and cross-border inputs.
+  radiation alignment, cross-border inputs, and the weather-ensemble contract (members, retention,
+  API weighting, and the ensemble databases).
 - `docs/experimentation.md` owns point rebuilding, tuning, aggregation, ablation, eval/oracle, analysis
   commands, report locations, and interpretation.
 - `docs/model-development.md` owns current benchmarks, experiment findings, decisions, priorities, and

@@ -8,7 +8,7 @@ It complements the user-facing [README](../README.md), the reproducible commands
 [Experimentation and evaluation](experimentation.md), and the implementation rules in
 [AGENTS.md](../AGENTS.md). Generated JSON/CSV reports remain the source of truth for exact results.
 
-Last updated: **2026-07-31**
+Last updated: **2026-08-04**
 
 ## Contents
 
@@ -16,8 +16,11 @@ Last updated: **2026-07-31**
 - [Current evidence and benchmarks](#current-evidence-and-benchmarks)
 - [Completed experiments and findings](#completed-experiments-and-findings)
 - [Active and proposed work](#active-and-proposed-work)
+- [Weather-ensemble forecasting](#weather-ensemble-forecasting)
 - [Evaluation and architecture decisions](#evaluation-and-architecture-decisions)
 - [Recommended sequence](#recommended-sequence)
+- [Useful commands](#useful-commands)
+- [Adoption checklist](#adoption-checklist)
 - [Decision history](#decision-history)
 
 ## Executive summary
@@ -62,6 +65,9 @@ Last updated: **2026-07-31**
 - Fixed-run historical weather evaluation.
 - Forecast fundamentals inside price tuning, price ablation, and neighbour aggregation.
 - A local archive of live weather snapshots.
+- Calibrating the weather-ensemble bands against realised error. The bands currently express weather
+  uncertainty only; calibration needs realised-error history that does not exist yet, which is what the
+  archived per-member predictions are accumulating.
 
 ## Current evidence and benchmarks
 
@@ -842,13 +848,13 @@ Design points worth keeping:
   run costs ~1,400 weighted calls. The first live run failed with HTTP 429 partway through; the client
   now paces requests through a rolling-window limiter and backs off in minutes.
 
-First live run (2026-08-04, 51 members, 310 forward hours):
+First live run after the coverage fix (2026-08-04, 51 members, 310 forward hours):
 
 | Model | Mean p10-p90 width |
 |---|---:|
-| Wind | 9,127 MW |
-| Solar | ~2,500 MW |
-| Load | ~2,000 MW |
+| Wind | 9,127.4 MW |
+| Solar | 2,768.9 MW |
+| Load | 2,181.0 MW |
 | Price | 30.7 EUR/MWh |
 
 The shape is physically right: wind spread widens sharply with lead time, solar stays tight because

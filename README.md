@@ -19,7 +19,9 @@ wind/solar/load fundamentals, and cross-border market drivers.
 3. forecasts German day-ahead price from those fundamentals, calendar and lag features, German weather,
    and cross-border conditions;
 4. writes a forecast CSV and optional price, fundamentals, and driver plots;
-5. includes reproducible walk-forward evaluation and experimentation tools for model development.
+5. optionally propagates ECMWF's 51-member weather ensemble through the same trained models to show a
+   weather-driven spread around the forecast;
+6. includes reproducible walk-forward evaluation and experimentation tools for model development.
 
 Actuals and forecasts always use separate database and CSV columns, so prediction never overwrites a
 measurement.
@@ -123,6 +125,13 @@ eex forecast --plot                         # forecast with existing model artif
 Retraining is the sensible daily default. A forecast-only run is useful when the artifacts are already
 fresh.
 
+Both `eex run` and `eex forecast` accept `--ensemble`, which adds the weather-ensemble spread described
+in [Weather ensemble](#weather-ensemble-optional) below:
+
+```bash
+eex run --train --plot --ensemble
+```
+
 > Retrain after changing features, weather points, feature semantics, or hyperparameters. Persisted
 > feature order protects column alignment, but it cannot make an artifact trained under old semantics
 > valid under new ones.
@@ -204,7 +213,7 @@ locations, and interpretation.
 | Document | Purpose |
 |---|---|
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
-| [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, and source details |
+| [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |
 | [Model development](docs/model-development.md) | Findings, rejected alternatives, decisions, and next research priorities |
 | [AGENTS.md](AGENTS.md) | Repository invariants and guidance for coding agents |
 
