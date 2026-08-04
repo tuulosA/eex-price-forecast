@@ -1173,6 +1173,14 @@ def forecast_cmd(
     demand shocks, so they are narrower than realised forecast error. The deterministic forecast is
     written first and is unaffected if the ensemble step fails.
     """
+    # Stage banners mirror `eex run`. This command makes ~85 sequential weather requests before it
+    # predicts anything, and ~85 more (paced) with --ensemble, so without them the first minutes look
+    # like a hang rather than work.
+    stages = "fetch -> forecast -> ensemble" if ensemble else "fetch -> forecast"
+    typer.echo(f"Forecast ({stages})")
+    typer.echo(f"[fetch] forward weather, nuclear, and NTC for {horizon_days} days ...")
+    if ensemble:
+        typer.echo("[ensemble] 51 members are fetched after the forecast; expect a few minutes")
     result = forecast_ops.run_forecast(
         str(get_settings().db_path),
         horizon_days=horizon_days,
