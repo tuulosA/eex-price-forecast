@@ -380,9 +380,11 @@ def run_forecast(
 
     if plot:
         # The historical edge is aligned to a delivery day; the forward edge retains the full horizon.
+        # Only the price plot needs `now`: it splits the actual and forecast lines at the last settled
+        # hour. The other two draw the whole window, so they do not take it.
         plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png", summary=summary)
-        plot_fundamentals(frame, times, now, FORECAST_DIR / "fundamentals.png", summary=summary)
-        plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
+        plot_fundamentals(frame, times, FORECAST_DIR / "fundamentals.png", summary=summary)
+        plot_drivers(frame, times, FORECAST_DIR / "drivers.png")
     return result
 
 
@@ -553,7 +555,6 @@ _FUNDAMENTAL_PANELS = [
 def plot_fundamentals(
     frame: pd.DataFrame,
     times: pd.Series,
-    now: pd.Timestamp,
     path: object,
     *,
     summary: pd.DataFrame | None = None,
@@ -641,7 +642,7 @@ def _driver_panels(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
     return [(label, data) for label, data in candidates if not data.empty]
 
 
-def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
+def plot_drivers(frame: pd.DataFrame, times: pd.Series, path: object) -> object:
     """Plot every price-model driver group over the window, one panel each, weekends/holidays shaded.
 
     A diagnostic dashboard of the model's inputs (weather means, neighbour wind, nuclear, NTC) so the
