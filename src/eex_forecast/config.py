@@ -38,6 +38,18 @@ ABLATION_DIR = (
 )  # feature-removal (ablation) reports from `eex analyze ablation`
 EVALUATION_DIR = DATA_DIR / "evaluation"  # frozen-cutoff backtest reports from `eex analyze eval`
 
+# -- Ensemble forecasting -------------------------------------------------------
+# The ensemble path propagates ECMWF's 51-member weather ensemble through the already-trained
+# deterministic models to produce a weather-driven spread. It never writes to the production database:
+# these are separate files so an ensemble run cannot touch a measured actual, and so the (large,
+# regenerable) member-weather archive can be deleted without losing the permanent per-member forecasts.
+ENSEMBLE_DB_PATH = DATA_DIR / "eex_ensemble.db"  # permanent: run metadata + per-member predictions
+ENSEMBLE_WEATHER_DB_PATH = DATA_DIR / "eex_ensemble_weather.db"  # prunable raw member weather
+# Open-Meteo retains individual members for only ~3 days, so archiving is the sole route to an ensemble
+# history. Raw weather is ~86 MB per run, hence a bounded rolling window rather than keeping everything;
+# the small per-member forecast table is never pruned.
+ENSEMBLE_RETENTION_RUNS = 30
+
 # Tuned hyperparameters per model, written by `eex model tune` and read by `eex model train`.
 HYPERPARAMS_PATH = CONFIG_DIR / "hyperparams.json"
 BACKTEST_CUTOFFS_PATH = (
