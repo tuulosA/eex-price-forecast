@@ -62,6 +62,16 @@ ENTSOE_ZONE = "DE_LU"  # entsoe-py area key for the German-Luxembourg bidding zo
 ENTSOE_ZONE_EIC = "10Y1001A1001A82H"
 MARKET_TIMEZONE = "Europe/Berlin"
 HORIZON_DAYS = 14
+# How much settled history the forecast run reads, and therefore shows. One value governs every output
+# that displays history - forecast.csv and all three plots are built from the same trimmed frame - so
+# changing it here moves them together. The forward-only ensemble summary is unaffected.
+#
+# This is presentation, not modelling: the forecast itself does not change. But it cannot be shrunk
+# freely, because the read window is also what `features.price_lags` looks back into. Below about eight
+# days the 168 h price lag starts resolving to NaN on the near horizon, which does change the forecast.
+# The window start is snapped forward to a Europe/Berlin midnight, so the retained span is whole German
+# delivery days rather than exactly this many 24 h blocks.
+FORECAST_HISTORY_DAYS = 21
 # Rolling window (days) that `eex update` re-fetches each run. ENTSO-E publishes actuals with a lag and
 # revises them, so re-pulling the last couple of weeks keeps the database current without a full backfill.
 DEFAULT_REFRESH_DAYS = 14

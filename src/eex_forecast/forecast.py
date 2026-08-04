@@ -28,6 +28,7 @@ import pandas as pd
 from eex_forecast.config import (
     DEFAULT_REFRESH_DAYS,
     FORECAST_DIR,
+    FORECAST_HISTORY_DAYS,
     HORIZON_DAYS,
     MARKET_TIMEZONE,
 )
@@ -274,7 +275,7 @@ def run_forecast(
     db_path: str,
     *,
     horizon_days: int = HORIZON_DAYS,
-    history_days: int = 21,
+    history_days: int = FORECAST_HISTORY_DAYS,
     write_db: bool = False,
     plot: bool = False,
     fetch_inputs: bool = True,
