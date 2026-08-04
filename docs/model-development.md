@@ -848,20 +848,26 @@ Design points worth keeping:
   run costs ~1,400 weighted calls. The first live run failed with HTTP 429 partway through; the client
   now paces requests through a rolling-window limiter and backs off in minutes.
 
-First live run after the coverage fix (2026-08-04, 51 members, 310 forward hours):
+First fully clean run — after the window-coverage fixes, so no zero-spread hours and no overhang past
+the deterministic forecast (2026-08-04, 51 members, 313 forward hours):
 
 | Model | Mean p10-p90 width |
 |---|---:|
-| Wind | 9,127.4 MW |
-| Solar | 2,768.9 MW |
-| Load | 2,181.0 MW |
-| Price | 30.7 EUR/MWh |
+| Wind | 11,304.3 MW |
+| Solar | 3,343.2 MW |
+| Load | 1,893.7 MW |
+| Price | 34.8 EUR/MWh |
 
 The shape is physically right: wind spread widens sharply with lead time, solar stays tight because
 deterministic geometry and clear-sky dominate its features, and load barely moves because it is
 calendar-driven. As a consistency check, the deterministic forecast fell inside the ensemble p10-p90
-band for **82.6%** of hours and inside p25-p75 for **53.9%** — close to what a well-behaved ensemble
+band for **85.9%** of hours and inside p25-p75 for **59.4%** — close to what a well-behaved ensemble
 containing the deterministic run as a typical member should give.
+
+These are one run's numbers, not a benchmark. Absolute widths track that day's weather regime: an
+earlier run over a calmer period gave a wind width of 9,127 MW and a price width of 30.7 EUR/MWh. Only
+the qualitative pattern — wind widest, solar and load tight, everything widening with lead time — is a
+stable property.
 
 **These bands are weather-driven spread only** and exclude sub-model error, price-model error, outages,
 and demand shocks. Against a price MAE of 11.3 EUR/MWh they are certainly too narrow to be read as
