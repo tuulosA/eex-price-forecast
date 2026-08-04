@@ -38,6 +38,18 @@ ABLATION_DIR = (
 )  # feature-removal (ablation) reports from `eex analyze ablation`
 EVALUATION_DIR = DATA_DIR / "evaluation"  # frozen-cutoff backtest reports from `eex analyze eval`
 
+# -- Ensemble forecasting -------------------------------------------------------
+# The ensemble path propagates ECMWF's 51-member weather ensemble through the already-trained
+# deterministic models to produce a weather-driven spread. It never writes to the production database:
+# these are separate files so an ensemble run cannot touch a measured actual, and so the (large,
+# regenerable) member-weather archive can be deleted without losing the permanent per-member forecasts.
+ENSEMBLE_DB_PATH = DATA_DIR / "eex_ensemble.db"  # permanent: run metadata + per-member predictions
+ENSEMBLE_WEATHER_DB_PATH = DATA_DIR / "eex_ensemble_weather.db"  # prunable raw member weather
+# Open-Meteo retains individual members for only ~3 days, so archiving is the sole route to an ensemble
+# history. Raw weather is ~86 MB per run, hence a bounded rolling window rather than keeping everything;
+# the small per-member forecast table is never pruned.
+ENSEMBLE_RETENTION_RUNS = 30
+
 # Tuned hyperparameters per model, written by `eex model tune` and read by `eex model train`.
 HYPERPARAMS_PATH = CONFIG_DIR / "hyperparams.json"
 BACKTEST_CUTOFFS_PATH = (
@@ -49,7 +61,22 @@ AREA_CODE = "DE"
 ENTSOE_ZONE = "DE_LU"  # entsoe-py area key for the German-Luxembourg bidding zone
 ENTSOE_ZONE_EIC = "10Y1001A1001A82H"
 MARKET_TIMEZONE = "Europe/Berlin"
+# Unknown delivery days per run, counted from the hour after the last *settled* price. That anchor jumps
+# forward a day when the day-ahead auction clears around midday, while the weather fetch window stays
+# anchored to today's midnight - so an evening run reaches one day further than ECMWF does, the
+# incomplete final day is dropped whole, and 13 days are published instead of 14. That is expected, not
+# a fault; a morning run on the same data publishes all 14.
 HORIZON_DAYS = 14
+# How much settled history the forecast run reads, and therefore shows. One value governs every output
+# that displays history - forecast.csv and all three plots are built from the same trimmed frame - so
+# changing it here moves them together. The forward-only ensemble summary is unaffected.
+#
+# This is presentation, not modelling: the forecast itself does not change. But it cannot be shrunk
+# freely, because the read window is also what `features.price_lags` looks back into. Below about eight
+# days the 168 h price lag starts resolving to NaN on the near horizon, which does change the forecast.
+# The window start is snapped forward to a Europe/Berlin midnight, so the retained span is whole German
+# delivery days rather than exactly this many 24 h blocks.
+FORECAST_HISTORY_DAYS = 14
 # Rolling window (days) that `eex update` re-fetches each run. ENTSO-E publishes actuals with a lag and
 # revises them, so re-pulling the last couple of weeks keeps the database current without a full backfill.
 DEFAULT_REFRESH_DAYS = 14

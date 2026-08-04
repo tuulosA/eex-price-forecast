@@ -29,7 +29,7 @@ Forecasting is two-stage: **weather → three generation sub-models → price mo
 
 ```
 src/eex_forecast/
-  config.py            # paths, DE constants (HORIZON_DAYS=14), env Settings (API keys, db_path)
+  config.py            # paths, DE constants (HORIZON_DAYS=14, FORECAST_HISTORY_DAYS=21), env Settings
   db/
     schema.py          # `timeseries` table; separate actual/forecast columns; ensure_columns adds weather cols
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
@@ -49,6 +49,12 @@ src/eex_forecast/
     anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
     solar.py           # solar error slices + physics/irradiance feature A/B commands
+  ensemble/            # optional weather-ensemble product; depends on core, never vice versa
+    client.py          # Open-Meteo Ensemble API (ecmwf_ifs025, 51 members) + weighted rate limiter
+    propagate.py       # run the trained chain once per member; clip to member coverage
+    store.py           # two SQLite files: permanent per-member forecasts, prunable raw weather
+    summary.py         # mean + p10/p25/p50/p75/p90 across members
+    pipeline.py        # fetch -> propagate -> store -> summarise -> CSV (best-effort)
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
   quality.py           # reject gross upstream actual-data corruption before hourly resampling
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
@@ -149,6 +155,15 @@ docs/
   `end_date`). These are two separate helpers (`_default_end` vs `_weather_end`) — keep them distinct.
 - **Feature order is persisted** in a `<model>.meta.json` sidecar; prediction reindexes to it. If you
   add/remove/rename features—or change their semantics—models must be retrained, not just reloaded.
+- **The ensemble path is additive and must stay that way.** `eex forecast --ensemble` runs *after* the
+  deterministic forecast is written, writes only to `data/eex_ensemble*.db`, and swallows its own
+  exceptions (`ensemble/pipeline.py`) so a failed ensemble never costs the published forecast. It trains
+  nothing: Open-Meteo retains ensemble members for ~3 days, so there is no history to train or backtest
+  on, and it reuses `TrainedModel.predict` per member rather than reimplementing prediction — which is
+  what keeps capacity reversal, clipping, and the solar-darkness constraint identical to production.
+  Aggregate the *outputs* across members, never the member weather before predicting: wind power is
+  ~v³, so `f(mean(v)) != mean(f(v))`, and the ensemble mean field is measurably smoothed (corr ~0.70 vs
+  the deterministic feed, against ~0.98 for the control).
 
 ## Commands
 
@@ -172,7 +187,8 @@ Documentation is part of the behavior being changed. Keep these sources aligned 
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
 - `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
-  radiation alignment, and cross-border inputs.
+  radiation alignment, cross-border inputs, and the weather-ensemble contract (members, retention,
+  API weighting, and the ensemble databases).
 - `docs/experimentation.md` owns point rebuilding, tuning, aggregation, ablation, eval/oracle, analysis
   commands, report locations, and interpretation.
 - `docs/model-development.md` owns current benchmarks, experiment findings, decisions, priorities, and
