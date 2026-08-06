@@ -812,3 +812,43 @@ def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
 
     assert right_title(None) == ""
     assert right_title(summary) == SPREAD_CAPTION
+
+
+def test_drivers_plot_marks_now_on_every_panel(tmp_path: Path) -> None:
+    """The drivers plot marks `now` because it separates observed weather from forecast weather."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from eex_forecast.forecast import plot_drivers
+
+    frame = make_timeseries(periods=24 * 10)
+    times = pd.to_datetime(frame["timestamp"], utc=True)
+    now = times.iloc[len(times) // 2]
+
+    captured: list[Any] = []
+    original = plt.subplots
+
+    def spy(*args: Any, **kwargs: Any) -> Any:
+        fig, axes = original(*args, **kwargs)
+        captured.append(axes)
+        return fig, axes
+
+    monkey = plt.subplots
+    plt.subplots = spy  # type: ignore[assignment]
+    try:
+        plot_drivers(frame, times, now, tmp_path / "drivers.png")
+    finally:
+        plt.subplots = monkey  # type: ignore[assignment]
+
+    assert (tmp_path / "drivers.png").exists()
+    axes = captured[0][:, 0]
+    assert len(axes) > 1  # several driver panels
+    for ax in axes:
+        verticals = [ln for ln in ax.get_lines() if ln.get_linestyle() == "--"]
+        assert verticals, "every panel should carry the now marker"
+        # A vertical rule: both x points sit at `now`.
+        xs = verticals[0].get_xdata()
+        assert len(set(xs)) == 1
+    assert "now" in axes[0].get_title()
