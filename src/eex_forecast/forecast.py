@@ -385,11 +385,12 @@ def run_forecast(
 
     if plot:
         # The historical edge is aligned to a delivery day; the forward edge retains the full horizon.
-        # Only the price plot needs `now`: it splits the actual and forecast lines at the last settled
-        # hour. The other two draw the whole window, so they do not take it.
+        # `now` means different things to the two plots that take it: the price plot splits its actual
+        # and forecast lines at the last settled hour, while the drivers plot marks the observed/forecast
+        # boundary of its input series. The fundamentals plot needs neither.
         plot_forecast(frame, times, now, FORECAST_DIR / "forecast.png", summary=summary)
         plot_fundamentals(frame, times, FORECAST_DIR / "fundamentals.png", summary=summary)
-        plot_drivers(frame, times, FORECAST_DIR / "drivers.png")
+        plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
     return result
 
 
@@ -649,11 +650,17 @@ def _driver_panels(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
     return [(label, data) for label, data in candidates if not data.empty]
 
 
-def plot_drivers(frame: pd.DataFrame, times: pd.Series, path: object) -> object:
+def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
     """Plot every price-model driver group over the window, one panel each, weekends/holidays shaded.
 
     A diagnostic dashboard of the model's inputs (weather means, neighbour wind, nuclear, NTC) so the
     forecast's drivers can be eyeballed alongside the price/fundamentals plots.
+
+    This is the one plot that marks ``now``, because it is the only one where the distinction changes how
+    a series should be read: weather left of the line is observed and right of it is an ECMWF forecast,
+    while nuclear availability and transfer capacity are published ahead and are equally real on both
+    sides. The price and fundamentals plots need no such marker - their forecast series simply begin
+    where the actual series ends.
     """
     import matplotlib
 
@@ -674,11 +681,14 @@ def plot_drivers(frame: pd.DataFrame, times: pd.Series, path: object) -> object:
             ax.plot(
                 times, pd.to_numeric(data[column], errors="coerce"), linewidth=1.0, label=column
             )
+        # Black dashed: the panels already use the default colour cycle for data and grey/purple for
+        # shading, so a neutral dashed rule reads as an annotation rather than another series.
+        ax.axvline(now, color="black", linestyle="--", linewidth=0.9, alpha=0.7, zorder=6)
         ax.set_ylabel(label, fontsize=8)
         ax.grid(True, color="0.93")
         if data.shape[1] > 1:
             ax.legend(loc="upper left", fontsize=7, ncol=min(4, data.shape[1]))
-    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple)")
+    axes[0, 0].set_title("Price-model drivers (weekends grey, holidays purple; dashed line = now)")
     axes[-1, 0].set_xlabel("time (UTC)")
     fig.autofmt_xdate()
     fig.tight_layout()
