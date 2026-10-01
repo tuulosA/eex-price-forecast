@@ -207,8 +207,25 @@ The current 22-day end-to-end benchmark is:
 | Load | 1,488.821 MW | 1,746.757 MW |
 | Price | 11.327 EUR/MWh | 14.664 EUR/MWh |
 
-These are development benchmarks, not a claim of historical 14-day accuracy. Open-Meteo's archived
-forecast series has modest D+1 optimism because it stitches short-lead ECMWF run segments.
+These are development benchmarks for comparing model changes, and they are **optimistic** as a measure
+of real forecast error:
+
+- **Only the next delivery day (D+1) is scored.** The published forecast runs to D+14, and weather
+  forecast error grows with lead time, so errors further out are larger than these figures. No
+  multi-day accuracy is claimed.
+- **The historical weather is better than what a live run gets.** Open-Meteo's archived forecasts
+  stitch together the short-lead segments of successive ECMWF runs, so even D+1 is scored on slightly
+  better weather than the run actually available at issue time.
+- **The same 22 days are reused across every development decision.** Hyperparameters, weather
+  aggregation, feature ablation, and anchor choices were all selected on these cutoffs, and the weather
+  anchors were ranked against 2025 actuals that overlap them, so the scores are partly in-sample.
+- **The day set is a stress test, not a typical sample.** It deliberately includes holidays and wind
+  extremes.
+
+The only way to measure true out-of-sample error is a live track record: archive each run's forecast
+and score it against the prices that later settle, daily or weekly, over months. This project
+deliberately does not maintain one, so these numbers indicate relative model quality rather than the
+accuracy to expect in production.
 
 See [Experimentation and evaluation](docs/experimentation.md) for methodology, command options, report
 locations, and interpretation.
