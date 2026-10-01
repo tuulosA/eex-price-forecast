@@ -1100,6 +1100,16 @@ Before changing a production feature/model:
     investigated; electrification growth and the winter temperature response are candidates.
   - **Wind follows each day's shape well**; its largest misses are level errors on very windy
     winter days (1 Jan, 3 Feb).
+- Kept the price-target winsorising (`clip_target_quantiles=(0.001, 0.999)`). Over 2023-2026 the
+  caps sit at -114.8 and +451.9 EUR/MWh and touch 33 hours at each end of 32,902. On the development
+  days (three seeds, actual fundamentals) the current caps scored MAE 11.402 +/- 0.038 and RMSE
+  14.791, against 11.557 +/- 0.141 / 15.316 with no capping and 11.830 +/- 0.218 / 15.527 with 0.01%
+  caps. No capping improved only the worst day (18.09 vs 21.35 MAE) and was less stable across
+  seeds. The development days are calm, so this under-weights extreme-price days, but the holdout
+  must not decide it. Capping is also not what stops the model reaching -400/-500: a tree averages
+  each leaf, and the uncapped variant did not reach the extremes either. The principled alternative
+  is a robust loss (Huber, or absolute error to match the MAE scoring) in place of winsorising,
+  tested on the development days with a matched retune - see "Robust objectives" in the sequence.
 - Removed early stopping from production training. `model._fit` used to early-stop on the trailing
   10% validation slice and refit at the best iteration, while tuning, eval, and oracle all fit the
   tuned `n_estimators` unchanged, so the shipped models were not the benchmarked ones. The cut was
