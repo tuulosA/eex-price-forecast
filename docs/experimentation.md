@@ -207,11 +207,15 @@ reports the mean, spread, and a "clears / within seed noise" verdict. Also remem
 eex analyze eval                            # development days: the adoption gate
 eex analyze eval --seeds 5
 eex analyze eval --holdout                  # holdout days: report an adopted configuration
+eex analyze eval --holdout --plot           # ...and draw each day's actual vs forecast price
 ```
 
 Each fold forecasts wind, solar, and load before price. The reports at
 `data/evaluation/model_eval.json` (development) and `model_eval_holdout.json` (holdout) contain
-per-cutoff details and headline MAE/RMSE, and record which set they scored. Fundamental metrics are
+per-cutoff details and headline MAE/RMSE, and record which set they scored. `--plot` adds
+`eval_days.png` / `eval_days_holdout.png`: one panel per scored day, actual price against the D+1
+forecast, each on its own y-scale, so a reader can see whether the daily profile is caught and which
+days are missed outright. Fundamental metrics are
 in MW and price metrics are in EUR/MWh; only compare runs of the same target, on the same set.
 
 The adopted configuration on the 18 holdout days, the out-of-sample headline, is:
@@ -221,7 +225,7 @@ The adopted configuration on the 18 holdout days, the out-of-sample headline, is
 | Wind | 1,803.702 MW | 2,203.244 MW |
 | Solar | 1,373.845 MW | 2,177.160 MW |
 | Load | 1,848.801 MW | 2,107.155 MW |
-| Price | 26.814 EUR/MWh | 39.977 EUR/MWh |
+| Price | 26.814 EUR/MWh | 39.976 EUR/MWh |
 
 Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
 prices from -499 to 666 EUR/MWh): they carry 40% of it, and the MAE without them is 19.259 EUR/MWh.

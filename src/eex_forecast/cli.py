@@ -1051,6 +1051,10 @@ def analyze_solar_irradiance(
 def analyze_eval(
     seeds: _SeedsOpt = 1,
     holdout: _HoldoutOpt = False,
+    plot: Annotated[
+        bool,
+        typer.Option(help="Also draw each scored day's actual vs forecast price (eval_days*.png)."),
+    ] = False,
 ) -> None:
     """Backtest the complete sub-models -> price pipeline and report per-model 24h MAE.
 
@@ -1074,6 +1078,7 @@ def analyze_eval(
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)
+    plot_path = evaluation.plot_evaluation_days(result) if plot else None
 
     typer.echo(
         f"Frozen-cutoff eval, {result.report['config']['cutoff_set']} set "
@@ -1087,6 +1092,8 @@ def analyze_eval(
             f"RMSE {model_eval.mean_rmse:.3f} | {model_eval.n_cutoffs} cutoffs"
         )
     typer.echo(f"  report -> {path}")
+    if plot_path is not None:
+        typer.echo(f"  plot   -> {plot_path}")
 
 
 @analyze_app.command("oracle")

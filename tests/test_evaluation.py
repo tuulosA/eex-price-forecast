@@ -13,6 +13,7 @@ import pytest
 from eex_forecast.analysis.evaluation import (
     EVAL_HORIZON_DAYS,
     ORACLE_SCENARIOS,
+    plot_evaluation_days,
     report_filename,
     run_evaluation,
     run_oracle_diagnostics,
@@ -109,6 +110,34 @@ def test_holdout_reports_record_their_set_and_never_overwrite_development(tmp_pa
         "model_eval_holdout.json",
         "oracle_substitution_holdout.json",
     ]
+
+
+def test_evaluation_keeps_hourly_rows_and_plots_each_day(tmp_path: Path) -> None:
+    """The day plot needs the scored hours themselves, not just each day's MAE."""
+    result = run_evaluation(
+        _hourly_frame("2024-01-01", "2024-05-01"),
+        params_by_model=FAST_PARAMS,
+        cutoff_set=HOLDOUT,
+        cutoffs=CUTOFFS,
+    )
+
+    hourly = result.hourly
+    assert list(dict.fromkeys(hourly["delivery_day"])) == list(CUTOFFS)
+    price = next(model for model in result.models if model.model == "price")
+    assert len(hourly) == sum(fold["test_rows"] for fold in price.folds)
+    for name in ALL_MODELS:
+        spec = REGISTRY[name]
+        assert hourly[spec.target_column].notna().all()
+        assert hourly[spec.forecast_column].notna().all()
+    # The plotted rows reproduce each day's reported price MAE.
+    for fold in price.folds:
+        day = hourly[hourly["delivery_day"] == fold["delivery_day"]]
+        error = day["price_actual_eur_mwh"] - day["price_forecast_eur_mwh"]
+        assert abs(error.abs().mean() - fold["mae"]) < 1e-3
+    assert "hourly" not in result.report  # the JSON report schema is unchanged
+
+    path = plot_evaluation_days(result, reports_dir=tmp_path)
+    assert path.name == "eval_days_holdout.png" and path.stat().st_size > 0
 
 
 def test_named_cutoff_sets_resolve_to_the_frozen_days() -> None:
