@@ -48,10 +48,14 @@ from eex_forecast.analysis import (
     evaluation,
     plot_all_evaluation_days,
     plot_points_map,
+    plot_shap,
     save_heatmap,
 )
 from eex_forecast.analysis import (
     anchors as anchor_analysis,
+)
+from eex_forecast.analysis import (
+    shap as shap_analysis,
 )
 from eex_forecast.analysis import (
     solar as solar_analysis,
@@ -489,6 +493,43 @@ def analyze_correlation(
     typer.echo(f"Correlation matrix -> {csv_path}, {png_path}")
     if top:
         typer.echo(f"  vs price: {top}")
+
+
+@analyze_app.command("shap")
+def analyze_shap(
+    target: Annotated[
+        ModelName, typer.Option(help="Model to explain ('all' for every model).")
+    ] = ModelName.all,
+    days: Annotated[
+        int, typer.Option(help="Explain this many days of recent history.")
+    ] = shap_analysis.DEFAULT_SHAP_DAYS,
+) -> None:
+    """Explain the trained production models with SHAP (writes data/analysis/shap_<model>.png).
+
+    Uses XGBoost's exact TreeSHAP on the saved models (run `eex model train` first) over the last
+    --days of history, with measured fundamentals. Wind and solar are converted to MW. Each figure ranks
+    feature families by mean |SHAP| and shows a beeswarm of the top individual features.
+    """
+    if days < 1:
+        raise typer.BadParameter("--days must be at least 1.")
+    names = list(ALL_MODELS) if target is ModelName.all else [target.value]
+    read_start, start, end = shap_analysis.shap_window(days)
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn, start=read_start, end=end)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+    for name in names:
+        try:
+            trained = model_ops.TrainedModel.load(REGISTRY[name])
+            result = shap_analysis.explain_model(trained, frame, start=start, end=end)
+        except (FileNotFoundError, ValueError) as error:
+            raise typer.BadParameter(str(error)) from error
+        path = plot_shap(result)
+        top = result.family_importance().head(4)
+        unit = result.unit
+        summary = ", ".join(f"{family} {value:,.1f}" for family, value in top.items())
+        typer.echo(f"SHAP {name:<5} ({len(result.values):,} h, mean |SHAP| {unit}): {summary}")
+        typer.echo(f"  plot -> {path}")
 
 
 def _mae_cell(mean_mae: float, std_mae: float, seeds: int) -> str:
