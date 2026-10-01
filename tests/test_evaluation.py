@@ -13,13 +13,13 @@ import pytest
 from eex_forecast.analysis.evaluation import (
     EVAL_HORIZON_DAYS,
     ORACLE_SCENARIOS,
-    plot_evaluation_days,
     report_filename,
     run_evaluation,
     run_oracle_diagnostics,
     save_evaluation_report,
     save_oracle_report,
 )
+from eex_forecast.analysis.plots import plot_evaluation_days
 from eex_forecast.backtest_cutoffs import DEVELOPMENT, HOLDOUT, cutoff_utc, horizon_end_utc
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY, SUBMODELS

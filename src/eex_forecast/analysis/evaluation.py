@@ -100,8 +100,8 @@ class EvaluationResult:
     """A completed end-to-end frozen-cutoff evaluation plus its serialisable report.
 
     ``hourly`` holds the first seed's scored rows - ``delivery_day``, ``timestamp``, and each model's
-    actual and forecast column - for :func:`plot_evaluation_days`. It is kept off the JSON report so
-    the report schema stays unchanged and compact.
+    actual and forecast column - for :func:`eex_forecast.analysis.plots.plot_evaluation_days`. It is
+    kept off the JSON report so the report schema stays unchanged and compact.
     """
 
     models: list[ModelEval]
@@ -741,84 +741,6 @@ def report_filename(stem: str, cutoff_set: str, suffix: str = ".json") -> str:
     development record a decision was based on. ``suffix`` lets the day plots follow the same rule.
     """
     return f"{stem}{suffix}" if cutoff_set == DEVELOPMENT else f"{stem}_{HOLDOUT}{suffix}"
-
-
-EVAL_DAYS_PLOT = "eval_days"
-_PLOT_COLUMNS = 3
-
-
-def plot_evaluation_days(result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
-    """Draw every scored delivery day's actual and D+1 forecast price, one small panel per day.
-
-    A mean MAE says how far off the forecast is on average, not what it looks like: whether it follows
-    the day's shape (the morning and evening peaks, the midday solar dip) and which days it misses
-    entirely. Small multiples answer that at a glance. Each panel is one delivery day in chronological
-    order, titled with its weekday and that day's MAE, and drawn in the same encoding as
-    ``forecast.png``: the actual price black and on top, the forecast in matplotlib's default blue.
-
-    Panels deliberately do **not** share a y-axis. Day ranges differ by an order of magnitude (a calm
-    winter weekday spans ~60 EUR/MWh, a spring holiday can fall to -500), and one shared scale would
-    flatten every ordinary day into a line. The x-axis is hours since the local delivery-day start, so
-    23- and 25-hour DST days keep their true length. Written to ``eval_days[_holdout].png``.
-    """
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    price = REGISTRY["price"]
-    hourly = result.hourly
-    days = list(dict.fromkeys(hourly["delivery_day"]))
-    folds = next(model for model in result.models if model.model == "price").folds
-    day_mae = {fold["delivery_day"]: fold["mae"] for fold in folds}
-    rows = -(-len(days) // _PLOT_COLUMNS)
-    fig, axes = plt.subplots(
-        rows, _PLOT_COLUMNS, figsize=(12.0, 2.1 * rows + 1.2), sharex=True, squeeze=False
-    )
-    for ax, day in zip(axes.flat, days, strict=False):
-        rows_for_day = hourly[hourly["delivery_day"] == day]
-        elapsed = (
-            pd.to_datetime(rows_for_day[TIMESTAMP], utc=True) - cutoff_utc(day)
-        ) / pd.Timedelta(hours=1)
-        ax.axhline(0.0, color="0.8", linewidth=0.8, zorder=1)
-        ax.plot(elapsed, rows_for_day[price.forecast_column], color="C0", linewidth=1.5, zorder=4)
-        ax.plot(elapsed, rows_for_day[price.target_column], color="black", linewidth=1.4, zorder=5)
-        label = pd.Timestamp(day).strftime("%a %d %b %Y")
-        ax.set_title(f"{label} | MAE {day_mae[day]:.1f}", loc="left", fontsize=9)
-        ax.grid(True, color="0.92")
-        ax.tick_params(labelsize=8)
-    for ax in axes.flat[len(days) :]:
-        ax.set_visible(False)
-    for ax in axes[:, 0]:
-        ax.set_ylabel("EUR / MWh", fontsize=8)
-    for ax in axes[-1, :]:
-        ax.set_xticks([0, 6, 12, 18, 24])
-        ax.set_xlabel("hour of delivery day (Europe/Berlin)", fontsize=8)
-        ax.tick_params(labelbottom=True)
-
-    cutoff_set = str(result.report["config"]["cutoff_set"])
-    summary = result.report["summary"]["price"]
-    fig.suptitle(
-        f"{cutoff_set.capitalize()} days: actual vs D+1 forecast price "
-        f"(MAE {summary['mae']:.1f} EUR/MWh over {len(days)} days; y-axes differ per day)",
-        fontsize=11,
-    )
-    fig.legend(
-        handles=[
-            matplotlib.lines.Line2D([], [], color="black", linewidth=1.4, label="actual"),
-            matplotlib.lines.Line2D([], [], color="C0", linewidth=1.5, label="forecast"),
-        ],
-        loc="upper right",
-        ncol=2,
-        fontsize=9,
-        frameon=False,
-    )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / report_filename(EVAL_DAYS_PLOT, cutoff_set, ".png")
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    return path
 
 
 def _save_report(report: dict[str, Any], stem: str, reports_dir: Path) -> Path:
