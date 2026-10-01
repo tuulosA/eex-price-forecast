@@ -4,7 +4,7 @@ Reduce the database to an interpretable feature frame - the ENTSO-E fundamentals
 load) plus one national mean per weather role (wind speed, the two temperatures, the two irradiances) -
 and compute the Pearson correlation matrix, to see which drivers move the German day-ahead price before
 any model is built. :func:`aggregate_features` and :func:`correlation_matrix` are pure and unit-tested;
-:func:`save_heatmap` is a thin matplotlib wrapper.
+the heatmap is drawn by :func:`eex_forecast.analysis.plots.save_heatmap`.
 
 The per-role weather columns (e.g. ``ws_de01`` .. ``ws_de20``) are averaged into a single series so the
 matrix stays an interpretable handful of features rather than a hundred near-duplicate point columns.
@@ -13,7 +13,6 @@ matrix stays an interpretable handful of features rather than a hundred near-dup
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Literal
 
 import pandas as pd
@@ -67,7 +66,9 @@ def aggregate_features(frame: pd.DataFrame) -> pd.DataFrame:
     ntc = ntc_features(frame)  # ntc_imp_total / ntc_exp_total, or empty if no NTC columns present
     if not ntc.empty:
         aggregated = pd.concat([aggregated, ntc], axis=1)
-    neighbours = neighbour_wind_block(frame, "country_mean")  # nbr_wind_<cc>, or empty if none present
+    neighbours = neighbour_wind_block(
+        frame, "country_mean"
+    )  # nbr_wind_<cc>, or empty if none present
     if not neighbours.empty:
         aggregated = pd.concat([aggregated, neighbours], axis=1)
     return aggregated
@@ -104,35 +105,3 @@ def order_by_target(corr: pd.DataFrame, target: str = "price") -> pd.DataFrame:
         return corr
     order = [target, *correlations_with(corr, target).index]
     return corr.loc[order, order]
-
-
-def save_heatmap(
-    corr: pd.DataFrame, path: Path, *, title: str = "Feature correlation (Pearson)"
-) -> Path:
-    """Render the correlation matrix as an annotated heatmap PNG."""
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    labels = list(corr.columns)
-    n = len(labels)
-    values = corr.to_numpy()
-    fig, ax = plt.subplots(figsize=(1.0 * n + 2.5, 1.0 * n + 2.0))
-    image = ax.imshow(values, vmin=-1.0, vmax=1.0, cmap="RdBu_r")
-    ax.set_xticks(range(n), labels, rotation=45, ha="right")
-    ax.set_yticks(range(n), labels)
-    for i in range(n):
-        for j in range(n):
-            value = values[i, j]
-            color = "white" if pd.notna(value) and abs(value) > 0.55 else "black"
-            text = "" if pd.isna(value) else f"{value:.2f}"
-            ax.text(j, i, text, ha="center", va="center", color=color, fontsize=8)
-    ax.set_title(title)
-    fig.colorbar(image, ax=ax, shrink=0.8, label="Pearson r")
-    fig.tight_layout()
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    return path

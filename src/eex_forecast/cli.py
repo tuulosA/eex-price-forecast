@@ -46,6 +46,7 @@ from eex_forecast.analysis import (
     aggregation,
     correlation_matrix,
     evaluation,
+    plot_evaluation_days,
     plot_points_map,
     save_heatmap,
 )
@@ -1078,7 +1079,7 @@ def analyze_eval(
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)
-    plot_path = evaluation.plot_evaluation_days(result) if plot else None
+    plot_path = plot_evaluation_days(result) if plot else None
 
     typer.echo(
         f"Frozen-cutoff eval, {result.report['config']['cutoff_set']} set "

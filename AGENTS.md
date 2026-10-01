@@ -43,7 +43,7 @@ src/eex_forecast/
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # offline `eex analyze ...` implementations; depends on core, never vice versa
     correlation.py     # feature correlation matrix + heatmap
-    maps.py            # candidate/ranked point maps
+    plots.py           # analysis plots: point maps, correlation heatmap, eval day panels
     ablation.py        # remove chosen features and measure the loss, any model
     aggregation.py     # A/B weather aggregation per fundamental + neighbour
     anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
