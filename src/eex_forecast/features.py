@@ -102,6 +102,17 @@ _PRECEDING_HOUR_MEAN_ROLES = frozenset(
     }
 )
 
+
+def preceding_hour_mean_columns(columns: Sequence[str]) -> list[str]:
+    """The weather columns read from ``t + 1 h`` for delivery hour ``t`` (radiation roles).
+
+    Derived from the same role registry :func:`_weather_role_points` aligns by, so a coverage check
+    that must reserve the following hour (the ensemble's) cannot drift from the alignment itself.
+    """
+    prefixes = tuple(WEATHER_AGGREGATES[role] for role in _PRECEDING_HOUR_MEAN_ROLES)
+    return [column for column in columns if column.startswith(prefixes)]
+
+
 # SQLite intentionally keeps columns added by earlier weather-point configurations. Feature builders
 # must therefore distinguish columns that merely exist in the schema from the points that are active
 # now. Analysis frames can override the committed configuration when deliberately testing a different

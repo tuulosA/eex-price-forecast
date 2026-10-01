@@ -766,6 +766,44 @@ def test_bands_never_extend_past_member_coverage() -> None:
     assert (spread > 1).all()
 
 
+def test_bands_stop_where_member_values_stop_not_where_timestamps_stop() -> None:
+    """Regression: Open-Meteo pads the requested days with null-valued timestamps past the ensemble
+    run's horizon. Clipping on timestamps emitted those hours with deterministic weather in every
+    member - ~31 published hours of exactly zero spread."""
+    base, models, now = _base_and_models()
+    times = pd.to_datetime(base["timestamp"], utc=True)
+    weather = _member_weather(times[times >= now])
+    last_valued = now + pd.Timedelta(hours=40)
+    padded = pd.to_datetime(weather[TIMESTAMP], utc=True) > last_valued
+    weather.loc[padded, ["ws_de01", "ws_de02"]] = np.nan  # timestamps kept, values gone
+
+    out = propagate_members(base, weather, forward_from=now, models=models)
+
+    assert pd.to_datetime(out[TIMESTAMP], utc=True).max() == last_valued
+    assert (out.groupby(TIMESTAMP)["wind_forecast_mw"].nunique() > 1).all()
+
+
+def test_member_coverage_needs_every_member_and_the_next_radiation_hour() -> None:
+    from eex_forecast.ensemble.propagate import member_coverage
+
+    hours = pd.date_range("2026-10-01 00:00", periods=6, freq="h", tz="UTC")
+    weather = pd.DataFrame(
+        [
+            {TIMESTAMP: hour, MEMBER_COLUMN: member, "ws_de01": 5.0, "ghi_de01": 100.0}
+            for hour in hours
+            for member in (0, 1)
+        ]
+    )
+    # Member 1 lacks its last hour; the hour before it is then the final complete one.
+    weather = weather[~((weather[MEMBER_COLUMN] == 1) & (weather[TIMESTAMP] == hours[-1]))]
+
+    # Wind alone: the last hour every member covers.
+    assert member_coverage(weather, ["ws_de01"]) == (hours[0], hours[-2])
+    # With radiation, hour t also needs t + 1 h, so the end moves back one more hour.
+    assert member_coverage(weather, ["ws_de01", "ghi_de01"]) == (hours[0], hours[-3])
+    assert member_coverage(weather.assign(ws_de01=np.nan), ["ws_de01"]) is None
+
+
 def test_forward_until_clips_to_the_published_window() -> None:
     base, models, now = _base_and_models()
     times = pd.to_datetime(base["timestamp"], utc=True)

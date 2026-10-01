@@ -34,7 +34,7 @@ from eex_forecast.ensemble.client import (
     request_cost,
 )
 from eex_forecast.ensemble.store import FORECAST_COLUMNS, TIMESTAMP
-from eex_forecast.features import active_weather_columns
+from eex_forecast.features import active_weather_columns, preceding_hour_mean_columns
 from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
@@ -135,6 +135,42 @@ def _member_frame(
     return out
 
 
+def member_coverage(
+    member_weather: pd.DataFrame, weather_columns: list[str]
+) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """First and last delivery hour whose weather every member genuinely provides, or ``None``.
+
+    Covered means *values*, not timestamps. Open-Meteo pads the requested ``forecast_days`` with
+    timestamps whose values are null once the ensemble run's own horizon is exhausted (about 15 days
+    from its initialisation, so a day short of the deterministic feed). Clipping on the last timestamp
+    therefore let those hours through: :func:`_member_frame` then filled every member with the base
+    frame's deterministic weather, and ~31 hours were published as ensemble output with exactly zero
+    spread. An hour counts only when every member has every weather column.
+
+    When radiation columns are present, the end additionally needs the *following* hour covered:
+    radiation is a preceding-hour mean read from ``t + 1 h`` (``features._weather_role_points``), so
+    without it the final hour's irradiance would fall back to deterministic weather too. This mirrors
+    the deterministic forecast's own coverage guard (``forecast._weather_coverage_end``).
+    """
+    times = pd.to_datetime(member_weather[TIMESTAMP], utc=True).to_numpy()
+    complete = member_weather[weather_columns].notna().all(axis=1)
+    complete_by_hour = complete.groupby(times).all()
+    # Every member must be present at the hour, not only complete where it appears.
+    members_by_hour = member_weather[MEMBER_COLUMN].groupby(times).nunique()
+    complete_by_hour &= members_by_hour == member_weather[MEMBER_COLUMN].nunique()
+    hours = pd.DatetimeIndex(complete_by_hour.index[complete_by_hour.to_numpy()], tz="UTC")
+    if hours.empty:
+        return None
+    ends = hours
+    if preceding_hour_mean_columns(weather_columns):
+        ends = hours[
+            hours.isin(hours - pd.Timedelta(hours=1))
+        ]  # keep t only when t + 1 h is covered
+        if ends.empty:
+            return None
+    return hours.min(), ends.max()
+
+
 def propagate_members(
     base: pd.DataFrame,
     member_weather: pd.DataFrame,
@@ -175,9 +211,16 @@ def propagate_members(
             "the members would not change the forecast."
         )
 
-    covered = pd.to_datetime(member_weather[TIMESTAMP], utc=True)
-    start = max(forward_from, covered.min())
-    end = covered.max()
+    coverage = member_coverage(member_weather, weather_columns)
+    if coverage is None:
+        raise ValueError("No hour has complete ensemble weather for every member.")
+    covered_start, covered_end = coverage
+    start = max(forward_from, covered_start)
+    end = covered_end
+    if covered_end < pd.to_datetime(member_weather[TIMESTAMP], utc=True).max():
+        logger.info(
+            "Ensemble bands end at %s: member weather is incomplete after that hour", covered_end
+        )
     if forward_until is not None:
         end = min(end, forward_until - pd.Timedelta(hours=1))
     if start > forward_from:
