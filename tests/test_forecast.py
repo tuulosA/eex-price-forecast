@@ -13,16 +13,17 @@ from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
 from eex_forecast.features import set_active_weather_columns
 from eex_forecast.forecast import (
+    _first_forward_hour,
     _first_market_day_start,
     _forecast_split,
     _forecast_window_end,
-    _forward_only,
     _last_complete_market_day_cut,
     _weather_coverage_end,
     _weather_limited_forecast_end,
     run_forecast,
 )
 from eex_forecast.model import ALL_MODELS, REGISTRY, train
+from eex_forecast.plots import _forward_only
 
 TINY = {
     "n_estimators": 15,
@@ -227,6 +228,16 @@ def test_forecast_split_is_last_actual_not_now() -> None:
     assert _forecast_split(actual, times, now) == times.iloc[3]  # last non-NaN actual, not `now`
     # With no actual at all, it falls back to `now`.
     assert _forecast_split(pd.Series([np.nan] * 6), times, now) == now
+
+
+def test_first_forward_hour_is_the_hour_after_the_last_actual() -> None:
+    """The ensemble starts on the first *unsettled* hour, not on the plot's hand-off hour."""
+    times = pd.Series(pd.date_range("2026-08-01 00:00", periods=6, freq="h", tz="UTC"))
+    now = pd.Timestamp("2026-08-01 02:00", tz="UTC")
+    actual = pd.Series([10.0, 11, 12, 13, np.nan, np.nan])
+    assert _first_forward_hour(actual, times, now) == times.iloc[4]
+    # With no actual, `now` is already unsettled, so it is not shifted an hour later.
+    assert _first_forward_hour(pd.Series([np.nan] * 6), times, now) == now
 
 
 def test_forecast_window_end_anchors_after_last_actual() -> None:

@@ -61,7 +61,8 @@ src/eex_forecast/
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
   backtest_cutoffs.py  # frozen cutoffs from config/backtest_cutoffs.yaml + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
-  forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB/plots
+  forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB (calls plots)
+  plots.py             # forecast/fundamentals/drivers PNGs; never imports the pipeline
   cli.py               # `eex` command surface (Typer)
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
 tests/                 # focused unit/regression tests; external APIs mocked
