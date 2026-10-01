@@ -28,7 +28,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from eex_forecast.backtest_cutoffs import BACKTEST_CUTOFFS, DAY_AHEAD_DAYS
+from eex_forecast.backtest_cutoffs import DAY_AHEAD_DAYS, DEV_CUTOFFS
 from eex_forecast.config import ABLATION_DIR
 from eex_forecast.model import REGISTRY, FeatureBuilder, ModelSpec, load_params
 from eex_forecast.tuning import seed_list, walk_forward_metrics_seeded
@@ -115,11 +115,11 @@ def run_ablation(
     params: dict[str, Any] | None = None,
     days: int = DAY_AHEAD_DAYS,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> AblationResult:
     """Score ``spec``'s full feature set versus the set minus ``dropped`` (walk-forward MAE/RMSE).
 
-    Scored over the frozen :data:`BACKTEST_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`) - the
+    Scored over the frozen :data:`DEV_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`) - the
     only horizon this backtest scores faithfully. With ``seeds > 1`` each side is refit under several XGBoost
     seeds and the delta is paired per seed, so its run-to-run spread is reported alongside the mean - a delta
     within that spread is not a result. ``cutoffs`` is an internal test seam.

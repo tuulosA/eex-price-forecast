@@ -16,7 +16,15 @@ from eex_forecast import cli
 def test_rank_window_year_and_range_modes() -> None:
     assert cli._rank_window(2024, None, None) == ("2024-01-01", "2024-12-31")
     assert cli._rank_window(None, None, None) == ("2025-01-01", "2025-12-31")  # default year
-    assert cli._rank_window(None, "2025-01-01", "2026-06-30") == ("2025-01-01", "2026-06-30")
+    assert cli._rank_window(None, "2024-07-01", "2025-12-31") == ("2024-07-01", "2025-12-31")
+
+
+def test_rank_window_refuses_holdout_days() -> None:
+    """Ranking selects the anchors the holdout judges, so it must never see a holdout day."""
+    with pytest.raises(typer.BadParameter, match="holdout"):
+        cli._rank_window(2026, None, None)
+    with pytest.raises(typer.BadParameter, match="2026-01-01"):
+        cli._rank_window(None, "2025-06-01", "2026-01-01")  # the inclusive end is a holdout day
 
 
 def test_rank_window_rejects_bad_combinations() -> None:

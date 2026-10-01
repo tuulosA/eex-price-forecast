@@ -1,15 +1,25 @@
-# Frozen walk-forward backtest cutoffs: the single source of truth for every backtest tool
-# (eex model tune / eex analyze aggregation / eex analyze ablation / eex analyze eval).
+# Frozen walk-forward backtest cutoffs, in two sets with two different jobs.
 #
 # Each entry is the first forecast delivery day (D+1) in German market-local time (Europe/Berlin;
 # a delivery day runs 00:00..23:00 local). A tool trains on everything strictly before that local
-# midnight and scores forward from it. The set is FIXED and hand-picked so every run scores the
-# identical days and different anchors / features / params stay directly comparable.
+# midnight and scores forward from it. Both sets are FIXED and hand-picked so every run scores the
+# identical days and results stay directly comparable.
 #
-# To change / add / remove a date, edit this list and keep it balanced: every calendar month, every
-# weekday (Mon-Fri) plus weekends (Sat and Sun), a few German public holidays (atypical low-demand
-# days), and two plain weekdays at the wind extremes (a near-calm day and the windiest in the span).
-cutoffs:
+# development - every SELECTION decision: eex model tune, eex analyze aggregation / ablation /
+#   anchors / solar-*, and eex analyze eval / oracle when used as an adoption gate (their default).
+#   Keep it balanced: every calendar month, every weekday (Mon-Fri) plus weekends, a few German
+#   public holidays (atypical low-demand days), and two plain weekdays at the wind extremes (a
+#   near-calm day and the windiest in the span).
+#
+# holdout - REPORTING only: eex analyze eval --holdout / oracle --holdout. Nothing is ever tuned,
+#   ablated, aggregated, ranked or chosen on these days, which is what makes their MAE an honest
+#   out-of-sample score. Run it after adopting a change, never to choose between candidates: a
+#   holdout result that changes a decision has made the holdout part of selection. The days avoid
+#   everything the adopted configuration was selected on - the development days (with a buffer of
+#   more than 3 days, enforced by the loader, because adjacent days share weather regimes) and the
+#   2025 calendar year the weather anchors were ranked on - so they sit in 2026: two per month,
+#   January to September, balanced like the development set. October-December is not covered.
+development:
   - "2025-01-01"  # Wed - Neujahr (New Year's Day)
   - "2025-02-17"  # Mon
   - "2025-03-19"  # Wed
@@ -32,3 +42,23 @@ cutoffs:
   - "2026-05-21"  # Thu
   - "2026-06-17"  # Wed
   - "2026-07-07"  # Tue
+
+holdout:
+  - "2026-01-01"  # Thu - Neujahr (New Year's Day)
+  - "2026-01-13"  # Tue
+  - "2026-02-03"  # Tue
+  - "2026-02-21"  # Sat (weekend)
+  - "2026-03-04"  # Wed
+  - "2026-03-27"  # Fri
+  - "2026-04-15"  # Wed
+  - "2026-04-26"  # Sun (weekend)
+  - "2026-05-01"  # Fri - Tag der Arbeit (Labour Day)
+  - "2026-05-25"  # Mon - Pfingstmontag (Whit Monday)
+  - "2026-06-06"  # Sat (weekend)
+  - "2026-06-24"  # Wed
+  - "2026-07-16"  # Thu
+  - "2026-07-26"  # Sun (weekend)
+  - "2026-08-11"  # Tue
+  - "2026-08-29"  # Sat (weekend)
+  - "2026-09-09"  # Wed
+  - "2026-09-21"  # Mon

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -12,10 +13,13 @@ import pytest
 from eex_forecast.analysis.evaluation import (
     EVAL_HORIZON_DAYS,
     ORACLE_SCENARIOS,
+    report_filename,
     run_evaluation,
     run_oracle_diagnostics,
+    save_evaluation_report,
+    save_oracle_report,
 )
-from eex_forecast.backtest_cutoffs import cutoff_utc, horizon_end_utc
+from eex_forecast.backtest_cutoffs import DEVELOPMENT, HOLDOUT, cutoff_utc, horizon_end_utc
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY, SUBMODELS
 
@@ -82,6 +86,36 @@ def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
             evaluation.folds[0]
         )
     assert "[eval] seed 1/1 | cutoff 2/2 2024-04-01 complete" in caplog.text
+    assert result.report["config"]["cutoff_set"] == DEVELOPMENT  # the adoption gate is the default
+
+
+def test_holdout_reports_record_their_set_and_never_overwrite_development(tmp_path: Path) -> None:
+    """A reporting run on the holdout must not replace the development record decisions rest on."""
+    frame = _hourly_frame("2024-01-01", "2024-05-01")
+    dev = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoffs=CUTOFFS)
+    held = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoff_set=HOLDOUT, cutoffs=CUTOFFS)
+    oracle = run_oracle_diagnostics(
+        frame, params_by_model=FAST_PARAMS, cutoff_set=HOLDOUT, cutoffs=CUTOFFS
+    )
+
+    assert held.report["config"]["cutoff_set"] == HOLDOUT
+    assert save_evaluation_report(dev, reports_dir=tmp_path).name == "model_eval.json"
+    assert save_evaluation_report(held, reports_dir=tmp_path).name == "model_eval_holdout.json"
+    assert (
+        save_oracle_report(oracle, reports_dir=tmp_path).name == "oracle_substitution_holdout.json"
+    )
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "model_eval.json",
+        "model_eval_holdout.json",
+        "oracle_substitution_holdout.json",
+    ]
+
+
+def test_named_cutoff_sets_resolve_to_the_frozen_days() -> None:
+    assert report_filename("model_eval", DEVELOPMENT) == "model_eval.json"
+    assert report_filename("model_eval", HOLDOUT) == "model_eval_holdout.json"
+    with pytest.raises(ValueError, match="Unknown cutoff set"):
+        run_evaluation(_hourly_frame("2024-01-01", "2024-02-01"), cutoff_set="test")
 
 
 def test_price_fold_hides_actual_fundamentals_and_uses_fresh_forecasts(

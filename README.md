@@ -196,19 +196,25 @@ eex analyze ablation --target price         # remove features and measure the ch
 eex analyze aggregation wind                # compare weather representations
 eex analyze anchors wind                    # compare anchor selections (also load / solar)
 eex model tune --target wind                # Optuna tuning with incumbent protection
+eex analyze eval --holdout                  # report on the untouched holdout days
 ```
 
-The current 22-day end-to-end benchmark is:
+Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
+anchors, and the end-to-end adoption gate - is made on 22 **development** days. The headline below
+is scored on 18 **holdout** days (January-September 2026) that nothing was ever tuned or chosen on:
 
 | Model | MAE | RMSE |
 |---|---:|---:|
-| Wind | 1,504.538 MW | 1,925.817 MW |
-| Solar | 847.183 MW | 1,417.605 MW |
-| Load | 1,488.821 MW | 1,746.757 MW |
-| Price | 11.327 EUR/MWh | 14.664 EUR/MWh |
+| Wind | 1,803.702 MW | 2,203.244 MW |
+| Solar | 1,373.845 MW | 2,177.160 MW |
+| Load | 1,848.801 MW | 2,107.155 MW |
+| Price | 26.814 EUR/MWh | 39.977 EUR/MWh |
 
-These are development benchmarks for comparing model changes, and they are **optimistic** as a measure
-of real forecast error:
+Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
+666 EUR/MWh peak on 24 June. Those three account for 40% of the price error; without them the MAE is
+19.259 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+
+Even the holdout figure is **optimistic** as a measure of live forecast error:
 
 - **Only the next delivery day (D+1) is scored.** The published forecast runs to D+14, and weather
   forecast error grows with lead time, so errors further out are larger than these figures. No
@@ -216,16 +222,11 @@ of real forecast error:
 - **The historical weather is better than what a live run gets.** Open-Meteo's archived forecasts
   stitch together the short-lead segments of successive ECMWF runs, so even D+1 is scored on slightly
   better weather than the run actually available at issue time.
-- **The same 22 days are reused across every development decision.** Hyperparameters, weather
-  aggregation, feature ablation, and anchor choices were all selected on these cutoffs, and the weather
-  anchors were ranked against 2025 actuals that overlap them, so the scores are partly in-sample.
-- **The day set is a stress test, not a typical sample.** It deliberately includes holidays and wind
-  extremes.
+- **The sample is small and incomplete.** 18 days, with no October-December delivery days.
 
 The only way to measure true out-of-sample error is a live track record: archive each run's forecast
 and score it against the prices that later settle, daily or weekly, over months. This project
-deliberately does not maintain one, so these numbers indicate relative model quality rather than the
-accuracy to expect in production.
+deliberately does not maintain one.
 
 See [Experimentation and evaluation](docs/experimentation.md) for methodology, command options, report
 locations, and interpretation.

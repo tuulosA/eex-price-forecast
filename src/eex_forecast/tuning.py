@@ -1,8 +1,10 @@
 """Optuna walk-forward hyperparameter tuning - the shared backtest engine.
 
 A single train/test split flatters a time-series model: it can peek at the future and tune to one
-arbitrary period. Instead we backtest over a **frozen set of delivery days** (the same
-:data:`eex_forecast.backtest_cutoffs.BACKTEST_CUTOFFS` every backtest tool uses). At each cutoff the model
+arbitrary period. Instead we backtest over a **frozen set of delivery days** - the development set,
+:data:`eex_forecast.backtest_cutoffs.DEV_CUTOFFS`, shared by every selection tool. Tuning chooses, so it
+never sees the holdout days; those are reserved for reporting through ``eex analyze eval --holdout``.
+At each cutoff the model
 trains on everything strictly before that delivery day's local midnight and is scored (mean absolute
 error) on the next ``days`` delivery days of held-out actuals - exactly how it will be used in production.
 Optuna minimises the mean error across cutoffs, so the chosen hyperparameters generalise across many
@@ -34,8 +36,8 @@ from optuna.samplers import TPESampler
 from xgboost import XGBRegressor
 
 from eex_forecast.backtest_cutoffs import (
-    BACKTEST_CUTOFFS,
     DAY_AHEAD_DAYS,
+    DEV_CUTOFFS,
     cutoff_utc,
     horizon_end_utc,
 )
@@ -72,7 +74,7 @@ class TuneResult:
     params: dict[str, Any]
     best_value: float
     n_folds: int
-    cutoffs: tuple[str, ...]  # the frozen delivery days this run scored (BACKTEST_CUTOFFS)
+    cutoffs: tuple[str, ...]  # the frozen delivery days this run scored (DEV_CUTOFFS)
     report: dict[str, Any]
 
 
@@ -207,11 +209,11 @@ def evaluate_params(
     params: dict[str, Any],
     *,
     days: int,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> float:
     """Mean walk-forward MAE (MW / EUR) of ``params`` for ``spec`` across ``cutoffs`` (lower is better).
 
-    ``cutoffs`` defaults to the frozen :data:`BACKTEST_CUTOFFS`; it is an internal seam for tests to inject
+    ``cutoffs`` defaults to the frozen :data:`DEV_CUTOFFS`; it is an internal seam for tests to inject
     dates that fall inside a small synthetic frame, not a production knob.
     """
     return _score(spec, _prepare(spec, frame), params, cutoffs, days)
@@ -223,7 +225,7 @@ def walk_forward_metrics(
     params: dict[str, Any],
     *,
     days: int,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> dict[str, Any]:
     """Full walk-forward result for one param set: mean MAE, mean RMSE, and the per-cutoff folds.
 
@@ -240,7 +242,7 @@ def walk_forward_predictions(
     params: dict[str, Any],
     *,
     days: int,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> pd.DataFrame:
     """Return matched actual/prediction rows from the production-faithful walk-forward engine.
 
@@ -288,7 +290,7 @@ def walk_forward_metrics_seeded(
     *,
     days: int,
     seeds: list[int],
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> dict[str, Any]:
     """Repeat :func:`walk_forward_metrics` once per seed (XGBoost ``random_state``).
 
@@ -296,7 +298,7 @@ def walk_forward_metrics_seeded(
     strategy/feature delta of ~1 EUR/MWh can be noise. Refitting under several seeds and reporting the
     across-seed **mean and sample std** lets a comparison be weighed against that noise. Features are
     built once (via :func:`_prepare`) and only the fit is repeated. With one seed the std is 0 and the
-    mean is the single run. ``cutoffs`` defaults to the frozen :data:`BACKTEST_CUTOFFS` (a test seam).
+    mean is the single run. ``cutoffs`` defaults to the frozen :data:`DEV_CUTOFFS` (a test seam).
     """
     data = _prepare(spec, frame)
     multi = len(seeds) > 1
@@ -360,12 +362,12 @@ def tune(
     incumbent_params: dict[str, Any] | None = None,
     days: int = DAY_AHEAD_DAYS,
     seed: int = 42,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> TuneResult:
     """Run Optuna walk-forward tuning for ``spec`` over the frozen cutoffs and return the best params.
 
     ``days`` is the scored horizon in whole delivery days (default 1 = day-ahead). ``cutoffs`` defaults to
-    the frozen :data:`BACKTEST_CUTOFFS` and is an internal test seam, not a production knob.
+    the frozen :data:`DEV_CUTOFFS` and is an internal test seam, not a production knob.
 
     When ``incumbent_params`` is supplied, it is scored once outside the Optuna search and competes with
     its ``n_trials`` fresh candidates. This makes a retune monotonic on the matched backtest: a new feature
