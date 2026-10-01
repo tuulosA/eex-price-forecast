@@ -32,7 +32,7 @@ data/**
 !data/aggregation/*.json
 !data/ablation/*.json
 !data/rank/*.csv
-!data/analysis/correlation.csv
+!data/analysis/correlation_*.csv
 !data/analysis/solar_error_slices.json
 !data/analysis/solar_feature_experiment.json
 !data/analysis/solar_irradiance_experiment.json

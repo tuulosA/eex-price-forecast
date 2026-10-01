@@ -1,4 +1,4 @@
-"""Tests for the correlation analysis and the point map."""
+"""Tests for the per-model correlation analysis and the point map."""
 
 from __future__ import annotations
 
@@ -6,124 +6,73 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from tests.conftest import make_timeseries
 
 from eex_forecast.analysis import (
-    aggregate_features,
-    correlation_matrix,
+    model_correlations,
+    plot_correlation,
     plot_points_map,
-    save_heatmap,
+    save_correlation_csv,
 )
-from eex_forecast.analysis.correlation import correlations_with, order_by_target
+from eex_forecast.model import REGISTRY
 from eex_forecast.weather.candidates import Candidate
 from eex_forecast.weather.point_search import SelectedPoint
 
 
-def _frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "timestamp": pd.date_range("2025-01-01", periods=4, freq="h", tz="UTC"),
-            "price_actual_eur_mwh": [10.0, 20.0, 30.0, 40.0],
-            "wind_actual_mw": [100.0, 200.0, 300.0, 400.0],
-            "ws_de01": [1.0, 2.0, 3.0, 4.0],
-            "ws_de02": [3.0, 4.0, 5.0, 6.0],
-            "t_ws_de01": [5.0, 5.0, 5.0, 5.0],
-            "t_de01": [0.0, 1.0, 2.0, 3.0],
-            "ghi_t_de01": [10.0, 10.0, 10.0, 10.0],
-            "ghi_de01": [20.0, 20.0, 20.0, 20.0],
-        }
-    )
+def test_correlations_use_the_models_own_features_and_capacity_factor() -> None:
+    """Wind is correlated on its own point columns against the capacity factor it learns."""
+    frame = make_timeseries(periods=24 * 30)
+    result = model_correlations(REGISTRY["wind"], frame, top=5)
+
+    built = REGISTRY["wind"].build_features(frame)
+    assert set(result.with_target.index) <= set(built.columns)
+    # Strongest first by magnitude, keeping the sign.
+    magnitudes = result.with_target.abs().to_numpy()
+    assert (magnitudes[:-1] >= magnitudes[1:]).all()
+    # The synthetic wind generation follows the wind-speed columns, so they lead the ranking.
+    assert result.with_target.index[0] in {"ws_de01", "ws_de02"}
+    assert result.with_target.iloc[0] > 0.5
+    # The pairwise matrix is the target first, then exactly the strongest features in order; its
+    # target row repeats the ranking.
+    assert list(result.matrix.columns) == ["wind capacity factor", *result.with_target.index[:5]]
+    target_row = result.matrix.loc["wind capacity factor", list(result.with_target.index[:5])]
+    assert target_row.to_numpy() == pytest.approx(result.with_target.iloc[:5].to_numpy())
+    assert result.target_label == "wind capacity factor"
+    target = frame["wind_actual_mw"] / frame["wind_capacity_mw"]
+    expected = built["ws_de01"].corr(target)
+    assert result.with_target["ws_de01"] == pytest.approx(expected)
 
 
-def test_aggregate_features_means_and_prefix_exclusivity() -> None:
-    features = aggregate_features(_frame())
-    assert set(features.columns) == {
-        "price",
-        "wind_gen",
-        "wind_speed",
-        "temp_wind",
-        "temp_load",
-        "irr_load",
-        "irr_solar",
-    }
-    assert features["wind_speed"].tolist() == [2.0, 3.0, 4.0, 5.0]  # mean of ws_de01, ws_de02
-    # Prefixes must not bleed: t_ws_de vs t_de, ghi_t_de vs ghi_de are distinct features.
-    assert features["temp_wind"].tolist() == [5.0, 5.0, 5.0, 5.0]
-    assert features["temp_load"].tolist() == [0.0, 1.0, 2.0, 3.0]
-    assert features["irr_load"].tolist() == [10.0] * 4
-    assert features["irr_solar"].tolist() == [20.0] * 4
-    # Absent fundamentals are simply omitted.
-    assert "solar_gen" not in features.columns
-    assert "load" not in features.columns
-    # No neighbour columns in this frame -> no nbr_wind_* features.
-    assert not any(c.startswith("nbr_wind_") for c in features.columns)
+def test_constant_features_are_left_out_and_the_price_lag_is_kept() -> None:
+    """A feature without variation has no correlation; the price lag counts despite its gaps."""
+    frame = make_timeseries(periods=24 * 30).assign(nuclear_available_mw=40_000.0)
+    result = model_correlations(REGISTRY["price"], frame)
+    assert "price_lag_168h" in result.with_target.index  # NaN for the first week, still usable
+    assert "nuclear_available_mw" not in result.with_target.index  # constant: no correlation
+    assert "nuclear_available_mw" in REGISTRY["price"].build_features(frame).columns
+    assert result.with_target.notna().all()
 
 
-def test_aggregate_features_includes_neighbour_wind() -> None:
-    frame = _frame()
-    frame["ws_dk01"] = [4.0, 4.0, 4.0, 4.0]
-    frame["ws_dk02"] = [6.0, 6.0, 6.0, 6.0]  # dk mean = 5
-    frame["ws_nl01"] = [2.0, 2.0, 2.0, 2.0]
-    features = aggregate_features(frame)
-    assert "nbr_wind_dk" in features.columns and "nbr_wind_nl" in features.columns
-    assert features["nbr_wind_dk"].tolist() == [5.0, 5.0, 5.0, 5.0]
-    # Neighbour columns are ordered after the known fundamentals/weather in the matrix.
-    corr = correlation_matrix(features)
-    cols = list(corr.columns)
-    assert cols[0] == "price"
-    assert cols.index("nbr_wind_dk") > cols.index("wind_speed")
+def test_correlation_outputs_are_written(tmp_path: Path) -> None:
+    frame = make_timeseries(periods=24 * 30)
+    result = model_correlations(REGISTRY["load"], frame, top=6)
+
+    csv_path = save_correlation_csv(result, reports_dir=tmp_path)
+    png_path = plot_correlation(result, reports_dir=tmp_path)
+
+    table = pd.read_csv(csv_path)
+    assert csv_path.name == "correlation_load.csv" and list(table.columns) == [
+        "feature",
+        "correlation",
+    ]
+    assert len(table) == len(result.with_target)  # the CSV keeps every feature, not just the top 6
+    assert png_path.name == "correlation_load.png" and png_path.stat().st_size > 0
 
 
-def test_correlation_matrix_is_price_first() -> None:
-    features = pd.DataFrame(
-        {
-            "wind_speed": [1.0, 2.0, 3.0, 4.0],
-            "price": [1.0, 2.0, 3.0, 4.0],
-            "wind_gen": [4, 3, 2, 1],
-        }
-    )
-    corr = correlation_matrix(features)
-    assert list(corr.columns) == ["price", "wind_gen", "wind_speed"]  # FEATURE_ORDER, price first
-    assert corr.loc["price", "wind_speed"] == pytest.approx(1.0)
-    assert corr.loc["price", "wind_gen"] == pytest.approx(-1.0)
-
-
-def test_correlations_with_drops_target_and_sorts_by_magnitude() -> None:
-    corr = correlation_matrix(
-        pd.DataFrame(
-            {
-                "price": [1.0, 2.0, 3.0, 4.0],
-                "wind_gen": [4.0, 3.0, 2.0, 1.0],
-                "load": [1.0, 1.0, 2.0, 9.0],
-            }
-        )
-    )
-    versus_price = correlations_with(corr, "price")
-    assert "price" not in versus_price.index
-    assert versus_price.index[0] == "wind_gen"  # |r| = 1.0 is the strongest
-    assert correlations_with(corr, "missing").empty
-
-
-def test_order_by_target_ranks_by_absolute_correlation() -> None:
-    features = pd.DataFrame(
-        {
-            "price": [1.0, 2.0, 3.0, 4.0, 5.0],
-            "strong": [5.0, 4.0, 3.0, 2.0, 1.0],  # |r| = 1.0 (negative)
-            "weak": [1.0, 1.0, 2.0, 1.0, 5.0],  # weaker |r|
-        }
-    )
-    ordered = order_by_target(correlation_matrix(features), "price")
-    # Price first, then most-to-least correlated with price on both axes.
-    assert list(ordered.columns) == ["price", "strong", "weak"]
-    assert list(ordered.index) == ["price", "strong", "weak"]
-    # Absent target -> matrix returned unchanged.
-    corr = correlation_matrix(features)
-    assert order_by_target(corr, "missing").equals(corr)
-
-
-def test_save_heatmap_writes_png(tmp_path: Path) -> None:
-    corr = correlation_matrix(pd.DataFrame({"price": [1.0, 2.0, 3.0], "wind_gen": [3.0, 2.0, 1.0]}))
-    out = save_heatmap(corr, tmp_path / "correlation.png")
-    assert out.exists() and out.stat().st_size > 0
+def test_correlations_need_a_target() -> None:
+    frame = make_timeseries(periods=48).assign(load_actual_mw=float("nan"))
+    with pytest.raises(ValueError, match="No 'load_actual_mw' values"):
+        model_correlations(REGISTRY["load"], frame)
 
 
 def test_plot_points_map_writes_png(tmp_path: Path) -> None:

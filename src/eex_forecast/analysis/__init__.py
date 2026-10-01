@@ -6,21 +6,21 @@ root. Modules here may depend on that core layer; the core layer must not depend
 
 from __future__ import annotations
 
-from eex_forecast.analysis.correlation import aggregate_features, correlation_matrix
+from eex_forecast.analysis.correlation import model_correlations, save_correlation_csv
 from eex_forecast.analysis.plots import (
     plot_all_evaluation_days,
+    plot_correlation,
     plot_evaluation_days,
     plot_points_map,
     plot_shap,
-    save_heatmap,
 )
 
 __all__ = [
-    "aggregate_features",
-    "correlation_matrix",
+    "model_correlations",
     "plot_all_evaluation_days",
+    "plot_correlation",
     "plot_evaluation_days",
     "plot_points_map",
     "plot_shap",
-    "save_heatmap",
+    "save_correlation_csv",
 ]
