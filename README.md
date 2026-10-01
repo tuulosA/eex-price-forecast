@@ -172,8 +172,9 @@ eex forecast --ensemble --plot
 ```
 
 This writes `forecast_ensemble.csv` (per-hour mean and p10/p25/p50/p75/p90 for wind, solar, load, and
-price) and, with `--plot`, draws those bands behind the deterministic line, which remains the headline
-forecast. Per-member predictions are stored in `data/eex_ensemble.db`; the raw member weather is
+price) and, with `--plot`, `forecast_ensemble.png`: one panel each for price, wind, solar, and load, with
+the bands drawn behind the deterministic line. `forecast.png` stays deterministic-only and remains the
+headline forecast. Per-member predictions are stored in `data/eex_ensemble.db`; the raw member weather is
 archived to `data/eex_ensemble_weather.db` on a rolling 30-run window.
 
 > **These bands are weather-driven spread only.** Members differ solely in their weather realisation, so

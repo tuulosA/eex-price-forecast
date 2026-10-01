@@ -267,10 +267,13 @@ load. Actual columns are populated only where measurements exist.
 
 `--ensemble` adds `data/forecast/forecast_ensemble.csv`: one row per forward hour with `timestamp`,
 `n_members`, and `<model>_mean` plus `<model>_p10/p25/p50/p75/p90` for `wind`, `solar`, `load`, and
-`price` (26 columns). With `--plot` the same bands and the ensemble mean are drawn behind the
-deterministic line on `forecast.png` and `fundamentals.png`; the deterministic series remains the
-headline and keeps its own colour, while the whole ensemble family is drawn in teal with a dashed mean.
-The price plot is captioned to say that only the weather varies between members.
+`price` (26 columns). With `--plot` it also writes `forecast_ensemble.png`, with one panel each for price,
+wind, solar, and load: the same actual and deterministic series as `forecast.png` / `fundamentals.png`,
+with that model's p10-p90 and p25-p75 bands and ensemble mean behind them. Bands and mean use the
+panel's own series colour; the bands are translucent and the mean is dashed, so they stay distinct from
+the solid deterministic line. The plot is captioned to say that only the weather varies between
+members. `forecast.png` and `fundamentals.png` never carry ensemble bands, and no ensemble plot is
+written when the ensemble step fails.
 
 The ensemble CSV covers only the hours members actually cover, which begins at the ensemble run's own
 start rather than at the last settled price. `forecast.csv` therefore starts earlier than
