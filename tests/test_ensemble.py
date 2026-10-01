@@ -394,6 +394,7 @@ def test_forecast_without_ensemble_is_unchanged(
     assert not result.empty
     assert (tmp_path / "out" / "forecast.csv").exists()
     assert not (tmp_path / "out" / "forecast_ensemble.csv").exists()
+    assert not (tmp_path / "out" / "forecast_ensemble.png").exists()
 
 
 def test_ensemble_run_writes_summary_and_stores_members(
@@ -418,6 +419,7 @@ def test_ensemble_run_writes_summary_and_stores_members(
 
     csv_path = tmp_path / "out" / "forecast_ensemble.csv"
     assert csv_path.exists()
+    assert (tmp_path / "out" / "forecast_ensemble.png").exists()
     summary = pd.read_csv(csv_path)
     assert list(summary.columns[:2]) == ["timestamp", "n_members"]
     for prefix in ("wind", "solar", "load", "price"):
@@ -455,6 +457,7 @@ def test_ensemble_failure_does_not_break_the_deterministic_forecast(
     assert (tmp_path / "out" / "forecast.csv").exists()
     assert (tmp_path / "out" / "forecast.png").exists()
     assert not (tmp_path / "out" / "forecast_ensemble.csv").exists()
+    assert not (tmp_path / "out" / "forecast_ensemble.png").exists()
 
 
 def test_ensemble_storage_failure_does_not_break_the_run(
@@ -705,25 +708,26 @@ def test_bands_start_where_members_actually_cover() -> None:
 
 
 # -- plotting -------------------------------------------------------------------
-def test_ensemble_is_drawn_distinctly_from_the_deterministic_line() -> None:
-    """Deterministic and ensemble must not share a colour, or they read as one series."""
+def test_ensemble_is_drawn_in_the_series_colour_and_told_apart_by_form() -> None:
+    """Bands and mean share the panel's default colour; the dashed mean keeps them distinct."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from eex_forecast.plots import ENSEMBLE_COLOR, _draw_ensemble
+    from eex_forecast.plots import _draw_ensemble
 
     summary = summarise_members(_forecast_frame(members=5, hours=6))
     fig, ax = plt.subplots()
     try:
-        assert _draw_ensemble(ax, summary, "price") is True
+        assert _draw_ensemble(ax, summary, "wind", color="C0") is True
         labels = [str(line.get_label()) for line in ax.get_lines()]
         assert "ensemble mean" in labels
         mean_line = next(ln for ln in ax.get_lines() if ln.get_label() == "ensemble mean")
-        assert mean_line.get_linestyle() == "--"  # distinguishable without relying on hue
-        assert mean_line.get_color() == ENSEMBLE_COLOR
-        assert ENSEMBLE_COLOR != "#4910bc"  # the deterministic price colour
+        assert (
+            mean_line.get_linestyle() == "--"
+        )  # distinguishable from the solid deterministic line
+        assert mean_line.get_color() == "C0"
         band_labels = {str(c.get_label()) for c in ax.collections}
         assert band_labels == {"ensemble p10-p90", "ensemble p25-p75"}
     finally:
@@ -855,8 +859,8 @@ def test_ensemble_csv_never_extends_past_the_deterministic_forecast(
     assert summary["timestamp"].max() <= deterministic_end
 
 
-def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
-    """A run without --ensemble must not carry a caption about bands it does not show."""
+def test_ensemble_lives_in_its_own_plot() -> None:
+    """The headline price plot carries no bands or caption; the ensemble plot carries both, per panel."""
     import io
 
     import matplotlib
@@ -865,7 +869,7 @@ def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
     import matplotlib.pyplot as plt
 
     from eex_forecast.ensemble.summary import SPREAD_CAPTION
-    from eex_forecast.plots import plot_forecast
+    from eex_forecast.plots import plot_ensemble, plot_forecast
 
     frame = make_timeseries(periods=24 * 10)
     times = pd.to_datetime(frame["timestamp"], utc=True)
@@ -880,9 +884,9 @@ def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
         rows.append(part)
     summary = summarise_members(pd.concat(rows, ignore_index=True))
 
-    def right_title(passed: pd.DataFrame | None) -> str:
-        """Draw once and read the caption back. plot_forecast closes its own figure, so the axis is
-        captured as it is created rather than fetched afterwards."""
+    def drawn_axes(draw: Any) -> list[Any]:
+        """Draw once and return the axes. The plot functions close their own figures, so the axes
+        are captured as they are created rather than fetched afterwards."""
         captured: list[Any] = []
         original = plt.subplots
 
@@ -893,13 +897,25 @@ def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
 
         plt.subplots = spy  # type: ignore[assignment]
         try:
-            plot_forecast(frame, times, now, io.BytesIO(), summary=passed)
+            draw()
         finally:
             plt.subplots = original  # type: ignore[assignment]
-        return str(captured[0].get_title(loc="right"))
+        return list(np.atleast_1d(captured[0]))
 
-    assert right_title(None) == ""
-    assert right_title(summary) == SPREAD_CAPTION
+    (price_ax,) = drawn_axes(lambda: plot_forecast(frame, times, now, io.BytesIO()))
+    assert price_ax.get_title(loc="right") == ""
+    assert not price_ax.collections  # no bands on the headline plot
+
+    ensemble_axes = drawn_axes(
+        lambda: plot_ensemble(frame, times, now, io.BytesIO(), summary=summary)
+    )
+    assert len(ensemble_axes) == 4  # price, wind, solar, load
+    assert ensemble_axes[0].get_title(loc="right") == SPREAD_CAPTION
+    for ax in ensemble_axes:
+        assert {str(c.get_label()) for c in ax.collections} == {
+            "ensemble p10-p90",
+            "ensemble p25-p75",
+        }
 
 
 def test_drivers_plot_marks_now_on_every_panel(tmp_path: Path) -> None:
@@ -940,3 +956,6 @@ def test_drivers_plot_marks_now_on_every_panel(tmp_path: Path) -> None:
         xs = verticals[0].get_xdata()
         assert len(set(xs)) == 1
     assert "now" in axes[0].get_title()
+    # Weekend and holiday shading are both neutral greys (equal RGB channels), never a hue.
+    shades = [patch.get_facecolor() for ax in axes for patch in ax.patches]
+    assert shades and all(r == g == b for r, g, b, _ in shades)

@@ -36,7 +36,13 @@ from eex_forecast.db import connect, read_frame, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.features import TIMESTAMP, active_weather_columns
 from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
-from eex_forecast.plots import numeric_column, plot_drivers, plot_forecast, plot_fundamentals
+from eex_forecast.plots import (
+    numeric_column,
+    plot_drivers,
+    plot_ensemble,
+    plot_forecast,
+    plot_fundamentals,
+)
 from eex_forecast.sources import ntc, nuclear
 from eex_forecast.weather.openmeteo import fetch_forecast
 from eex_forecast.weather.point_search import load_points_config, point_columns
@@ -363,8 +369,8 @@ def run_forecast(
     logger.info("Wrote %d rows to %s", len(result), csv_path)
 
     # The deterministic forecast is complete and written before this point. The ensemble is a separate,
-    # optional product layered on top; `summary` stays None when it is not requested, and the plots below
-    # then draw exactly what they always did.
+    # optional product layered on top; `summary` stays None when it is not requested or fails, and then
+    # no ensemble plot is drawn. The three deterministic plots never depend on it.
     actual_price = numeric_column(frame, PRICE_ACTUAL)
     summary: pd.DataFrame | None = None
     if ensemble:
@@ -383,9 +389,13 @@ def run_forecast(
         # marks `now`, the observed/forecast boundary of its input weather. The fundamentals plot needs
         # neither.
         split = _forecast_split(actual_price, times, now)
-        plot_forecast(frame, times, split, FORECAST_DIR / "forecast.png", summary=summary)
-        plot_fundamentals(frame, times, FORECAST_DIR / "fundamentals.png", summary=summary)
+        plot_forecast(frame, times, split, FORECAST_DIR / "forecast.png")
+        plot_fundamentals(frame, times, FORECAST_DIR / "fundamentals.png")
         plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
+        if summary is not None and not summary.empty:
+            plot_ensemble(
+                frame, times, split, FORECAST_DIR / "forecast_ensemble.png", summary=summary
+            )
     return result
 
 

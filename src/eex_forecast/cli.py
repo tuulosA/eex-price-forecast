@@ -1168,8 +1168,8 @@ def forecast_cmd(
     """Run the pipeline (weather forecast -> sub-models -> price) and write the forecast to CSV.
 
     With --ensemble the same trained models are additionally run once per ECMWF ensemble member,
-    producing data/forecast/forecast_ensemble.csv and, with --plot, p10-p90 and p25-p75 bands behind the
-    deterministic line. Those bands are weather-driven spread only: they exclude model error, outages and
+    producing data/forecast/forecast_ensemble.csv and, with --plot, forecast_ensemble.png: p10-p90 and
+    p25-p75 bands behind the deterministic price, wind, solar and load lines. Those bands are weather-driven spread only: they exclude model error, outages and
     demand shocks, so they are narrower than realised forecast error. The deterministic forecast is
     written first and is unaffected if the ensemble step fails.
     """
