@@ -44,14 +44,39 @@ point rather than a restriction.
 
 ## Shared backtest design
 
-Tuning, aggregation, ablation, anchor analysis, eval, oracle, and solar diagnostics use the same frozen
-delivery days from `config/backtest_cutoffs.yaml`. At every cutoff, the model trains strictly on earlier
-rows and scores the next German delivery day. The window is DST-aware and may contain 23, 24, or 25
-hours.
+Every backtest tool scores frozen delivery days from `config/backtest_cutoffs.yaml`. At every
+cutoff, the model trains strictly on earlier rows and scores the next German delivery day. The
+window is DST-aware and may contain 23, 24, or 25 hours.
 
 Freezing the days makes runs comparable: a score changes because the model changed, not because a new
 sample of dates was generated. There is deliberately no general `--cutoffs` or `--horizon` option. The
 tools score D+1 because that is the horizon historical weather can represent reasonably faithfully.
+
+### Development and holdout days
+
+The YAML holds two sets, because no single set can both choose a configuration and report its error
+honestly:
+
+| Set | Days | Used by | Purpose |
+|---|---|---|---|
+| `development` | 22, Jan 2025 – Jul 2026 | tuning, aggregation, ablation, anchors, solar diagnostics, and `eex analyze eval` / `oracle` by default | every **selection** decision, including the end-to-end adoption gate |
+| `holdout` | 18, Jan – Sep 2026 | only `eex analyze eval --holdout` / `oracle --holdout` | **reporting** the adopted configuration out-of-sample |
+
+Reusing the development days across tuning, aggregation, and ablation is ordinary validation
+practice; what they cannot do is report a trustworthy error, because every adopted choice was picked
+for scoring well on exactly those days. The holdout days were never used to choose anything. The
+loader keeps every holdout day more than three days from every development day (adjacent days share
+weather regimes), and the days avoid calendar 2025, the year the weather anchors were ranked on.
+`eex points rank` refuses a ranking window that contains a holdout day. The holdout has no
+October–December days.
+
+The selection tools have no way to read the holdout; only eval and oracle take `--holdout`, writing
+`model_eval_holdout.json` / `oracle_substitution_holdout.json` beside the development reports.
+
+**Holdout discipline.** Run the holdout after a change has been adopted on the development days, to
+report it - never to compare candidates or to decide whether to keep a change. If a holdout result
+ever changes a decision, the holdout has become part of selection and is no longer clean; the remedy
+is a fresh holdout of later days, not a second look at the same ones.
 
 The weather ensemble (`eex forecast --ensemble`) is deliberately **outside** this design and cannot be
 added to it. Open-Meteo retains individual ensemble members for only about three days, so there is no
@@ -179,15 +204,31 @@ reports the mean, spread, and a "clears / within seed noise" verdict. Also remem
 ## End-to-end evaluation
 
 ```bash
-eex analyze eval
+eex analyze eval                            # development days: the adoption gate
 eex analyze eval --seeds 5
+eex analyze eval --holdout                  # holdout days: report an adopted configuration
 ```
 
-Each fold forecasts wind, solar, and load before price. The report at
-`data/evaluation/model_eval.json` contains per-cutoff details and headline MAE/RMSE. Fundamental metrics
-are in MW and price metrics are in EUR/MWh; only compare runs of the same target.
+Each fold forecasts wind, solar, and load before price. The reports at
+`data/evaluation/model_eval.json` (development) and `model_eval_holdout.json` (holdout) contain
+per-cutoff details and headline MAE/RMSE, and record which set they scored. Fundamental metrics are
+in MW and price metrics are in EUR/MWh; only compare runs of the same target, on the same set.
 
-The current adopted-anchor result over 22 frozen days is:
+The adopted configuration on the 18 holdout days, the out-of-sample headline, is:
+
+| Model | MAE | RMSE |
+|---|---:|---:|
+| Wind | 1,803.702 MW | 2,203.244 MW |
+| Solar | 1,373.845 MW | 2,177.160 MW |
+| Load | 1,848.801 MW | 2,107.155 MW |
+| Price | 26.814 EUR/MWh | 39.977 EUR/MWh |
+
+Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
+prices from -499 to 666 EUR/MWh): they carry 40% of it, and the MAE without them is 19.259 EUR/MWh.
+See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
+
+The development result over the 22 development days - the reference for comparing model changes -
+is:
 
 | Model | MAE | RMSE |
 |---|---:|---:|
@@ -196,7 +237,8 @@ The current adopted-anchor result over 22 frozen days is:
 | Load | 1,488.821 MW | 1,746.757 MW |
 | Price | 11.327 EUR/MWh | 14.664 EUR/MWh |
 
-These are development benchmarks, not a guarantee of live 14-day accuracy.
+These development figures are partly in-sample and drawn from calmer days; the holdout is the honest
+estimate. Neither is a guarantee of live 14-day accuracy.
 
 ## Oracle substitutions
 
@@ -205,6 +247,7 @@ Oracle analysis fits one common chain per cutoff and scores price under five mat
 ```bash
 eex analyze oracle
 eex analyze oracle --seeds 5
+eex analyze oracle --holdout
 ```
 
 The scenarios are:
@@ -219,7 +262,8 @@ The signed MAE delta from `all_actual` measures isolated downstream impact. Delt
 because the price model is nonlinear and errors interact. A negative delta is finite-sample error
 cancellation, not evidence that a forecast is generally better than truth.
 
-Reports are written to `data/evaluation/oracle_substitution.json`.
+Reports are written to `data/evaluation/oracle_substitution.json`, or
+`oracle_substitution_holdout.json` with `--holdout`.
 
 ## Solar diagnostics
 
@@ -248,7 +292,7 @@ is written under `data/tuning/`.
 
 Every study is independently seeded and reproducible, but not resumed. The currently configured
 parameters are scored as an incumbent and retained unless a fresh trial beats them on the identical
-cutoffs. Retune after changing features, feature semantics, or anchor geography.
+development cutoffs. Retune after changing features, feature semantics, or anchor geography.
 
 ## Reports and reproducibility
 

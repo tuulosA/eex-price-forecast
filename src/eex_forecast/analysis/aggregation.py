@@ -39,7 +39,7 @@ from typing import Any
 
 import pandas as pd
 
-from eex_forecast.backtest_cutoffs import BACKTEST_CUTOFFS, DAY_AHEAD_DAYS
+from eex_forecast.backtest_cutoffs import DAY_AHEAD_DAYS, DEV_CUTOFFS
 from eex_forecast.config import AGGREGATION_DIR
 from eex_forecast.features import (
     KNOWN_STRATEGIES,
@@ -68,7 +68,7 @@ class AggregationResult:
 
     fundamental: str
     variants: list[dict[str, Any]]
-    cutoffs: tuple[str, ...]  # the frozen delivery days scored (BACKTEST_CUTOFFS)
+    cutoffs: tuple[str, ...]  # the frozen delivery days scored (DEV_CUTOFFS)
     report: dict[str, Any]
 
     @property
@@ -137,11 +137,11 @@ def run_aggregation(
     capacity_scaling: bool = True,
     coords: dict[str, tuple[float, float]] | None = None,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> AggregationResult:
     """Score each weather-aggregation ``strategy`` for ``fundamental`` by walk-forward MAE/RMSE.
 
-    Scored over the frozen :data:`BACKTEST_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`).
+    Scored over the frozen :data:`DEV_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`).
     ``strategies`` defaults to the fundamental's menu (see :data:`eex_forecast.features.WEATHER_AGG`).
     ``params`` defaults to the tuned hyperparameters (or built-in defaults); the same set is used for
     every strategy so the comparison isolates the feature choice. ``capacity_scaling`` toggles learning a
@@ -246,11 +246,11 @@ def run_neighbour_aggregation(
     params: dict[str, Any] | None = None,
     days: int = DAY_AHEAD_DAYS,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> AggregationResult:
     """Score each neighbour-wind aggregation ``strategy`` by the **price** model's walk-forward MAE/RMSE.
 
-    Scored over the frozen :data:`BACKTEST_CUTOFFS` at the day-ahead horizon. ``strategies`` defaults
+    Scored over the frozen :data:`DEV_CUTOFFS` at the day-ahead horizon. ``strategies`` defaults
     to :data:`eex_forecast.features.NEIGHBOUR_STRATEGIES` (incl. the ``none`` baseline). ``params`` defaults
     to the tuned price hyperparameters; the same set is used for every strategy so the comparison isolates
     the neighbour feature block. Errors are in EUR/MWh (price scale). ``cutoffs`` is an internal test seam.

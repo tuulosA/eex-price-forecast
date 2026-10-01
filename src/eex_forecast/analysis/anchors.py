@@ -27,8 +27,8 @@ from typing import Any, Literal, Protocol, cast
 import pandas as pd
 
 from eex_forecast.backtest_cutoffs import (
-    BACKTEST_CUTOFFS,
     DAY_AHEAD_DAYS,
+    DEV_CUTOFFS,
     horizon_end_utc,
 )
 from eex_forecast.config import ANALYSIS_DIR, RANK_DIR, WEATHER_CACHE_DIR
@@ -657,7 +657,7 @@ def run_anchor_analysis(
     params: dict[str, Any] | None = None,
     days: int = DAY_AHEAD_DAYS,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
     cache_dir: Path | None = None,
     history_fetcher: HistoryFetcher = fetch_history,
 ) -> AnchorResult:

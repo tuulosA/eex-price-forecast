@@ -56,6 +56,7 @@ from eex_forecast.analysis import (
     solar as solar_analysis,
 )
 from eex_forecast.analysis.correlation import correlations_with, order_by_target
+from eex_forecast.backtest_cutoffs import DEVELOPMENT, HOLDOUT, holdout_days_within
 from eex_forecast.config import (
     ANALYSIS_DIR,
     CANDIDATES_DIR,
@@ -188,7 +189,11 @@ def points_build(
 
 def _rank_window(year: int | None, start: str | None, end: str | None) -> tuple[str, str]:
     """Resolve the ranking window: ``--year Y`` (that whole calendar year) or an explicit
-    ``--start``/``--end`` range (``YYYY-MM-DD``). The two are mutually exclusive; with neither, 2025."""
+    ``--start``/``--end`` range (``YYYY-MM-DD``). The two are mutually exclusive; with neither, 2025.
+
+    A window containing any holdout cutoff is refused: ranking is selection, and anchors chosen on
+    holdout days would make the holdout score partly in-sample.
+    """
     if start is not None or end is not None:
         if year is not None:
             raise typer.BadParameter("Use either --year or --start/--end, not both.")
@@ -200,9 +205,17 @@ def _rank_window(year: int | None, start: str | None, end: str | None) -> tuple[
             raise typer.BadParameter(f"--start/--end must be YYYY-MM-DD: {exc}") from exc
         if first >= last:
             raise typer.BadParameter("--start must be before --end.")
-        return start, end
-    resolved = 2025 if year is None else year
-    return f"{resolved}-01-01", f"{resolved}-12-31"
+    else:
+        resolved = 2025 if year is None else year
+        start, end = f"{resolved}-01-01", f"{resolved}-12-31"
+    # Ranking chooses the anchors the holdout later judges, so it must not see holdout days.
+    overlap = holdout_days_within(start, end)
+    if overlap:
+        raise typer.BadParameter(
+            f"Ranking window {start} .. {end} contains holdout cutoff(s) {', '.join(overlap)}; "
+            "choose a window outside the holdout days (config/backtest_cutoffs.yaml)."
+        )
+    return start, end
 
 
 @points_app.command("rank")
@@ -536,11 +549,23 @@ def _strategies_default(fundamental: str) -> str:
     return ",".join(WEATHER_AGG[fundamental].strategies)
 
 
-# Every backtest tool (tuning / aggregation / ablation / solar analysis / eval) scores the frozen days
-# in config/backtest_cutoffs.yaml at the day-ahead 24 h horizon - the only horizon this backtest scores
-# faithfully. There is no cutoff or horizon option: edit the YAML to change the set.
+# Every backtest tool (tuning / aggregation / ablation / anchors / solar analysis / eval / oracle)
+# scores the frozen development days in config/backtest_cutoffs.yaml at the day-ahead 24 h horizon -
+# the only horizon this backtest scores faithfully. Only eval and oracle may score the holdout days
+# instead (--holdout), and only to report; the selection tools have no cutoff option at all.
 _SeedsOpt = Annotated[
     int, typer.Option(help="XGBoost seeds to average over; >1 reports mean +/- spread.")
+]
+_HoldoutOpt = Annotated[
+    bool,
+    typer.Option(
+        "--holdout",
+        help=(
+            "Score the untouched holdout days instead of the development days and write a separate "
+            "*_holdout.json report. For reporting an adopted configuration only - never use it to "
+            "choose between candidates."
+        ),
+    ),
 ]
 _RegionsOpt = Annotated[int, typer.Option(help="Latitude bands for the 'regional' strategy.")]
 _CapacityOpt = Annotated[
@@ -1025,12 +1050,14 @@ def analyze_solar_irradiance(
 @analyze_app.command("eval")
 def analyze_eval(
     seeds: _SeedsOpt = 1,
+    holdout: _HoldoutOpt = False,
 ) -> None:
     """Backtest the complete sub-models -> price pipeline and report per-model 24h MAE.
 
-    The cutoffs are the shared, fixed, month/weekday/weekend/holiday- and wind-balanced delivery days in
-    config/backtest_cutoffs.yaml, so every run scores the identical days and different anchors / features /
-    params compare directly. Errors are in each model's natural unit (EUR/MWh for price, MW for the
+    By default it scores the development delivery days in config/backtest_cutoffs.yaml - the adoption
+    gate, so every run scores the identical days and different anchors / features / params compare
+    directly. --holdout scores the untouched holdout days instead, for an honest out-of-sample report of
+    the adopted configuration. Errors are in each model's natural unit (EUR/MWh for price, MW for the
     fundamentals) - only same-model runs compare, not price against a sub-model. Pass --seeds >1 to average
     over XGBoost seeds. Every fold forecasts wind, solar, and load first, then supplies those forecasts -
     never the held-out actuals - to the price model.
@@ -1041,13 +1068,16 @@ def analyze_eval(
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
     try:
-        result = evaluation.run_evaluation(frame, seeds=seeds)
+        result = evaluation.run_evaluation(
+            frame, seeds=seeds, cutoff_set=HOLDOUT if holdout else DEVELOPMENT
+        )
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)
 
     typer.echo(
-        f"Frozen-cutoff eval ({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
+        f"Frozen-cutoff eval, {result.report['config']['cutoff_set']} set "
+        f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
         f"{result.report['horizon']}):"
     )
     for model_eval in result.models:
@@ -1062,6 +1092,7 @@ def analyze_eval(
 @analyze_app.command("oracle")
 def analyze_oracle(
     seeds: _SeedsOpt = 1,
+    holdout: _HoldoutOpt = False,
 ) -> None:
     """Diagnose each fundamental forecast's contribution to day-ahead price MAE.
 
@@ -1075,13 +1106,15 @@ def analyze_oracle(
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
     try:
-        result = evaluation.run_oracle_diagnostics(frame, seeds=seeds)
+        result = evaluation.run_oracle_diagnostics(
+            frame, seeds=seeds, cutoff_set=HOLDOUT if holdout else DEVELOPMENT
+        )
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_oracle_report(result)
 
     typer.echo(
-        f"Oracle substitution diagnostic "
+        f"Oracle substitution diagnostic, {result.report['config']['cutoff_set']} set "
         f"({result.report['config']['n_cutoffs']} delivery days x {seeds} seed(s), "
         f"{result.report['horizon']}):"
     )
@@ -1123,7 +1156,7 @@ def model_tune(
 ) -> None:
     """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json.
 
-    Scored over the frozen backtest cutoffs (config/backtest_cutoffs.yaml) at the day-ahead 24 h horizon -
+    Scored over the frozen development cutoffs (config/backtest_cutoffs.yaml) at the day-ahead 24 h horizon -
     the settled, most-valuable part of the forecast. No cutoff or horizon options: edit the YAML to change
     the day set.
     """

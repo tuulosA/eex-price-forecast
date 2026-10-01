@@ -59,7 +59,7 @@ src/eex_forecast/
   quality.py           # reject gross upstream actual-data corruption before hourly resampling
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
-  backtest_cutoffs.py  # frozen cutoffs from config/backtest_cutoffs.yaml + DST delivery-day window helpers
+  backtest_cutoffs.py  # frozen development/holdout cutoffs + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB (calls plots)
   plots.py             # forecast/fundamentals/drivers PNGs; never imports the pipeline
@@ -69,7 +69,7 @@ tests/                 # focused unit/regression tests; external APIs mocked
 config/
   hyperparams.json     # adopted tuned parameters
   weather_points.json  # adopted German and neighbour weather anchors
-  backtest_cutoffs.yaml  # shared frozen walk-forward delivery days
+  backtest_cutoffs.yaml  # frozen delivery days: development (selection) + holdout (reporting)
 data/                  # runtime data is ignored; selected plots/reports are re-included as evidence
 docs/
   data-pipeline.md      # sources, update windows, timestamps, weather alignment, cross-border inputs
@@ -141,6 +141,14 @@ docs/
   chronological validation slice only feeds logged metrics. Every walk-forward tool fits the tuned
   tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
   has scored (it once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
+- **Selection uses development days; the holdout only reports.** `config/backtest_cutoffs.yaml`
+  holds `development` (every choice: tuning, aggregation, ablation, anchors, solar tools, and the
+  eval/oracle adoption gate) and `holdout` (only `eex analyze eval --holdout` / `oracle --holdout`,
+  writing `*_holdout.json`). Selection tools import only `DEV_CUTOFFS` and must never gain a cutoff
+  option; `eex points rank` refuses a window containing a holdout day; the loader keeps holdout days
+  more than `HOLDOUT_BUFFER_DAYS` from development days. Run the holdout after adopting a change,
+  never to choose between candidates or decide whether to keep one - a holdout result that drives a
+  decision makes the holdout part of selection.
 - **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
   parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
@@ -212,9 +220,9 @@ results, and update all repository links when a document is renamed or moved.
 - **Docstrings explain *why*, not just *what*** — module headers are essays on rationale and gotchas.
   Match that density; a one-line docstring on a subtle function is under-documented here.
 - Strict typing (mypy `strict = true`); ruff rule set `E,F,W,I,B,UP,C4,N,SIM`, line length 100.
-- Prefer pure, unit-tested helpers (see `features.py`, `backtest_cutoffs.load_cutoffs`) over logic buried
-  in I/O or CLI code. Add focused tests beside behavioral changes, following the existing
-  `tests/test_*.py` organization.
+- Prefer pure, unit-tested helpers (see `features.py`, `backtest_cutoffs.load_cutoff_sets`) over
+  logic buried in I/O or CLI code. Add focused tests beside behavioral changes, following the
+  existing `tests/test_*.py` organization.
 - All timestamps are **UTC**, hourly, ISO-8601; the DB primary key is the `timestamp` string.
 - Add a test alongside any behavioral change and keep `ruff`/`mypy`/`pytest` green before finishing.
 

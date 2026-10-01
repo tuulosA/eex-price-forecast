@@ -27,7 +27,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from eex_forecast.backtest_cutoffs import BACKTEST_CUTOFFS, DAY_AHEAD_DAYS
+from eex_forecast.backtest_cutoffs import DAY_AHEAD_DAYS, DEV_CUTOFFS
 from eex_forecast.config import ANALYSIS_DIR, MARKET_TIMEZONE
 from eex_forecast.features import (
     TIMESTAMP,
@@ -253,7 +253,7 @@ def run_solar_error_analysis(
     *,
     params: dict[str, Any] | None = None,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> SolarErrorResult:
     """Backtest solar and describe where its daylight errors occur.
 
@@ -466,7 +466,7 @@ def run_solar_feature_experiment(
     variants: tuple[str, ...] = tuple(SOLAR_FEATURE_VARIANTS),
     params: dict[str, Any] | None = None,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> SolarFeatureExperimentResult:
     """Compare baseline, solar-geometry, and clear-sky-index features on matched folds.
 
@@ -503,7 +503,7 @@ def run_solar_irradiance_experiment(
     variants: tuple[str, ...] = tuple(SOLAR_IRRADIANCE_VARIANTS),
     params: dict[str, Any] | None = None,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> SolarFeatureExperimentResult:
     """Compare fetched GTI, direct/diffuse/DNI, and cloud-cover feature families.
 

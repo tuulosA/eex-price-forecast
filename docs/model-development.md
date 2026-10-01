@@ -61,7 +61,6 @@ Last updated: **2026-08-04**
 
 ### Deferred decisions
 
-- Separate development and untouched holdout cutoffs.
 - Fixed-run historical weather evaluation.
 - Forecast fundamentals inside price tuning, price ablation, and neighbour aggregation.
 - A local archive of live weather snapshots.
@@ -99,8 +98,10 @@ Committed reports:
 
 ### Current end-to-end baseline
 
-The adopted 135 km / 20-point wind and 100 km / 31-point solar configurations were evaluated with one
-seed over all 22 frozen cutoffs:
+The adopted 135 km / 20-point wind and 100 km / 31-point solar configurations were evaluated with
+one seed over all 22 development cutoffs. These are the figures to compare model changes against; on
+the untouched holdout the same configuration scores 26.814 EUR/MWh price MAE (see the 2026-10-01
+decision), because the development days are both in-sample for every choice and calmer:
 
 | Model | MAE | RMSE | Unit |
 |---|---:|---:|---|
@@ -175,8 +176,11 @@ not evidence that imperfect fundamentals are intrinsically better than actuals.
 
 ### Known limits of the baseline
 
-- Hyperparameters, aggregation, ablation, and evaluation currently reuse the same frozen cutoffs.
-- Weather anchors were selected against 2025 actuals, overlapping some evaluation dates.
+- Hyperparameters, aggregation, ablation, and the development eval reuse the same 22 frozen cutoffs,
+  so the development figures here are partly in-sample. The holdout result in the 2026-10-01
+  decision is the out-of-sample reference.
+- Weather anchors were selected against 2025 actuals, overlapping some development dates (but none
+  of the holdout days).
 - The cutoff set intentionally includes holidays and wind extremes. It is a useful stress test, not an
   unbiased sample of an average production day.
 - Open-Meteo historical forecasts stitch short, near-actual run segments. ECMWF is generally already
@@ -906,12 +910,16 @@ holdout set.
 
 ### Development versus holdout cutoffs
 
-**Decision: deferred.**
+**Status: completed 2026-10-01.**
 
-The ideal design uses development cutoffs for anchors/features/tuning and an untouched final set. A
-2025/2026 split was considered, but the 2026 results have already informed decisions and there are only
-seven 2026 cutoffs. Keep this limitation explicit and reserve genuinely new dates in the future if a clean
-holdout becomes important.
+The design uses development cutoffs for anchors/features/tuning and an untouched final set.
+Splitting the existing 22 cutoffs 2025/2026 was rejected earlier, because the seven 2026 cutoffs had
+already informed decisions. The adopted holdout avoids that objection by being **new** days rather
+than relabelled ones: 18 delivery days from January to September 2026 that no tool had ever scored,
+each more than three days from every development cutoff and outside calendar 2025, the year the
+anchors were ranked on. The 22 development cutoffs are unchanged, so every earlier comparison stays
+valid. See [Experimentation](experimentation.md#development-and-holdout-days) for the contract and
+the holdout discipline, and the 2026-10-01 decision for the first holdout result.
 
 ### Fixed-run historical weather
 
@@ -1002,7 +1010,6 @@ fits.
 Deferred:
 
 - solar seasonal/capacity-drift and further solar-geography work (preserved on a separate branch);
-- development versus untouched holdout cutoffs;
 - fixed-run historical weather;
 - cached forecast fundamentals for end-to-end price tuning/analysis.
 
@@ -1040,6 +1047,31 @@ Before changing a production feature/model:
 
 ### 2026-10-01
 
+- Added an untouched holdout: 18 delivery days from January to September 2026, scored only by
+  `eex analyze eval --holdout` / `oracle --holdout`, beside the unchanged 22 development cutoffs
+  (see [Development versus holdout cutoffs](#development-versus-holdout-cutoffs)). The first holdout
+  run of the adopted configuration, with all four models fit at their configured tree counts:
+
+  | Model | Development MAE | Holdout MAE | Holdout RMSE |
+  |---|---:|---:|---:|
+  | Wind | 1,504.538 MW | 1,803.702 MW | 2,203.244 MW |
+  | Solar | 847.183 MW | 1,373.845 MW | 2,177.160 MW |
+  | Load | 1,488.821 MW | 1,848.801 MW | 2,107.155 MW |
+  | Price | 11.327 EUR/MWh | 26.814 EUR/MWh | 39.977 EUR/MWh |
+
+  The development rerun on the refactored code reproduced the committed report exactly. The price
+  gap is mostly the days, not a defect: holdout prices have about twice the mean intraday standard
+  deviation (69.4 vs 36.4 EUR/MWh), and price MAE as a share of it is similar (0.48 vs 0.42). Three
+  extreme days carry 40% of the holdout price error - a -414 EUR/MWh trough on Sunday 26 April, -499
+  on the 1 May holiday, and a 666 peak on 24 June (60.9, 65.4, and 67.5 MAE) - and the MAE without
+  them is 19.259. Training winsorises price at its 0.1/99.9 percentiles, so the model cannot reach
+  such extremes. The seven 2026 development days average 13.72, so the development set was also
+  calmer within 2026. The holdout figure, 26.8 EUR/MWh, is the realistic D+1 reference; the
+  development figure is for comparing changes.
+- Holdout oracle: `all_actual` 23.898 EUR/MWh; forecasting wind alone adds +0.720, solar +1.395,
+  load +1.199, and all three +2.916 (26.814, matching eval). Solar is again the largest isolated
+  penalty, consistent with the recent-days solar finding below; even perfect fundamentals leave 23.9,
+  so most holdout error is in the price model itself.
 - Removed early stopping from production training. `model._fit` used to early-stop on the trailing
   10% validation slice and refit at the best iteration, while tuning, eval, and oracle all fit the
   tuned `n_estimators` unchanged, so the shipped models were not the benchmarked ones. The cut was

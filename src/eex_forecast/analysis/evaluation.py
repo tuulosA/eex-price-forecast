@@ -16,6 +16,12 @@ which held-out fundamentals the price model sees. Its impossible-in-production a
 reference, while forecasting one fundamental at a time measures that sub-model's isolated downstream price
 effect. The all-forecast scenario must reproduce the standard evaluator's headline price fold.
 
+Both commands score the **development** cutoffs by default. That is the adoption gate: whether a
+candidate change survives end-to-end is a selection decision, so it is made on the same days as every
+other choice. ``cutoff_set="holdout"`` (CLI ``--holdout``) scores the untouched holdout days instead and
+writes a separate ``*_holdout.json`` report - the honest out-of-sample headline. It is for reporting an
+already adopted configuration, never for choosing between candidates.
+
 Only the **24 h** (next delivery day) horizon is scored, and it is fixed. The historical-forecast weather
 stored for the sub-models is near-actual (short lead), so a multi-day MAE would be measured against weather
 far more accurate than the real multi-day-lead forecast served live. Add a longer horizon only once
@@ -35,8 +41,10 @@ import pandas as pd
 from xgboost import XGBRegressor
 
 from eex_forecast.backtest_cutoffs import (
-    BACKTEST_CUTOFFS,
+    CUTOFF_SETS,
     DAY_AHEAD_DAYS,
+    DEVELOPMENT,
+    HOLDOUT,
     cutoff_utc,
     horizon_end_utc,
 )
@@ -428,19 +436,23 @@ def run_evaluation(
     *,
     params_by_model: dict[str, dict[str, Any]] | None = None,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoff_set: str = DEVELOPMENT,
+    cutoffs: tuple[str, ...] | None = None,
 ) -> EvaluationResult:
     """Backtest the complete forecast chain and collect the existing per-model report format.
 
-    ``params_by_model`` defaults to each model's tuned hyperparameters. ``cutoffs`` is an internal seam
-    for tests; normal runs always use the shared frozen set. Errors retain each model's natural unit, so
-    only same-model runs are comparable.
+    ``params_by_model`` defaults to each model's tuned hyperparameters. ``cutoff_set`` names the frozen
+    days to score - ``development`` (the adoption gate) or ``holdout`` (reporting only); it is recorded
+    in the report and selects its filename. ``cutoffs`` is an internal seam for tests that overrides the
+    named set's days. Errors retain each model's natural unit, so only same-model runs are comparable.
     """
+    cutoffs = _resolve_cutoffs(cutoff_set, cutoffs)
     seed_values = seed_list(seeds)
     resolved_params = _resolve_params(params_by_model)
     logger.info(
-        "[eval] end-to-end pipeline over %d frozen cutoffs (%s .. %s), 24h horizon, %d seed(s)",
+        "[eval] end-to-end pipeline over %d frozen %s cutoffs (%s .. %s), 24h horizon, %d seed(s)",
         len(cutoffs),
+        cutoff_set,
         cutoffs[0],
         cutoffs[-1],
         seeds,
@@ -509,6 +521,7 @@ def run_evaluation(
             for evaluation in results
         },
         "config": {
+            "cutoff_set": cutoff_set,
             "seeds": seed_values,
             "n_cutoffs": len(cutoffs),
             "cutoffs": list(cutoffs),
@@ -534,21 +547,25 @@ def run_oracle_diagnostics(
     *,
     params_by_model: dict[str, dict[str, Any]] | None = None,
     seeds: int = 1,
-    cutoffs: tuple[str, ...] = BACKTEST_CUTOFFS,
+    cutoff_set: str = DEVELOPMENT,
+    cutoffs: tuple[str, ...] | None = None,
 ) -> OracleResult:
     """Measure each sub-model's downstream price effect using matched actual/forecast substitutions.
 
     ``all_actual`` is the impossible oracle reference. ``forecast_wind`` / ``forecast_solar`` /
     ``forecast_load`` replace only that fundamental, while ``forecast_all`` reproduces the standard
     end-to-end evaluator. Deltas are paired against all-actual within each fold and seed.
+    ``cutoff_set`` / ``cutoffs`` behave as in :func:`run_evaluation`.
     """
+    cutoffs = _resolve_cutoffs(cutoff_set, cutoffs)
     seed_values = seed_list(seeds)
     resolved_params = _resolve_params(params_by_model)
     logger.info(
-        "[oracle] %d substitution scenarios over %d frozen cutoffs (%s .. %s), "
+        "[oracle] %d substitution scenarios over %d frozen %s cutoffs (%s .. %s), "
         "24h horizon, %d seed(s)",
         len(ORACLE_SCENARIOS),
         len(cutoffs),
+        cutoff_set,
         cutoffs[0],
         cutoffs[-1],
         seeds,
@@ -633,6 +650,7 @@ def run_oracle_diagnostics(
             for result in results
         },
         "config": {
+            "cutoff_set": cutoff_set,
             "seeds": seed_values,
             "n_cutoffs": len(cutoffs),
             "cutoffs": list(cutoffs),
@@ -659,19 +677,39 @@ def run_oracle_diagnostics(
     return OracleResult(results, report)
 
 
-def save_evaluation_report(result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
-    """Write the eval to ``model_eval.json`` (a headline summary, then per-model per-day folds)."""
-    payload = {"run_at": pd.Timestamp.now(tz="UTC").isoformat(), **result.report}
+def _resolve_cutoffs(cutoff_set: str, cutoffs: tuple[str, ...] | None) -> tuple[str, ...]:
+    """The days to score: the named frozen set, unless a test injects its own ``cutoffs``."""
+    if cutoff_set not in CUTOFF_SETS:
+        raise ValueError(
+            f"Unknown cutoff set '{cutoff_set}'. Known: {', '.join(sorted(CUTOFF_SETS))}."
+        )
+    return CUTOFF_SETS[cutoff_set] if cutoffs is None else cutoffs
+
+
+def report_filename(stem: str, cutoff_set: str) -> str:
+    """``<stem>.json`` for the development set, ``<stem>_holdout.json`` for the holdout.
+
+    The development reports keep their historical names, so every existing comparison and link still
+    points at the same file; the holdout gets its own, so a reporting run can never overwrite the
+    development record a decision was based on.
+    """
+    return f"{stem}.json" if cutoff_set == DEVELOPMENT else f"{stem}_{HOLDOUT}.json"
+
+
+def _save_report(report: dict[str, Any], stem: str, reports_dir: Path) -> Path:
+    """Write ``report`` with a run timestamp to the file its recorded cutoff set names."""
+    payload = {"run_at": pd.Timestamp.now(tz="UTC").isoformat(), **report}
     reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / "model_eval.json"
+    path = reports_dir / report_filename(stem, str(report["config"]["cutoff_set"]))
     path.write_text(json.dumps(payload, indent=2) + "\n")
     return path
+
+
+def save_evaluation_report(result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
+    """Write the eval (headline summary, then per-model folds) to ``model_eval[_holdout].json``."""
+    return _save_report(result.report, "model_eval", reports_dir)
 
 
 def save_oracle_report(result: OracleResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
-    """Write the oracle diagnostic to ``oracle_substitution.json`` beside the headline eval."""
-    payload = {"run_at": pd.Timestamp.now(tz="UTC").isoformat(), **result.report}
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / "oracle_substitution.json"
-    path.write_text(json.dumps(payload, indent=2) + "\n")
-    return path
+    """Write the oracle diagnostic beside the eval, to ``oracle_substitution[_holdout].json``."""
+    return _save_report(result.report, "oracle_substitution", reports_dir)
