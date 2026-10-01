@@ -1,4 +1,4 @@
-"""Forecast plots: the price forecast, the fundamentals, and the price-model drivers.
+"""Forecast plots: the price forecast, the fundamentals, the price-model drivers, and raw inputs.
 
 Kept apart from :mod:`eex_forecast.forecast` so the pipeline module holds only the forecast itself -
 fetch, predict, window, write - and this module holds only presentation. Nothing here feeds a model or
@@ -18,9 +18,18 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from eex_forecast.config import HORIZON_DAYS
+from eex_forecast.config import (
+    HORIZON_DAYS,
+    NTC_EXPORT_PREFIX,
+    NTC_IMPORT_PREFIX,
+    NUCLEAR_COLUMN,
+)
 from eex_forecast.features import (
+    MODEL_WEATHER_ROLES,
     TIMESTAMP,
+    WEATHER_AGGREGATES,
+    _neighbour_wind_columns,
+    active_weather_columns,
     calendar_features,
     neighbour_wind_block,
     ntc_features,
@@ -353,5 +362,94 @@ def plot_drivers(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path:
     fig.autofmt_xdate()
     fig.tight_layout()
     fig.savefig(path, dpi=120)
+    plt.close(fig)
+    return path
+
+
+# Panel title per weather role, in WEATHER_AGGREGATES order. Units follow Open-Meteo's response.
+_RAW_WEATHER_LABELS: dict[str, str] = {
+    "wind_speed": "wind speed 100 m, wind points (m/s)",
+    "temp_wind": "temperature 2 m, wind points (deg C)",
+    "temp_load": "temperature 2 m, load points (deg C)",
+    "irr_load": "GHI, load points (W/m2)",
+    "irr_solar": "GHI, solar points (W/m2)",
+    "gti_solar": "GTI, solar points (W/m2)",
+    "direct_solar": "direct radiation, solar points (W/m2)",
+    "diffuse_solar": "diffuse radiation, solar points (W/m2)",
+    "dni_solar": "direct normal irradiance, solar points (W/m2)",
+    "cloud_solar": "cloud cover, solar points (%)",
+}
+
+
+def raw_feature_panels(frame: pd.DataFrame) -> list[tuple[str, list[str]]]:
+    """The (title, raw columns) groups for :func:`plot_features`: every raw input a model consumes.
+
+    Weather is grouped by role through the same :data:`WEATHER_AGGREGATES` prefixes and active-column
+    filter the feature builders use, so the panels show exactly the configured points and never a stale
+    SQLite column from a retired anchor set. Only roles in :data:`MODEL_WEATHER_ROLES` are drawn: GTI is
+    fetched for experiments but read by no model, so it would only add a panel no forecast depends on.
+    Neighbour wind, nuclear availability, and per-border transfer capacity (import and export apart)
+    follow; the price model sums the borders, so each border is an input. Groups with no column in
+    ``frame`` are omitted.
+    """
+    active = active_weather_columns(frame)
+    panels: list[tuple[str, list[str]]] = []
+    for role, prefix in WEATHER_AGGREGATES.items():
+        if role not in MODEL_WEATHER_ROLES:
+            continue
+        columns = sorted(c for c in frame.columns if c.startswith(prefix) and c in active)
+        if columns:
+            panels.append((_RAW_WEATHER_LABELS.get(role, role), columns))
+    neighbour = [c for cols in _neighbour_wind_columns(frame).values() for c in cols]
+    if neighbour:
+        panels.append(("wind speed 100 m, neighbour points (m/s)", neighbour))
+    if NUCLEAR_COLUMN in frame.columns:
+        panels.append(("nuclear availability (MW)", [NUCLEAR_COLUMN]))
+    for prefix, title in (
+        (NTC_IMPORT_PREFIX, "transfer capacity into DE, per border (MW)"),
+        (NTC_EXPORT_PREFIX, "transfer capacity out of DE, per border (MW)"),
+    ):
+        columns = sorted(c for c in frame.columns if c.startswith(prefix))
+        if columns:
+            panels.append((title, columns))
+    return panels
+
+
+def plot_features(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path: object) -> object:
+    """Plot every raw column the models consume over the window, one bare panel per group.
+
+    A sanity check rather than a chart to read: it is meant to show at a glance that every point's
+    series exists, sits in a plausible range, and continues across the switch from historical to
+    forecast weather - a dead point, a unit slip, a stuck value, or a gap is visible even when no single
+    line can be told apart. So it carries no gridlines, legends, or per-series labels; lines are thin
+    and use matplotlib's default cycle. Columns are drawn exactly as stored: no means, and no
+    preceding-hour radiation shift (:func:`plot_drivers` shows the aggregated, aligned features).
+
+    The one annotation is a faint line at ``now``, because that boundary - observed weather to its left,
+    ECMWF forecast to its right - is where a data-pipeline fault is most likely to show.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    panels = raw_feature_panels(frame)
+    if not panels:
+        return path
+    fig, axes = plt.subplots(
+        len(panels), 1, figsize=(12.0, 1.15 * len(panels) + 0.8), sharex=True, squeeze=False
+    )
+    for ax, (title, columns) in zip(axes[:, 0], panels, strict=True):
+        for column in columns:
+            ax.plot(times, pd.to_numeric(frame[column], errors="coerce"), linewidth=0.6)
+        ax.axvline(now, color="0.6", linewidth=0.8)
+        ax.set_title(f"{title} - {len(columns)} series", loc="left", fontsize=8)
+        ax.tick_params(labelsize=7)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0, 0].figure.suptitle("Raw model inputs, as stored (vertical line = now)", fontsize=10)
+    axes[-1, 0].set_xlabel("time (UTC)", fontsize=8)
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(path, dpi=110)
     plt.close(fig)
     return path

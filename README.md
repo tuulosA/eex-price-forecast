@@ -149,7 +149,9 @@ eex run --train --plot --ensemble
 
 - `forecast.png` — settled price followed by the genuinely out-of-sample price forecast;
 - `fundamentals.png` — wind, solar, and load actuals/forecasts;
-- `drivers.png` — weather, neighbour wind, nuclear, and transfer-capacity panels.
+- `drivers.png` — weather, neighbour wind, nuclear, and transfer-capacity panels;
+- `features.png` — every raw column the models read, as stored and grouped by kind: a quick visual
+  sanity check.
 
 `--write-db` also stores forecasts in SQLite without touching actual columns.
 

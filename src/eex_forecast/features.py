@@ -385,6 +385,16 @@ WEATHER_AGG: dict[str, WeatherAgg] = {
     "load": WeatherAgg("load", "temp_load", ("irr_load",)),
 }
 
+# Every weather role some production model reads, assembled from the registries the builders use: the
+# wind/load/solar primary and auxiliary roles, solar's adopted auxiliaries, and the price block. A role
+# that is fetched but not adopted (GTI, kept for experiments) is deliberately absent, so a consumer such
+# as the raw-input plot shows exactly what the models see and follows any adoption automatically.
+MODEL_WEATHER_ROLES: frozenset[str] = frozenset(
+    {role for agg in WEATHER_AGG.values() for role in (agg.primary, *agg.auxiliary)}
+    | set(SOLAR_PRODUCTION_WEATHER_ROLES)
+    | set(PRICE_WEATHER_ROLES)
+)
+
 
 def _latitude_bands(
     columns: list[str], coords: dict[str, tuple[float, float]], n_regions: int
