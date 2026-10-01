@@ -43,6 +43,21 @@ def test_train_predicts_non_negative_generation(timeseries_frame: pd.DataFrame) 
     assert trained.feature_names  # the training feature order was recorded
 
 
+def test_train_ships_the_configured_tree_count(timeseries_frame: pd.DataFrame) -> None:
+    """Regression: training early-stopped on its trailing holdout and refit at the best iteration, so
+    production shipped fewer trees than every walk-forward benchmark had scored. The final model must
+    use the configured n_estimators, whatever the holdout looks like."""
+    frame = timeseries_frame.copy()
+    # Make the trailing holdout pure noise: early stopping would halt within a few rounds here.
+    tail = frame.index[int(len(frame) * 0.85) :]
+    frame.loc[tail, "load_actual_mw"] = np.random.default_rng(0).uniform(30_000, 80_000, len(tail))
+    params = {**TINY, "n_estimators": 120, "max_depth": 6, "learning_rate": 0.3}
+
+    trained = train(REGISTRY["load"], frame, params=params)
+
+    assert trained.booster.get_booster().num_boosted_rounds() == 120
+
+
 def test_train_nan_lag_mask_nulls_a_fraction_without_mutating_input() -> None:
     matrix = pd.DataFrame({_PRICE_LAG_COLUMN: np.arange(2000.0), "other": np.arange(2000.0)})
     out = apply_train_nan_lag_mask(matrix)

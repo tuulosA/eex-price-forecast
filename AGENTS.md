@@ -137,6 +137,10 @@ docs/
   (`model.apply_train_nan_lag_mask`) and nulls `price_lag_168h` on far-horizon test rows that would not
   have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
   horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
+- **Production fits exactly the configured `n_estimators`.** `model._fit` does not early-stop; its
+  chronological holdout only feeds logged metrics. Every walk-forward tool fits the tuned tree count
+  unchanged, so reintroducing early stopping in training would ship models no benchmark has scored (it
+  once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
 - **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
   parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
