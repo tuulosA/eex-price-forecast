@@ -194,6 +194,7 @@ The package includes frozen-cutoff, D+1 walk-forward tools:
 ```bash
 eex analyze eval                            # full weather -> fundamentals -> price chain
 eex analyze oracle                          # isolate downstream fundamental effects
+eex analyze shap                            # what each trained model relies on (SHAP)
 eex analyze ablation --target price         # remove features and measure the change
 eex analyze aggregation wind                # compare weather representations
 eex analyze anchors wind                    # compare anchor selections (also load / solar)

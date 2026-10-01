@@ -26,6 +26,7 @@ dependencies = [
     "optuna>=3.6",
     "holidays>=0.50",
     "pyyaml>=6.0",
+    "shap>=0.49",  # `eex analyze shap` plots; newer releases need numpy 2
 ]
 
 [project.optional-dependencies]
@@ -69,7 +70,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 # Third-party libraries without type stubs:
 [[tool.mypy.overrides]]
-module = ["entsoe.*", "responses.*", "matplotlib.*", "xgboost.*", "holidays.*"]
+module = ["entsoe.*", "responses.*", "matplotlib.*", "xgboost.*", "holidays.*", "shap.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 
@@ -78,4 +79,8 @@ follow_imports = "skip"
 minversion = "8.0"
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-filterwarnings = ["ignore::DeprecationWarning"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # shap 0.49 calls matplotlib colormap setters that matplotlib plans to deprecate; library-internal.
+    "ignore::PendingDeprecationWarning:shap",
+]

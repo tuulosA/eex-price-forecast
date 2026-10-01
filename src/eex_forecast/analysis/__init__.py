@@ -11,6 +11,7 @@ from eex_forecast.analysis.plots import (
     plot_all_evaluation_days,
     plot_evaluation_days,
     plot_points_map,
+    plot_shap,
     save_heatmap,
 )
 
@@ -20,5 +21,6 @@ __all__ = [
     "plot_all_evaluation_days",
     "plot_evaluation_days",
     "plot_points_map",
+    "plot_shap",
     "save_heatmap",
 ]

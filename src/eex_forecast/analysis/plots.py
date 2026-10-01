@@ -18,8 +18,9 @@ from pathlib import Path
 import pandas as pd
 
 from eex_forecast.analysis.evaluation import EVAL_UNITS, EvaluationResult, report_filename
+from eex_forecast.analysis.shap import ShapResult, feature_family
 from eex_forecast.backtest_cutoffs import cutoff_utc
-from eex_forecast.config import EVALUATION_DIR
+from eex_forecast.config import ANALYSIS_DIR, EVALUATION_DIR
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather.candidates import Candidate, Ring
@@ -263,3 +264,68 @@ def plot_all_evaluation_days(
     """:func:`plot_evaluation_days` for every model the eval scored, price first."""
     order = ["price", *(name for name in ALL_MODELS if name != "price")]
     return [plot_evaluation_days(result, model=name, reports_dir=reports_dir) for name in order]
+
+
+# -- SHAP summaries (eex analyze shap) ----------------------------------------------------
+_SHAP_TOP = 15
+
+
+def _format_shap(value: float, unit: str) -> str:
+    return f"{value:,.0f}" if unit == "MW" else f"{value:.2f}"
+
+
+def plot_shap(result: ShapResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
+    """Draw one model's global SHAP summary with the ``shap`` library's standard plots.
+
+    Left: ``shap.plots.bar`` over the **feature families** - mean |SHAP| per family over every
+    explained hour, the answer to "what does this model rely on" in the target's unit. Families are
+    summed per row before the absolute value, which is exact because SHAP values are additive.
+
+    Right: ``shap.plots.beeswarm`` over the individual features - each dot one hour, placed at its SHAP
+    value and stacked by density, so the shape shows where most hours sit, coloured by the feature's
+    own value from low to high so each effect's direction is visible (for example, high wind speed
+    pushing price down). Features beyond the top ``_SHAP_TOP`` are folded into ``shap``'s "Sum of N
+    other features" row rather than dropped.
+
+    The values come from :func:`eex_forecast.analysis.shap.explain_model` (XGBoost's exact TreeSHAP,
+    in MW for wind and solar); ``shap`` only draws them. Both libraries label the axis "SHAP value"
+    without a unit, so the unit is restored here. Written to ``shap_<model>.png``.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import shap
+
+    unit = result.unit
+    by_family = result.values.T.groupby(feature_family).sum().T
+    families = shap.Explanation(values=by_family.to_numpy(), feature_names=list(by_family.columns))
+    features = shap.Explanation(
+        values=result.values.to_numpy(),
+        data=result.features.to_numpy(),
+        feature_names=list(result.values.columns),
+        base_values=result.base_value,
+    )
+    rows = min(_SHAP_TOP + 1, max(by_family.shape[1], result.values.shape[1]))
+    fig, (left, right) = plt.subplots(
+        1, 2, figsize=(15.0, 0.42 * rows + 2.0), gridspec_kw={"width_ratios": [1.0, 1.2]}
+    )
+    shap.plots.bar(families, max_display=_SHAP_TOP, ax=left, show=False)
+    shap.plots.beeswarm(features, max_display=_SHAP_TOP + 1, ax=right, show=False, plot_size=None)
+    left.set_xlabel(f"mean |SHAP| ({unit})")
+    left.set_title("Feature families", loc="left", fontsize=10)
+    right.set_xlabel(f"SHAP value: effect on the prediction ({unit})")
+    right.set_title("Individual features, one dot per hour", loc="left", fontsize=10)
+
+    fig.suptitle(
+        f"SHAP: production {result.model} model over {len(result.values):,} hours "
+        f"({result.start:%Y-%m-%d} to {result.end:%Y-%m-%d}; "
+        f"base {_format_shap(result.base_value, unit)} {unit})",
+        fontsize=11,
+    )
+    fig.tight_layout()
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / f"shap_{result.model}.png"
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    return path

@@ -271,6 +271,33 @@ cancellation, not evidence that a forecast is generally better than truth.
 Reports are written to `data/evaluation/oracle_substitution.json`, or
 `oracle_substitution_holdout.json` with `--holdout`.
 
+## SHAP explanations
+
+```bash
+eex analyze shap                            # all four production models, last 365 days
+eex analyze shap --target price --days 90
+```
+
+Explains the **saved production models** - run `eex model train` first - with XGBoost's built-in
+exact TreeSHAP, over recent history with measured fundamentals. Each `shap_<model>.png` in
+`data/analysis/` has two panels. The first ranks feature families by mean |SHAP|: all wind points
+are summed into "wind speed", the solar statistics into "GHI", and so on, which is exact because
+SHAP values add up. The second is a beeswarm of the top individual features, one dot per hour
+stacked by density, coloured by the feature's value from low to high so the direction of each effect
+is visible; the remaining features are folded into one "Sum of N other features" row. Both panels
+are drawn by the `shap` library; the values themselves come from XGBoost. Wind and solar values are
+converted from capacity factor to MW; price stays in EUR/MWh.
+
+Read them as what each model *relies on*, not as causes:
+
+- SHAP describes the model's associations. In the price model, for example, high import capacity
+  pushes the prediction up, most likely because transfer capacity is seasonal and coincides with
+  winter prices, not because capacity raises prices.
+- The history includes the 168 h price lag on every row, but it is absent for the far horizon at
+  serve time, so the lag's importance describes the first forecast week.
+- The non-negative clip and the solar-darkness override are applied after the model and are not part
+  of the explanation.
+
 ## Solar diagnostics
 
 ```bash
@@ -308,7 +335,7 @@ development cutoffs. Retune after changing features, feature semantics, or ancho
 | `data/tuning/` | Optuna trials and selected parameters |
 | `data/aggregation/` | feature-representation comparisons |
 | `data/ablation/` | feature-removal comparisons |
-| `data/analysis/` | correlations, error slices, feature and anchor experiments |
+| `data/analysis/` | correlations, error slices, feature and anchor experiments, SHAP plots |
 | `data/rank/` | saved point rankings |
 
 Generated reports are the detailed source of truth. The
