@@ -245,6 +245,7 @@ locations, and interpretation.
 
 | Document | Purpose |
 |---|---|
+| [Results explained](RESULTS.md) | Plain-language walkthrough of the holdout forecasts and SHAP plots, for non-specialists |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |
 | [Model development](docs/model-development.md) | Findings, rejected alternatives, decisions, and next research priorities |
