@@ -430,6 +430,15 @@ and may change under forecast fundamentals.
 
 This is the next model track because solar has the largest isolated downstream price effect.
 
+**New evidence (2026-10-01).** The holdout day plots show a systematic midday over-forecast that the
+history explains in two parts: output per unit of irradiance has fallen about 9-10% a year while the
+capacity step grew 19.6% into 2026 (capacity drift), and output drops further at deep negative
+prices (curtailment, about -12% below -100 EUR/MWh in 2026). See the 2026-10-01 decision for the
+figures. This strengthens the parked seasonal/capacity-drift work, and suggests two candidates to
+test on the development days: a recency-aware capacity-factor correction, and a known-ahead
+negative-price signal - which only the price model can supply, so it would need an iteration
+between price and solar rather than a plain feature.
+
 #### Align irradiance to the delivery interval
 
 **Status: completed 2026-07-29 as a shared correctness fix.**
@@ -1072,6 +1081,25 @@ Before changing a production feature/model:
   load +1.199, and all three +2.916 (26.814, matching eval). Solar is again the largest isolated
   penalty, consistent with the recent-days solar finding below; even perfect fundamentals leave 23.9,
   so most holdout error is in the price model itself.
+- Holdout day plots (`eex analyze eval --holdout --plot`, `data/evaluation/eval_days*_holdout.png`)
+  show systematic errors that a mean MAE hides:
+  - **Solar is over-forecast at the midday peak on most holdout days**, worst on the two
+    deep-negative-price days (26 April, 1 May), where the actual curve is visibly flattened. Two
+    effects in the 2024-2026 history fit this. *Curtailment at negative prices:* in bright hours
+    (solar-point GHI above 500 W/m2), median capacity factor per unit of GHI in 2026 is 0.641 at
+    0-50 EUR/MWh but 0.565 below -100 EUR/MWh (-12%), against about -10% in 2025 and -5% in 2024;
+    the effect grows with how negative the price is and from year to year, though only 18 such
+    2026 hours exist. *Capacity drift:* the installed-capacity step rises 19.6% from 2025 to 2026
+    (86,952 to 104,030 MW) while output per unit of GHI falls about 9-10% a year (0.706, 0.685,
+    0.641 at 0-50 EUR/MWh). A model that learns the capacity factor from earlier years therefore
+    over-forecasts the current one. Causes are not established: rising self-consumption missing
+    from metered generation, the yearly capacity step overstating early-year capacity, and
+    curtailment are all candidates.
+  - **Load is under-forecast on winter weekdays** by 3-4.5 GW (13 Jan, 3 Feb, 21 Feb) with the
+    daily shape right, so the error is a level bias rather than a profile error. Not yet
+    investigated; electrification growth and the winter temperature response are candidates.
+  - **Wind follows each day's shape well**; its largest misses are level errors on very windy
+    winter days (1 Jan, 3 Feb).
 - Removed early stopping from production training. `model._fit` used to early-stop on the trailing
   10% validation slice and refit at the best iteration, while tuning, eval, and oracle all fit the
   tuned `n_estimators` unchanged, so the shipped models were not the benchmarked ones. The cut was
