@@ -198,6 +198,8 @@ Geometry generation and point ranking are needed only when rebuilding the commit
 
 Documentation is part of the behavior being changed. Keep these sources aligned in the same change:
 
+- `RESULTS.md` explains the holdout day plots and SHAP figures to a non-specialist reader. Keep its
+  figures, numbers, and readings in step with the committed images when they are regenerated.
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
 - `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
