@@ -8,9 +8,10 @@ and target-specific switches (non-negativity for generation/load, spike clipping
 **capacity scaling** for wind/solar - learning a capacity factor and multiplying back by installed
 capacity, so the model generalises as the fleet grows).
 
-Fitting uses **early stopping** on a chronological holdout, then refits on all rows at the chosen
-iteration count. Training logs a step-by-step record per model - features, params, best iteration,
-holdout **MAE/RMSE/R2**, and **residual diagnostics** (Durbin-Watson, ACF). Hyperparameters come from
+The final model is fit on all rows at exactly the configured ``n_estimators`` - **no early stopping** -
+so the shipped model is the configuration the walk-forward tools benchmarked (see :func:`_fit`). A
+chronological holdout is still fit first, purely to log **MAE/RMSE/R2** and **residual diagnostics**
+(Durbin-Watson, ACF) for that same configuration alongside features and params. Hyperparameters come from
 ``config/hyperparams.json`` when present (written by ``eex model tune``) and fall back to
 :data:`DEFAULT_PARAMS`. Models persist as native XGBoost JSON plus a small sidecar recording the exact
 training feature order, so prediction always reindexes to the columns the model was fit on.
@@ -36,11 +37,10 @@ logger = logging.getLogger(__name__)
 
 FeatureBuilder = Callable[[pd.DataFrame], pd.DataFrame]
 
-# Early stopping: hold out the trailing slice (chronological) as a validation set, stop when it stops
-# improving, then refit on all rows at the chosen iteration count. Skipped when data is too small.
+# Diagnostic holdout: the trailing slice (chronological) is held out of one extra fit, only so training can
+# log out-of-sample metrics. It does not choose anything - see _fit. Skipped when data is too small.
 _VAL_FRACTION = 0.1
-_EARLY_STOPPING_ROUNDS = 50
-_MIN_ROWS_FOR_EARLY_STOPPING = 500
+_MIN_ROWS_FOR_HOLDOUT = 500
 
 # Day-ahead-lag train/serve fix. price_lag_168h is present on every training row (history is complete)
 # but NaN for the far horizon (D+8..D+14) at serve, because the 168 h look-back lands after the issue
@@ -302,30 +302,31 @@ def _fit(
     params: dict[str, Any],
     capacity: pd.Series | None = None,
 ) -> tuple[XGBRegressor, dict[str, Any], dict[str, float]]:
-    """Fit with a chronological early-stopping holdout, then refit on all rows at the best iteration.
+    """Fit the final model on all rows at the configured ``n_estimators``, logging holdout metrics.
 
-    Returns the refit model plus, from the (out-of-sample) validation holdout, residual diagnostics and
-    MAE/RMSE/R2 in natural units (capacity scaling reversed). Falls back to a plain fit with no
-    holdout - hence no diagnostics/metrics - when there are too few rows.
+    The tree count is used exactly as configured - it is a tuned hyperparameter, chosen by walk-forward
+    scoring over the frozen cutoffs (:mod:`eex_forecast.tuning`), and tuning, eval, and oracle all fit
+    it unchanged. Production used to early-stop on the trailing holdout instead and refit at the best
+    iteration. That holdout is one recent season, so it cut the tree count hard (price 322 of 850, solar
+    166 of 300 in one run), and the shipped models were then not the ones the benchmarks scored: on the
+    frozen cutoffs the cut models were worse (price +0.39 EUR/MWh, solar +224 MW). Fitting the
+    configured count keeps every reported benchmark a description of the model that actually ships.
+
+    Returns the final model plus residual diagnostics and MAE/RMSE/R2 in natural units (capacity
+    scaling reversed) from a separate fit that holds out the trailing slice. That fit uses the same
+    params, so its metrics describe the shipped configuration; it informs nothing and is discarded. With
+    too few rows the holdout is skipped and no diagnostics/metrics are returned.
     """
     scope = f"[{spec.name}]"
-    if len(matrix) < _MIN_ROWS_FOR_EARLY_STOPPING:
-        booster = XGBRegressor(**params)
-        booster.fit(matrix, target)
-        return booster, {}, {}
+    final = XGBRegressor(**params)
+    if len(matrix) < _MIN_ROWS_FOR_HOLDOUT:
+        final.fit(matrix, target)
+        return final, {}, {}
 
     split = int(len(matrix) * (1.0 - _VAL_FRACTION))
-    logger.info("%s early stopping on a %d-row chronological holdout", scope, len(matrix) - split)
-    early = XGBRegressor(**{**params, "early_stopping_rounds": _EARLY_STOPPING_ROUNDS})
-    early.fit(
-        matrix.iloc[:split],
-        target.iloc[:split],
-        eval_set=[(matrix.iloc[split:], target.iloc[split:])],
-        verbose=False,
-    )
-    best_iteration = early.best_iteration
-    n_estimators = (best_iteration + 1) if best_iteration is not None else params["n_estimators"]
-    logger.info("%s best iteration %s / %s", scope, best_iteration, params["n_estimators"])
+    logger.info("%s scoring a %d-row chronological holdout", scope, len(matrix) - split)
+    holdout = XGBRegressor(**params)
+    holdout.fit(matrix.iloc[:split], target.iloc[:split])
 
     # Score the holdout with the exact production post-processing contract.
     y_val = target.iloc[split:].to_numpy()
@@ -333,7 +334,7 @@ def _fit(
     val_capacity = capacity.iloc[split:] if capacity is not None else None
     pred_val = postprocess_predictions(
         spec,
-        early.predict(val_matrix),
+        holdout.predict(val_matrix),
         val_matrix,
         capacity=val_capacity,
     ).to_numpy()
@@ -343,7 +344,6 @@ def _fit(
     diagnostics = _residual_diagnostics(y_val - pred_val)
     metrics = _validation_metrics(y_val, pred_val)
 
-    final = XGBRegressor(**{**params, "n_estimators": n_estimators})
     final.fit(matrix, target)
     return final, diagnostics, metrics
 
