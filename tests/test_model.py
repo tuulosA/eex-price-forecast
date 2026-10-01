@@ -44,11 +44,11 @@ def test_train_predicts_non_negative_generation(timeseries_frame: pd.DataFrame) 
 
 
 def test_train_ships_the_configured_tree_count(timeseries_frame: pd.DataFrame) -> None:
-    """Regression: training early-stopped on its trailing holdout and refit at the best iteration, so
+    """Regression: training early-stopped on its trailing validation slice and refit at the best iteration, so
     production shipped fewer trees than every walk-forward benchmark had scored. The final model must
-    use the configured n_estimators, whatever the holdout looks like."""
+    use the configured n_estimators, whatever the validation slice looks like."""
     frame = timeseries_frame.copy()
-    # Make the trailing holdout pure noise: early stopping would halt within a few rounds here.
+    # Make the trailing validation slice pure noise: early stopping would halt within a few rounds here.
     tail = frame.index[int(len(frame) * 0.85) :]
     frame.loc[tail, "load_actual_mw"] = np.random.default_rng(0).uniform(30_000, 80_000, len(tail))
     params = {**TINY, "n_estimators": 120, "max_depth": 6, "learning_rate": 0.3}

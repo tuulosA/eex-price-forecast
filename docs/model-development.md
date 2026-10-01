@@ -960,11 +960,11 @@ end-to-end eval/oracle instead.
 
 **Status: completed 2026-07-29.**
 
-`model.postprocess_predictions` is now the single natural-unit prediction contract. It reverses wind/solar
-capacity-factor scaling, applies non-negative clipping, and forces solar to zero when aligned irradiance
-shows every selected point is dark. `TrainedModel.predict`, training holdout metrics, and the shared
-walk-forward engine all call it; aggregation and ablation inherit it from that engine, while eval/oracle
-inherit it through `TrainedModel`.
+`model.postprocess_predictions` is now the single natural-unit prediction contract. It reverses
+wind/solar capacity-factor scaling, applies non-negative clipping, and forces solar to zero when
+aligned irradiance shows every selected point is dark. `TrainedModel.predict`, training validation
+metrics, and the shared walk-forward engine all call it; aggregation and ablation inherit it from
+that engine, while eval/oracle inherit it through `TrainedModel`.
 
 Every reported metric and experiment score uses deployed post-processing. Production training no longer
 early-stops (see the 2026-10-01 decision), so the shipped tree count is the tuned one every scoring path
@@ -1040,14 +1040,15 @@ Before changing a production feature/model:
 
 ### 2026-10-01
 
-- Removed early stopping from production training. `model._fit` used to early-stop on the trailing 10%
-  holdout and refit at the best iteration, while tuning, eval, and oracle all fit the tuned
-  `n_estimators` unchanged, so the shipped models were not the benchmarked ones. The cut was large and
-  unstable: the 2026-08-09 run shipped price 322/850, solar 166/300, and load 376/600 trees; the
-  2026-10-01 data stopped price at 837 and load at 224. On the frozen cutoffs the cut counts were worse
-  (price +0.392 EUR/MWh on actual fundamentals, solar +224.291 MW, load +17.464 MW). Production now fits
-  the configured count, so every committed benchmark describes the shipped model; the holdout remains
-  only for logged metrics and diagnostics, from a fit using the same params. Models must be retrained.
+- Removed early stopping from production training. `model._fit` used to early-stop on the trailing
+  10% validation slice and refit at the best iteration, while tuning, eval, and oracle all fit the
+  tuned `n_estimators` unchanged, so the shipped models were not the benchmarked ones. The cut was
+  large and unstable: the 2026-08-09 run shipped price 322/850, solar 166/300, and load 376/600
+  trees; the 2026-10-01 data stopped price at 837 and load at 224. On the frozen cutoffs the cut
+  counts were worse (price +0.392 EUR/MWh on actual fundamentals, solar +224.291 MW, load +17.464
+  MW). Production now fits the configured count, so every committed benchmark describes the shipped
+  model; the validation slice remains only for logged metrics and diagnostics, from a fit using the
+  same params. Models must be retrained.
 - Checked recent unseen days before adopting it: 14 delivery days from 2026-07-14 to 2026-09-28, outside
   the frozen cutoffs. The configured count won or tied for price (21.782 vs 22.875 EUR/MWh at 322 trees),
   load (1,472.853 vs 1,494.749 MW at 376), and wind. **Solar did not:** 300 trees scored 1,504.048 MW

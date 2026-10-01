@@ -125,11 +125,11 @@ docs/
   `all_actual`, each forecast alone, and `forecast_all`. Only `forecast_all` is production-like; the other
   scenarios diagnose downstream contribution and may have signed/non-additive MAE deltas.
 - **Capacity scaling** for wind/solar: the model learns a *capacity factor* (target ÷ installed
-  capacity) and multiplies the prediction back by capacity, so it stays calibrated as the fleet grows.
-  Every natural-unit prediction must go through `model.postprocess_predictions`, which also applies
-  non-negative clipping and the solar-darkness constraint. Live prediction, training holdout metrics,
-  tuning, aggregation, ablation, eval, and oracle share this function; do not recreate part of the
-  post-processing sequence in another scoring path.
+  capacity) and multiplies the prediction back by capacity, so it stays calibrated as the fleet
+  grows. Every natural-unit prediction must go through `model.postprocess_predictions`, which also
+  applies non-negative clipping and the solar-darkness constraint. Live prediction, training
+  validation metrics, tuning, aggregation, ablation, eval, and oracle share this function; do not
+  recreate part of the post-processing sequence in another scoring path.
 - **No leakage in tuning, and serve-faithful for the price lag.** Winsorising (`clip_target_quantiles`)
   is applied per-fold on **train rows only** (`tuning._fold_metrics`), never over the whole series.
   Features are built once over the full frame, then sliced by timestamp per fold — but each fold also
@@ -138,9 +138,9 @@ docs/
   have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
   horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
 - **Production fits exactly the configured `n_estimators`.** `model._fit` does not early-stop; its
-  chronological holdout only feeds logged metrics. Every walk-forward tool fits the tuned tree count
-  unchanged, so reintroducing early stopping in training would ship models no benchmark has scored (it
-  once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
+  chronological validation slice only feeds logged metrics. Every walk-forward tool fits the tuned
+  tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
+  has scored (it once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
 - **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
   parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
