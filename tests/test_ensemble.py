@@ -457,6 +457,94 @@ def test_ensemble_failure_does_not_break_the_deterministic_forecast(
     assert not (tmp_path / "out" / "forecast_ensemble.csv").exists()
 
 
+def test_ensemble_storage_failure_does_not_break_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: only fetch/propagate were guarded, so a failing ensemble store raised out of
+    run_forecast after forecast.csv was written - losing the plots and failing the command."""
+    from eex_forecast.ensemble import pipeline as ensemble_pipeline
+    from eex_forecast.forecast import run_forecast
+
+    db_path, now, _ = _stub_forecast_env(tmp_path, monkeypatch)
+
+    def fake_fetch(*, horizon_days: int) -> pd.DataFrame:
+        times = pd.date_range(now, periods=24 * 6, freq="h", tz="UTC")
+        return _member_weather(pd.Series(times), members=4)
+
+    def locked(*args: Any, **kwargs: Any) -> int:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr("eex_forecast.ensemble.propagate.fetch_member_weather", fake_fetch)
+    monkeypatch.setattr(ensemble_pipeline, "write_member_forecasts", locked)
+    monkeypatch.setattr(ensemble_pipeline, "FORECAST_DIR", tmp_path / "out")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_DB_PATH", tmp_path / "ens.db")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_WEATHER_DB_PATH", tmp_path / "ens_w.db")
+
+    result = run_forecast(str(db_path), horizon_days=3, history_days=30, plot=True, ensemble=True)
+
+    assert not result.empty
+    assert (tmp_path / "out" / "forecast.png").exists()
+    # The bands were produced before storage failed, so their CSV is still written...
+    assert (tmp_path / "out" / "forecast_ensemble.csv").exists()
+    # ...but the weather archive is keyed by a run id that was never stored, so it is skipped.
+    assert not (tmp_path / "ens_w.db").exists()
+
+
+def test_ensemble_csv_failure_still_returns_the_bands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each output is guarded on its own: an unwritable CSV must not cost the stores or the fan."""
+    from eex_forecast.ensemble import pipeline as ensemble_pipeline
+
+    db_path, now, _ = _stub_forecast_env(tmp_path, monkeypatch)
+    base, _, _ = _base_and_models()
+    times = pd.to_datetime(base[TIMESTAMP], utc=True)
+
+    def unwritable(*args: Any, **kwargs: Any) -> None:
+        raise PermissionError("forecast_ensemble.csv is open in another program")
+
+    monkeypatch.setattr(pd.DataFrame, "to_csv", unwritable)
+    monkeypatch.setattr(ensemble_pipeline, "FORECAST_DIR", tmp_path / "out")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_DB_PATH", tmp_path / "ens.db")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_WEATHER_DB_PATH", tmp_path / "ens_w.db")
+
+    summary = ensemble_pipeline.run_ensemble_forecast(
+        base, forward_from=now, horizon_days=1, member_weather=_member_weather(times[times >= now])
+    )
+
+    assert summary is not None and not summary.empty
+    with connect_ensemble(tmp_path / "ens.db") as conn:
+        assert len(read_member_forecasts(conn, 1)) > 0
+
+
+def test_ensemble_bands_start_on_the_first_unsettled_hour(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: forward_from was the last *settled* hour, so the bands began on a known price."""
+    from eex_forecast.ensemble import pipeline as ensemble_pipeline
+    from eex_forecast.forecast import run_forecast
+
+    db_path, now, _ = _stub_forecast_env(tmp_path, monkeypatch)
+
+    def fake_fetch(*, horizon_days: int) -> pd.DataFrame:
+        # Members also cover the settled hours, so only forward_from decides where the bands start.
+        times = pd.date_range(now - pd.Timedelta(hours=6), periods=24 * 6, freq="h", tz="UTC")
+        return _member_weather(pd.Series(times), members=4)
+
+    monkeypatch.setattr("eex_forecast.ensemble.propagate.fetch_member_weather", fake_fetch)
+    monkeypatch.setattr(ensemble_pipeline, "FORECAST_DIR", tmp_path / "out")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_DB_PATH", tmp_path / "ens.db")
+    monkeypatch.setattr(ensemble_pipeline, "ENSEMBLE_WEATHER_DB_PATH", tmp_path / "ens_w.db")
+
+    result = run_forecast(str(db_path), horizon_days=3, history_days=30, ensemble=True)
+
+    summary = pd.read_csv(tmp_path / "out" / "forecast_ensemble.csv")
+    first_band = pd.to_datetime(summary["timestamp"], utc=True).min()
+    times = pd.to_datetime(result["timestamp"], utc=True)
+    first_unsettled = times[result["price_actual_eur_mwh"].isna().to_numpy()].min()
+    assert first_band == first_unsettled
+
+
 def test_ensemble_never_writes_to_the_production_database(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -624,7 +712,7 @@ def test_ensemble_is_drawn_distinctly_from_the_deterministic_line() -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from eex_forecast.forecast import ENSEMBLE_COLOR, _draw_ensemble
+    from eex_forecast.plots import ENSEMBLE_COLOR, _draw_ensemble
 
     summary = summarise_members(_forecast_frame(members=5, hours=6))
     fig, ax = plt.subplots()
@@ -648,7 +736,7 @@ def test_draw_ensemble_is_a_noop_without_a_summary() -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from eex_forecast.forecast import _draw_ensemble
+    from eex_forecast.plots import _draw_ensemble
 
     fig, ax = plt.subplots()
     try:
@@ -777,7 +865,7 @@ def test_plot_caption_appears_only_when_bands_are_drawn() -> None:
     import matplotlib.pyplot as plt
 
     from eex_forecast.ensemble.summary import SPREAD_CAPTION
-    from eex_forecast.forecast import plot_forecast
+    from eex_forecast.plots import plot_forecast
 
     frame = make_timeseries(periods=24 * 10)
     times = pd.to_datetime(frame["timestamp"], utc=True)
@@ -821,7 +909,7 @@ def test_drivers_plot_marks_now_on_every_panel(tmp_path: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    from eex_forecast.forecast import plot_drivers
+    from eex_forecast.plots import plot_drivers
 
     frame = make_timeseries(periods=24 * 10)
     times = pd.to_datetime(frame["timestamp"], utc=True)

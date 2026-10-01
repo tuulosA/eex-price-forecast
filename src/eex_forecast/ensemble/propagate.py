@@ -145,17 +145,18 @@ def propagate_members(
 ) -> pd.DataFrame:
     """Run the full chain for every member; returns frame[``member``, ``timestamp``, *forecast columns].
 
-    ``forward_from`` is the first genuinely forward hour: rows before it are predicted (the price lag
-    needs them) but not returned. ``models`` is an injection seam for tests; production loads the
-    persisted artifacts.
+    ``forward_from`` is the first genuinely forward hour - the first with no settled price, i.e. the hour
+    *after* the deterministic plot's hand-off point: rows before it are predicted (the price lag needs
+    them) but not returned. ``models`` is an injection seam for tests; production loads the persisted
+    artifacts.
 
     Output is additionally clipped to the hours the member weather actually covers, **at both ends**, and
     to ``forward_until`` when given.
 
-    The start matters because the ensemble run begins at the current day's midnight while
-    ``forward_from`` is the last settled price, which can be a day or more earlier since day-ahead prices
-    are known through D+1. The end matters for the same reason in reverse: the base frame is fetched with
-    a buffer beyond the published horizon, so its final rows can fall outside the ensemble's coverage.
+    The start matters whenever ``forward_from`` precedes the members' first hour - for instance when
+    ENTSO-E prices lag, so the last settled hour falls before the ensemble run's start. The end matters
+    for the same reason in reverse: the base frame is fetched with a buffer beyond the published horizon,
+    so its final rows can fall outside the ensemble's coverage.
 
     In both cases the uncovered rows would otherwise be emitted with every member carrying identical
     weather - :func:`_member_frame` leaves the base frame's values where a member has none - producing a
