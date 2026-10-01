@@ -279,3 +279,11 @@ The ensemble CSV covers only the hours members actually cover, which begins at t
 start rather than at the last settled price. `forecast.csv` therefore starts earlier than
 `forecast_ensemble.csv`, by design — emitting the intervening hours would imply ensemble information
 where the members all carry the same already-observed weather.
+
+The same rule sets the end, and there the ensemble usually stops **about a day before** the
+deterministic forecast. The ECMWF ensemble runs about 15 days from its own initialisation, and
+Open-Meteo pads the requested window with timestamps whose values are null, so an hour counts as
+covered only when every member has every weather column - and, for radiation, the following hour
+too, since radiation is read from `t + 1 h`. Hours past that are left out of
+`forecast_ensemble.csv` and the bands rather than filled with deterministic weather, which would
+publish them with zero spread.
