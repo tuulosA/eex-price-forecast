@@ -219,15 +219,17 @@ Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April an
 666 EUR/MWh peak on 24 June. Those three account for 40% of the price error; without them the MAE is
 19.26 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
 
-Even the holdout figure is **optimistic** as a measure of live forecast error:
+A few things are worth keeping in mind when reading these figures:
 
 - **Only the next delivery day (D+1) is scored.** The published forecast runs to D+14, and weather
-  forecast error grows with lead time, so errors further out are larger than these figures. No
-  multi-day accuracy is claimed.
-- **The historical weather is better than what a live run gets.** Open-Meteo's archived forecasts
-  stitch together the short-lead segments of successive ECMWF runs, so even D+1 is scored on slightly
-  better weather than the run actually available at issue time.
-- **The sample is small and incomplete.** 18 days, with no October-December delivery days.
+  forecast error grows with lead time, so errors further out are likely larger. No multi-day
+  accuracy is claimed.
+- **The historical weather may be slightly better than what a live run gets.** Open-Meteo's
+  archived forecasts stitch together the short-lead segments of successive ECMWF runs, which can
+  make D+1 look a little better than the run actually available at issue time.
+- **The sample is small.** 18 days, with no October-December delivery days. That cuts both ways: it
+  also happens to include several of the period's most extreme price days, so the figure could as
+  easily be pessimistic as optimistic for a typical day.
 
 The only way to measure true out-of-sample error is a live track record: archive each run's forecast
 and score it against the prices that later settle, daily or weekly, over months. This project
