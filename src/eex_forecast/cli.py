@@ -42,14 +42,14 @@ from eex_forecast import model as model_ops
 from eex_forecast import tuning
 from eex_forecast.analysis import (
     ablation,
-    aggregate_features,
     aggregation,
-    correlation_matrix,
     evaluation,
+    model_correlations,
     plot_all_evaluation_days,
+    plot_correlation,
     plot_points_map,
     plot_shap,
-    save_heatmap,
+    save_correlation_csv,
 )
 from eex_forecast.analysis import (
     anchors as anchor_analysis,
@@ -60,7 +60,6 @@ from eex_forecast.analysis import (
 from eex_forecast.analysis import (
     solar as solar_analysis,
 )
-from eex_forecast.analysis.correlation import correlations_with, order_by_target
 from eex_forecast.backtest_cutoffs import DEVELOPMENT, HOLDOUT, holdout_days_within
 from eex_forecast.config import (
     ANALYSIS_DIR,
@@ -472,27 +471,33 @@ def update_cmd(
 # -- analyze --------------------------------------------------------------------
 @analyze_app.command("correlation")
 def analyze_correlation(
+    target: Annotated[
+        ModelName, typer.Option(help="Model whose features to correlate ('all' for every model).")
+    ] = ModelName.all,
     start: Annotated[str | None, typer.Option(help="Start date (default: all data).")] = None,
     end: Annotated[str | None, typer.Option(help="End date (default: all data).")] = None,
 ) -> None:
-    """Compute the feature correlation matrix over the backfilled data (writes a CSV + heatmap PNG)."""
+    """Correlate each model's own features with its target (data/analysis/correlation_<model>.*).
+
+    The features come from each model's own builder, so they are exactly what it trains on. Wind and
+    solar are correlated with their capacity factor. Each figure shows the strongest features'
+    correlation with the target beside their correlation with each other; the CSV keeps every feature.
+    """
+    names = list(ALL_MODELS) if target is ModelName.all else [target.value]
     with connect(get_settings().db_path) as conn:
         frame = read_frame(conn, start=start, end=end)
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
-
-    # Order most-to-least correlated with price, so the heatmap reads strongest driver first.
-    corr = order_by_target(correlation_matrix(aggregate_features(frame)), "price")
-    ANALYSIS_DIR.mkdir(parents=True, exist_ok=True)
-    csv_path = ANALYSIS_DIR / "correlation.csv"
-    corr.round(4).to_csv(csv_path)
-    png_path = save_heatmap(corr, ANALYSIS_DIR / "correlation.png")
-
-    versus_price = correlations_with(corr, "price")
-    top = ", ".join(f"{name}={value:+.2f}" for name, value in versus_price.items())
-    typer.echo(f"Correlation matrix -> {csv_path}, {png_path}")
-    if top:
-        typer.echo(f"  vs price: {top}")
+    for name in names:
+        try:
+            result = model_correlations(REGISTRY[name], frame)
+        except ValueError as error:
+            raise typer.BadParameter(str(error)) from error
+        csv_path = save_correlation_csv(result)
+        png_path = plot_correlation(result)
+        top = ", ".join(f"{f}={r:+.2f}" for f, r in result.with_target.head(4).items())
+        typer.echo(f"Correlation {name:<5} vs {result.target_label}: {top}")
+        typer.echo(f"  -> {png_path}, {csv_path}")
 
 
 @analyze_app.command("shap")

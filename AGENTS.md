@@ -42,8 +42,8 @@ src/eex_forecast/
     openmeteo.py       # Open-Meteo client (archive history + forecast)
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # offline `eex analyze ...` implementations; depends on core, never vice versa
-    correlation.py     # feature correlation matrix + heatmap
-    plots.py           # analysis plots: point maps, correlation heatmap, eval day panels, SHAP
+    correlation.py     # per-model correlations on each model's own features (+ CSV)
+    plots.py           # analysis plots: point maps, correlations, eval day panels, SHAP
     shap.py            # TreeSHAP of the saved production models, grouped into feature families
     ablation.py        # remove chosen features and measure the loss, any model
     aggregation.py     # A/B weather aggregation per fundamental + neighbour

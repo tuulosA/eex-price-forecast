@@ -1,4 +1,4 @@
-"""Plots for the offline analysis commands: weather-point maps, correlation heatmaps, eval days.
+"""Plots for the offline analysis commands: point maps, correlations, eval days, and SHAP.
 
 The counterpart of :mod:`eex_forecast.plots`, which holds the forecast product's own plots. The split
 follows the package's dependency rule - :mod:`eex_forecast.analysis` may depend on the core package,
@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from eex_forecast.analysis.correlation import CorrelationResult
 from eex_forecast.analysis.evaluation import EVAL_UNITS, EvaluationResult, report_filename
 from eex_forecast.analysis.shap import ShapResult, feature_family
 from eex_forecast.backtest_cutoffs import cutoff_utc
@@ -121,34 +122,88 @@ def plot_points_map(
     return path
 
 
-# -- correlation heatmap (eex analyze correlation) -------------------------------------------
-def save_heatmap(
-    corr: pd.DataFrame, path: Path, *, title: str = "Feature correlation (Pearson)"
-) -> Path:
-    """Render the correlation matrix as an annotated heatmap PNG."""
+# -- correlation summaries (eex analyze correlation) -------------------------------------------
+def plot_correlation(result: CorrelationResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
+    """Draw one model's correlation summary: correlation with the target beside a pairwise heatmap.
+
+    Left: the strongest features' Pearson correlation with the model's target, as signed bars from the
+    zero line - right of zero, the feature tends to rise with the target; left of zero, it tends to fall
+    as the target rises. Right: the target and those features correlated with each other, to show
+    which carry the same information (for example, GHI and the solar fundamental moving almost in
+    lockstep). The target is the first row and column, set off by a line and a bold label; its row
+    repeats the bars on purpose so the matrix stands on its own. Both
+    panels share one diverging colour scale - red positive, blue negative, white near zero - so a
+    colour means the same thing in each. Written to ``correlation_<model>.png``.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    labels = list(corr.columns)
-    n = len(labels)
-    values = corr.to_numpy()
-    fig, ax = plt.subplots(figsize=(1.0 * n + 2.5, 1.0 * n + 2.0))
-    image = ax.imshow(values, vmin=-1.0, vmax=1.0, cmap="RdBu_r")
-    ax.set_xticks(range(n), labels, rotation=45, ha="right")
-    ax.set_yticks(range(n), labels)
-    for i in range(n):
-        for j in range(n):
-            value = values[i, j]
-            color = "white" if pd.notna(value) and abs(value) > 0.55 else "black"
-            text = "" if pd.isna(value) else f"{value:.2f}"
-            ax.text(j, i, text, ha="center", va="center", color=color, fontsize=8)
-    ax.set_title(title)
-    fig.colorbar(image, ax=ax, shrink=0.8, label="Pearson r")
+    cmap = matplotlib.colormaps["RdBu_r"]
+    labels = list(result.matrix.columns)  # the target first, then the strongest features
+    ranked = result.with_target[labels[1:]]
+    n = len(ranked)
+    size = len(labels)
+    fig, (left, right) = plt.subplots(
+        1, 2, figsize=(16.0, 0.42 * size + 2.6), gridspec_kw={"width_ratios": [1.0, 1.35]}
+    )
+
+    order = ranked.iloc[::-1]
+    values = order.to_numpy()
+    left.barh(
+        range(n),
+        values,
+        color=cmap(0.5 + values / 2.0),
+        height=0.65,
+        edgecolor="0.4",
+        linewidth=0.3,
+    )
+    left.axvline(0.0, color="0.4", linewidth=0.8)
+    left.set_yticks(range(n), list(order.index), fontsize=8)
+    for y, value in enumerate(values):
+        left.text(
+            value,
+            y,
+            f" {value:+.2f} ",
+            va="center",
+            ha="left" if value >= 0 else "right",
+            fontsize=7,
+            color="0.25",
+        )
+    left.set_xlim(-1.08, 1.08)
+    left.set_xlabel(f"correlation with {result.target_label}", fontsize=8)
+    left.set_title("Correlation with the target", loc="left", fontsize=9)
+    left.spines[["top", "right"]].set_visible(False)
+    left.tick_params(axis="x", labelsize=7)
+
+    matrix = result.matrix.to_numpy()
+    image = right.imshow(matrix, vmin=-1.0, vmax=1.0, cmap=cmap)
+    right.set_xticks(range(size), labels, rotation=55, ha="right", fontsize=7)
+    right.set_yticks(range(size), labels, fontsize=7)
+    for tick in (right.get_xticklabels()[0], right.get_yticklabels()[0]):
+        tick.set_fontweight("bold")
+    right.axhline(0.5, color="black", linewidth=1.2)
+    right.axvline(0.5, color="black", linewidth=1.2)
+    for i in range(size):
+        for j in range(size):
+            value = matrix[i, j]
+            if pd.notna(value):
+                color = "white" if abs(value) > 0.6 else "black"
+                right.text(
+                    j, i, f"{value:.2f}", ha="center", va="center", color=color, fontsize=5.5
+                )
+    right.set_title("Target and those features, with each other", loc="left", fontsize=9)
+    fig.colorbar(image, ax=right, shrink=0.8, label="Pearson r")
+
+    fig.suptitle(
+        f"Correlations: {result.model} model's top {n} features of {len(result.with_target)} "
+        f"over {result.n_rows:,} hours ({result.start:%Y-%m-%d} to {result.end:%Y-%m-%d})",
+        fontsize=10,
+    )
     fig.tight_layout()
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / f"correlation_{result.model}.png"
     fig.savefig(path, dpi=120)
     plt.close(fig)
     return path

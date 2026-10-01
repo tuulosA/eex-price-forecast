@@ -1,107 +1,120 @@
-"""Feature correlation analysis over the backfilled timeseries.
+"""Feature correlations for each model, computed on that model's own feature matrix.
 
-Reduce the database to an interpretable feature frame - the ENTSO-E fundamentals (price, wind, solar,
-load) plus one national mean per weather role (wind speed, the two temperatures, the two irradiances) -
-and compute the Pearson correlation matrix, to see which drivers move the German day-ahead price before
-any model is built. :func:`aggregate_features` and :func:`correlation_matrix` are pure and unit-tested;
-the heatmap is drawn by :func:`eex_forecast.analysis.plots.save_heatmap`.
+For every model the question is the same: which of its inputs move together with its target, and which
+of them move together with each other? The first is a single signed number per feature (Pearson
+correlation with the target); the second is the redundancy among the strongest of them - near-duplicate
+inputs, such as solar-point GHI and the solar fundamental, that a correlation ranking alone would hide.
 
-The per-role weather columns (e.g. ``ws_de01`` .. ``ws_de20``) are averaged into a single series so the
-matrix stays an interpretable handful of features rather than a hundred near-duplicate point columns.
+The features are built by the model's own builder (``spec.build_features``), so they are exactly what
+the model trains on: configured weather points only, preceding-hour radiation aligned to the delivery
+hour, the price lag, and the calendar. An earlier version averaged weather columns by prefix itself;
+that included columns left in SQLite by retired anchor sets and skipped the radiation alignment, so it
+could quietly diverge from the models.
+
+The target is what the model actually learns: the **capacity factor** for wind and solar (generation
+divided by installed capacity), the raw value for load and price. Correlating generation in MW would mix
+in the fleet's growth over the window - a trend unrelated to the weather.
+
+Correlation complements the SHAP view (:mod:`eex_forecast.analysis.shap`): it describes the raw data one
+feature at a time, ignoring all others, whereas SHAP describes how the model uses a feature given the
+rest. A feature can correlate strongly yet matter little to a model because a near-duplicate already
+carries its information - which is what the pairwise matrix makes visible.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 
-from eex_forecast.config import NUCLEAR_COLUMN
-from eex_forecast.features import neighbour_wind_block, ntc_features
+from eex_forecast.config import ANALYSIS_DIR
+from eex_forecast.features import TIMESTAMP
+from eex_forecast.model import ModelSpec, capacity_scaled
 
 logger = logging.getLogger(__name__)
 
-# Fundamentals: friendly feature name -> database column.
-FUNDAMENTAL_COLUMNS: dict[str, str] = {
-    "price": "price_actual_eur_mwh",
-    "wind_gen": "wind_actual_mw",
-    "solar_gen": "solar_actual_mw",
-    "load": "load_actual_mw",
-    "nuclear": NUCLEAR_COLUMN,  # cross-border nuclear availability
+CORRELATION_TOP = 15  # features shown in each figure; the CSV keeps every feature
+
+# What each model's target is, as correlated (capacity factor for the capacity-scaled models).
+_TARGET_LABELS: dict[str, str] = {
+    "wind": "wind capacity factor",
+    "solar": "solar capacity factor",
+    "load": "load (MW)",
+    "price": "price (EUR/MWh)",
 }
 
-# Weather: friendly feature name -> the column prefix whose points are averaged into a national mean.
-# Prefixes are mutually exclusive: ``t_ws_de`` does not match ``t_de``, nor ``ghi_t_de`` match ``ghi_de``.
-WEATHER_PREFIXES: dict[str, str] = {
-    "wind_speed": "ws_de",
-    "temp_wind": "t_ws_de",
-    "temp_load": "t_de",
-    "irr_load": "ghi_t_de",
-    "irr_solar": "ghi_de",
-}
 
-# Display/order: price first (the focal target), then the other fundamentals, then weather.
-FEATURE_ORDER: list[str] = [*FUNDAMENTAL_COLUMNS, *WEATHER_PREFIXES]
+@dataclass(frozen=True, slots=True)
+class CorrelationResult:
+    """One model's feature correlations over a window.
 
-
-def aggregate_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Reduce a raw timeseries frame to named features: fundamentals + per-role weather means + neighbour
-    wind.
-
-    Columns sharing a weather-role prefix are averaged into one national mean; the cross-border neighbour
-    wind points are reduced to one per-country mean each (``nbr_wind_<cc>``), exactly as the price model
-    consumes them. Only features actually present in ``frame`` are included; the timestamp index is kept.
+    ``with_target`` holds every usable feature's Pearson correlation with the target, strongest
+    (by magnitude) first, keeping its sign. ``matrix`` is the pairwise correlation among the target
+    (first row and column, named ``target_label``) and the ``top`` strongest features in that order.
+    The target's row repeats ``with_target`` deliberately, so the matrix can be read on its own: a
+    feature's link to the target sits beside its link to each near-duplicate.
     """
-    features: dict[str, pd.Series] = {}
-    for name, column in FUNDAMENTAL_COLUMNS.items():
-        if column in frame.columns:
-            features[name] = pd.to_numeric(frame[column], errors="coerce")
-    for name, prefix in WEATHER_PREFIXES.items():
-        columns = [c for c in frame.columns if c.startswith(prefix)]
-        if columns:
-            numeric = frame[columns].apply(pd.to_numeric, errors="coerce")
-            features[name] = numeric.mean(axis=1)
-    aggregated = pd.DataFrame(features)
-    ntc = ntc_features(frame)  # ntc_imp_total / ntc_exp_total, or empty if no NTC columns present
-    if not ntc.empty:
-        aggregated = pd.concat([aggregated, ntc], axis=1)
-    neighbours = neighbour_wind_block(
-        frame, "country_mean"
-    )  # nbr_wind_<cc>, or empty if none present
-    if not neighbours.empty:
-        aggregated = pd.concat([aggregated, neighbours], axis=1)
-    return aggregated
+
+    model: str
+    target_label: str
+    with_target: pd.Series
+    matrix: pd.DataFrame
+    n_rows: int
+    start: pd.Timestamp
+    end: pd.Timestamp
 
 
-def correlation_matrix(
-    features: pd.DataFrame, *, method: Literal["pearson", "kendall", "spearman"] = "pearson"
-) -> pd.DataFrame:
-    """Correlation matrix over the feature columns (pairwise-complete observations), price-first.
+def model_correlations(
+    spec: ModelSpec, frame: pd.DataFrame, *, top: int = CORRELATION_TOP
+) -> CorrelationResult:
+    """Correlate ``spec``'s own features with its target over the rows of ``frame`` with a target.
 
-    Known fundamentals/weather come first in :data:`FEATURE_ORDER`; any extra columns (the dynamic
-    ``nbr_wind_<cc>`` neighbour features) follow in their existing order.
+    Features with no variation in the window (constant, or entirely missing) have no defined
+    correlation and are left out. Correlations use pairwise-complete rows, so a feature that is
+    missing on some hours - the price lag at the start of the window - still counts on the rest.
     """
-    ordered = [name for name in FEATURE_ORDER if name in features.columns]
-    extra = [name for name in features.columns if name not in FEATURE_ORDER]
-    return features[ordered + extra].corr(method=method)
+    features = spec.build_features(frame)
+    target = capacity_scaled(spec, frame)
+    rows = target.notna().to_numpy()
+    if not rows.any():
+        raise ValueError(
+            f"No '{spec.target_column}' values to correlate the '{spec.name}' model with."
+        )
+    window = features[rows].apply(pd.to_numeric, errors="coerce")
+    varying = [column for column in window.columns if window[column].nunique(dropna=True) > 1]
+    window = window[varying]
+    with_target = window.corrwith(target[rows]).dropna()
+    with_target = with_target.reindex(with_target.abs().sort_values(ascending=False).index)
+    strongest = list(with_target.index[:top])
+    label = _TARGET_LABELS.get(spec.name, spec.target_column)
+    with_label = pd.concat([target[rows].rename(label), window[strongest]], axis=1)
+    times = pd.to_datetime(frame.loc[rows, TIMESTAMP], utc=True)
+    logger.info(
+        "[correlation] %s: %d features over %d rows", spec.name, len(with_target), rows.sum()
+    )
+    return CorrelationResult(
+        model=spec.name,
+        target_label=label,
+        with_target=with_target,
+        matrix=with_label.corr(),
+        n_rows=int(rows.sum()),
+        start=times.min(),
+        end=times.max(),
+    )
 
 
-def correlations_with(corr: pd.DataFrame, target: str) -> pd.Series:
-    """Each feature's correlation with ``target``, strongest first by absolute value (target dropped)."""
-    if target not in corr.columns:
-        return pd.Series(dtype="float64")
-    series = corr[target].drop(labels=[target])
-    return series.reindex(series.abs().sort_values(ascending=False).index)
+def save_correlation_csv(result: CorrelationResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
+    """Write every feature's correlation with the target to ``correlation_<model>.csv``.
 
-
-def order_by_target(corr: pd.DataFrame, target: str = "price") -> pd.DataFrame:
-    """Reorder the matrix so ``target`` is first, then the rest by descending ``|corr with target|``.
-
-    Gives a heatmap read top-to-bottom from the strongest price driver to the weakest, rather than the
-    fixed fundamentals-then-weather grouping. Returns ``corr`` unchanged if ``target`` is absent.
+    The figure shows only the strongest few; the CSV keeps the full ranking, strongest first, so
+    nothing is lost.
     """
-    if target not in corr.columns:
-        return corr
-    order = [target, *correlations_with(corr, target).index]
-    return corr.loc[order, order]
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / f"correlation_{result.model}.csv"
+    table = pd.DataFrame(
+        {"feature": result.with_target.index, "correlation": result.with_target.round(4).to_numpy()}
+    )
+    table.to_csv(path, index=False)
+    return path

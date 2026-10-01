@@ -114,12 +114,26 @@ These commands produce maps and correlations under `data/analysis/`:
 ```bash
 eex points map
 eex points neighbours map
-eex analyze correlation
+eex analyze correlation                     # all four models; --target price for one
 ```
 
 The maps verify that wind reaches the offshore zones and that selected points cover plausible regions.
-The correlation matrix is useful for orientation, but correlation alone is not evidence that a feature
-improves held-out MAE.
+
+`eex analyze correlation` correlates each model's own features - built by the model's feature
+builder, so exactly what it trains on - with its target: the capacity factor for wind and solar, the
+raw value for load and price. Each `correlation_<model>.png` shows the 15 strongest features'
+correlation with the target as bars, beside a matrix of the target and those features correlated
+with each other. The target is the matrix's first row and column, so it reads on its own, and the
+pairwise part exposes near-duplicates (for example, `irr_solar` and `irr_solar_sum` at exactly
+1.00).
+`correlation_<model>.csv` keeps the full ranking. `--start` / `--end` limit the window (default: all
+data).
+
+Correlation is useful for orientation, but it is not evidence that a feature improves held-out MAE,
+and it looks at one feature at a time. SHAP shows how a model actually uses a feature given the
+others: the week-earlier price is the price model's strongest correlate (+0.55) yet only the ninth
+of its SHAP feature families, because load, sunshine, and wind already carry most of that
+information.
 
 ## Aggregation
 
