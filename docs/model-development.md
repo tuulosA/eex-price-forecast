@@ -182,6 +182,10 @@ not evidence that imperfect fundamentals are intrinsically better than actuals.
 - Open-Meteo historical forecasts stitch short, near-actual run segments. ECMWF is generally already
   strong at D+1/D+2, so the D+1 optimism is likely modest, but these results make no multi-day accuracy
   claim.
+- There is no live track record, by choice. True out-of-sample error would require archiving each
+  run's published forecast and scoring it against later-settled prices over months of routine daily or
+  weekly runs; the project does not do this. All figures here are relative development benchmarks, not
+  expected production accuracy.
 
 ### Oracle attribution
 
