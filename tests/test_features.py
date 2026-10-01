@@ -492,3 +492,11 @@ def test_price_features_adopts_country_mean_neighbours() -> None:
     # ... and 'none' is exactly production minus those neighbour columns.
     none = price_features_with_neighbours(frame, neighbour_strategy="none")
     assert set(prod.columns) - set(none.columns) == {"nbr_wind_dk", "nbr_wind_nl"}
+
+
+def test_model_weather_roles_are_every_role_except_the_unadopted_gti() -> None:
+    """GTI is fetched for experiments but read by no model; every other registered role is used."""
+    from eex_forecast.features import MODEL_WEATHER_ROLES, WEATHER_AGGREGATES
+
+    assert set(WEATHER_AGGREGATES) - MODEL_WEATHER_ROLES == {"gti_solar"}
+    assert set(WEATHER_AGGREGATES) >= MODEL_WEATHER_ROLES

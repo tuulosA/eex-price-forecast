@@ -23,7 +23,7 @@ from eex_forecast.forecast import (
     run_forecast,
 )
 from eex_forecast.model import ALL_MODELS, REGISTRY, train
-from eex_forecast.plots import _forward_only
+from eex_forecast.plots import _forward_only, plot_features, raw_feature_panels
 
 TINY = {
     "n_estimators": 15,
@@ -111,6 +111,56 @@ def test_run_forecast_fills_fundamentals_then_price(
     assert (tmp_path / "out" / "forecast.png").exists()  # price plot
     assert (tmp_path / "out" / "fundamentals.png").exists()  # wind/solar/load plot
     assert (tmp_path / "out" / "drivers.png").exists()  # per-driver-group dashboard
+    assert (tmp_path / "out" / "features.png").exists()  # raw-input sanity check
+
+
+def test_raw_feature_panels_group_configured_columns_and_skip_stale_ones() -> None:
+    """Only configured points the models read are drawn: no retired anchor, no fetched-only GTI."""
+    frame = make_timeseries(periods=48).assign(
+        ws_de99=1.0,  # not in config/weather_points.json
+        gti_ghi_de01=500.0,  # a configured point, but GTI feeds no model
+        nuclear_available_mw=40_000.0,
+        ntc_imp_fr=3_000.0,
+        ntc_exp_fr=2_500.0,
+    )
+    panels = dict(raw_feature_panels(frame))
+    assert panels["wind speed 100 m, wind points (m/s)"] == ["ws_de01", "ws_de02"]
+    assert panels["GHI, solar points (W/m2)"] == ["ghi_de01"]
+    assert panels["nuclear availability (MW)"] == ["nuclear_available_mw"]
+    assert panels["transfer capacity into DE, per border (MW)"] == ["ntc_imp_fr"]
+    assert panels["transfer capacity out of DE, per border (MW)"] == ["ntc_exp_fr"]
+    assert all("ws_de99" not in columns for columns in panels.values())
+    assert all("gti_ghi_de01" not in columns for columns in panels.values())
+    assert not any(title.startswith("GTI") for title in panels)
+
+
+def test_features_plot_is_bare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A sanity check, not a chart to read: one panel per group, no gridlines, no legends."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    frame = make_timeseries(periods=24 * 5)
+    times = pd.to_datetime(frame["timestamp"], utc=True)
+    captured: list[object] = []
+    original = plt.subplots
+
+    def spy(*args: object, **kwargs: object) -> object:
+        figure, axes = original(*args, **kwargs)
+        captured.append(axes)
+        return figure, axes
+
+    monkeypatch.setattr(plt, "subplots", spy)
+    plot_features(frame, times, times.iloc[60], tmp_path / "features.png")
+
+    assert (tmp_path / "features.png").exists()
+    axes = list(np.asarray(captured[0]).ravel())
+    assert len(axes) == len(raw_feature_panels(frame))
+    for ax in axes:
+        gridlines = ax.get_xgridlines() + ax.get_ygridlines()  # type: ignore[attr-defined]
+        assert not any(line.get_visible() for line in gridlines)
+        assert ax.get_legend() is None  # type: ignore[attr-defined]
 
 
 def test_last_complete_market_day_cut_drops_partial_day() -> None:

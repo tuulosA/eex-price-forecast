@@ -40,6 +40,7 @@ from eex_forecast.plots import (
     numeric_column,
     plot_drivers,
     plot_ensemble,
+    plot_features,
     plot_forecast,
     plot_fundamentals,
 )
@@ -392,6 +393,7 @@ def run_forecast(
         plot_forecast(frame, times, split, FORECAST_DIR / "forecast.png")
         plot_fundamentals(frame, times, FORECAST_DIR / "fundamentals.png")
         plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
+        plot_features(frame, times, now, FORECAST_DIR / "features.png")
         if summary is not None and not summary.empty:
             plot_ensemble(
                 frame, times, split, FORECAST_DIR / "forecast_ensemble.png", summary=summary

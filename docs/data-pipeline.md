@@ -261,7 +261,11 @@ load. Actual columns are populated only where measurements exist.
 
 - `forecast.png`: settled price followed by genuinely out-of-sample price;
 - `fundamentals.png`: wind, solar, and load actual/forecast series;
-- `drivers.png`: weather and cross-border driver panels.
+- `drivers.png`: weather and cross-border driver panels;
+- `features.png`: every raw column a model reads, exactly as stored (each weather point by role,
+  neighbour wind, nuclear, and per-border NTC), with no aggregation or radiation alignment. Fetched
+  but unadopted inputs such as GTI are left out. It is a bare sanity check for gaps, stuck or
+  implausible values, and breaks at the history/forecast boundary.
 
 `--write-db` additionally stores forecasts in the separate forecast columns of SQLite.
 
