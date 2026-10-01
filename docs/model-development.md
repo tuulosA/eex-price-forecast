@@ -1057,7 +1057,7 @@ Before changing a production feature/model:
   | Wind | 1,504.538 MW | 1,803.702 MW | 2,203.244 MW |
   | Solar | 847.183 MW | 1,373.845 MW | 2,177.160 MW |
   | Load | 1,488.821 MW | 1,848.801 MW | 2,107.155 MW |
-  | Price | 11.327 EUR/MWh | 26.814 EUR/MWh | 39.977 EUR/MWh |
+  | Price | 11.327 EUR/MWh | 26.814 EUR/MWh | 39.976 EUR/MWh |
 
   The development rerun on the refactored code reproduced the committed report exactly. The price
   gap is mostly the days, not a defect: holdout prices have about twice the mean intraday standard

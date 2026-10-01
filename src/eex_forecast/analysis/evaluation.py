@@ -97,10 +97,16 @@ class ModelEval:
 
 @dataclass(frozen=True, slots=True)
 class EvaluationResult:
-    """A completed end-to-end frozen-cutoff evaluation plus its serialisable report."""
+    """A completed end-to-end frozen-cutoff evaluation plus its serialisable report.
+
+    ``hourly`` holds the first seed's scored rows - ``delivery_day``, ``timestamp``, and each model's
+    actual and forecast column - for :func:`plot_evaluation_days`. It is kept off the JSON report so
+    the report schema stays unchanged and compact.
+    """
 
     models: list[ModelEval]
     report: dict[str, Any]
+    hourly: pd.DataFrame
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,36 +251,70 @@ def _price_scenario_fold(
     score_window: pd.Series | None = None,
 ) -> dict[str, Any] | None:
     """Score price after replacing the chosen held-out actual fundamentals with their forecasts."""
-    scenario_frame = prepared.frame.copy()
-    for name in forecast_fundamentals:
-        scenario_frame.loc[prepared.window, REGISTRY[name].target_column] = np.nan
-    price_spec = REGISTRY["price"]
-    price_prediction = prepared.price_model.predict(scenario_frame)
     return _fold_error(
-        price_spec,
+        REGISTRY["price"],
         original_frame,
         prepared.times,
         prepared.window if score_window is None else score_window,
-        price_prediction,
+        _price_scenario_prediction(prepared, forecast_fundamentals),
         delivery_day,
     )
+
+
+def _price_scenario_prediction(
+    prepared: _PreparedFold, forecast_fundamentals: tuple[str, ...]
+) -> pd.Series:
+    """Price predicted after hiding the chosen fundamentals' held-out actuals behind their forecasts."""
+    scenario_frame = prepared.frame.copy()
+    for name in forecast_fundamentals:
+        scenario_frame.loc[prepared.window, REGISTRY[name].target_column] = np.nan
+    return prepared.price_model.predict(scenario_frame)
+
+
+def _fold_hourly(
+    prepared: _PreparedFold, original_frame: pd.DataFrame, price: pd.Series, delivery_day: str
+) -> pd.DataFrame:
+    """The held-out window's actual and forecast value per model, for plotting a delivery day.
+
+    Actuals come from ``original_frame``, the unmodified input; the fundamentals' forecasts are the
+    fold's freshly fitted ones written into the fold frame, and price is the all-forecast prediction.
+    """
+    window = prepared.window.to_numpy()
+    rows: dict[str, Any] = {
+        "delivery_day": delivery_day,
+        TIMESTAMP: prepared.times[window].to_numpy(),
+    }
+    for name in ALL_MODELS:
+        spec = REGISTRY[name]
+        rows[spec.target_column] = pd.to_numeric(
+            original_frame.loc[window, spec.target_column], errors="coerce"
+        ).to_numpy()
+        source = price if name == "price" else prepared.frame[spec.forecast_column]
+        rows[spec.forecast_column] = pd.to_numeric(source[window], errors="coerce").to_numpy()
+    return pd.DataFrame(rows)
 
 
 def _pipeline_fold(
     frame: pd.DataFrame,
     params_by_model: dict[str, dict[str, Any]],
     delivery_day: str,
-) -> dict[str, dict[str, Any]] | None:
-    """Fit and score the standard all-forecast sub-models -> price chain for one delivery day."""
+) -> tuple[dict[str, dict[str, Any]], pd.DataFrame] | None:
+    """Fit and score the standard all-forecast sub-models -> price chain for one delivery day.
+
+    Returns each model's metrics plus the window's hourly actual/forecast rows (see
+    :func:`_fold_hourly`), or ``None`` when the fold is unusable.
+    """
     prepared = _prepare_fold(frame, params_by_model, delivery_day)
     if prepared is None:
         return None
-    price_metrics = _price_scenario_fold(
-        prepared, frame, delivery_day, ORACLE_SCENARIOS["forecast_all"]
+    price = _price_scenario_prediction(prepared, ORACLE_SCENARIOS["forecast_all"])
+    price_metrics = _fold_error(
+        REGISTRY["price"], frame, prepared.times, prepared.window, price, delivery_day
     )
     if price_metrics is None:
         return None
-    return {**prepared.fundamental_metrics, "price": price_metrics}
+    metrics = {**prepared.fundamental_metrics, "price": price_metrics}
+    return metrics, _fold_hourly(prepared, frame, price, delivery_day)
 
 
 def _evaluate_seed(
@@ -284,12 +324,13 @@ def _evaluate_seed(
     *,
     seed_number: int,
     n_seeds: int,
-) -> dict[str, dict[str, Any]]:
-    """Run every cutoff for one common XGBoost seed and aggregate each model's folds."""
+) -> tuple[dict[str, dict[str, Any]], pd.DataFrame]:
+    """Run every cutoff for one common XGBoost seed; aggregate each model's folds and hourly rows."""
     folds_by_model: dict[str, list[dict[str, Any]]] = {name: [] for name in ALL_MODELS}
+    hourly: list[pd.DataFrame] = []
     for cutoff_number, delivery_day in enumerate(cutoffs, start=1):
-        fold = _pipeline_fold(frame, params_by_model, delivery_day)
-        if fold is None:
+        scored = _pipeline_fold(frame, params_by_model, delivery_day)
+        if scored is None:
             logger.warning(
                 "[eval] seed %d/%d | cutoff %d/%d %s unusable - skipped",
                 seed_number,
@@ -299,6 +340,8 @@ def _evaluate_seed(
                 delivery_day,
             )
             continue
+        fold, fold_hourly = scored
+        hourly.append(fold_hourly)
         for name in ALL_MODELS:
             folds_by_model[name].append(fold[name])
         logger.info(
@@ -322,7 +365,7 @@ def _evaluate_seed(
             "mean_rmse": float(np.mean([fold["rmse"] for fold in folds])),
             "folds": folds,
         }
-    return result
+    return result, pd.concat(hourly, ignore_index=True)
 
 
 def _oracle_fold(
@@ -459,11 +502,12 @@ def run_evaluation(
     )
 
     by_seed: list[dict[str, dict[str, Any]]] = []
+    first_hourly: pd.DataFrame | None = None
     for index, seed in enumerate(seed_values):
         seeded_params = {
             name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
         }
-        evaluated = _evaluate_seed(
+        evaluated, hourly = _evaluate_seed(
             frame,
             seeded_params,
             cutoffs,
@@ -471,6 +515,8 @@ def run_evaluation(
             n_seeds=len(seed_values),
         )
         by_seed.append(evaluated)
+        if first_hourly is None:
+            first_hourly = hourly  # plots show one coherent seed, like the report's folds
         if len(seed_values) > 1:
             logger.info(
                 "[eval] seed %d/%d | wind %.3f | solar %.3f | load %.3f | price %.3f",
@@ -539,7 +585,8 @@ def run_evaluation(
             for evaluation in results
         ],
     }
-    return EvaluationResult(results, report)
+    assert first_hourly is not None  # seed_list always yields at least one seed
+    return EvaluationResult(results, report, first_hourly)
 
 
 def run_oracle_diagnostics(
@@ -686,14 +733,92 @@ def _resolve_cutoffs(cutoff_set: str, cutoffs: tuple[str, ...] | None) -> tuple[
     return CUTOFF_SETS[cutoff_set] if cutoffs is None else cutoffs
 
 
-def report_filename(stem: str, cutoff_set: str) -> str:
+def report_filename(stem: str, cutoff_set: str, suffix: str = ".json") -> str:
     """``<stem>.json`` for the development set, ``<stem>_holdout.json`` for the holdout.
 
     The development reports keep their historical names, so every existing comparison and link still
     points at the same file; the holdout gets its own, so a reporting run can never overwrite the
-    development record a decision was based on.
+    development record a decision was based on. ``suffix`` lets the day plots follow the same rule.
     """
-    return f"{stem}.json" if cutoff_set == DEVELOPMENT else f"{stem}_{HOLDOUT}.json"
+    return f"{stem}{suffix}" if cutoff_set == DEVELOPMENT else f"{stem}_{HOLDOUT}{suffix}"
+
+
+EVAL_DAYS_PLOT = "eval_days"
+_PLOT_COLUMNS = 3
+
+
+def plot_evaluation_days(result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
+    """Draw every scored delivery day's actual and D+1 forecast price, one small panel per day.
+
+    A mean MAE says how far off the forecast is on average, not what it looks like: whether it follows
+    the day's shape (the morning and evening peaks, the midday solar dip) and which days it misses
+    entirely. Small multiples answer that at a glance. Each panel is one delivery day in chronological
+    order, titled with its weekday and that day's MAE, and drawn in the same encoding as
+    ``forecast.png``: the actual price black and on top, the forecast in matplotlib's default blue.
+
+    Panels deliberately do **not** share a y-axis. Day ranges differ by an order of magnitude (a calm
+    winter weekday spans ~60 EUR/MWh, a spring holiday can fall to -500), and one shared scale would
+    flatten every ordinary day into a line. The x-axis is hours since the local delivery-day start, so
+    23- and 25-hour DST days keep their true length. Written to ``eval_days[_holdout].png``.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    price = REGISTRY["price"]
+    hourly = result.hourly
+    days = list(dict.fromkeys(hourly["delivery_day"]))
+    folds = next(model for model in result.models if model.model == "price").folds
+    day_mae = {fold["delivery_day"]: fold["mae"] for fold in folds}
+    rows = -(-len(days) // _PLOT_COLUMNS)
+    fig, axes = plt.subplots(
+        rows, _PLOT_COLUMNS, figsize=(12.0, 2.1 * rows + 1.2), sharex=True, squeeze=False
+    )
+    for ax, day in zip(axes.flat, days, strict=False):
+        rows_for_day = hourly[hourly["delivery_day"] == day]
+        elapsed = (
+            pd.to_datetime(rows_for_day[TIMESTAMP], utc=True) - cutoff_utc(day)
+        ) / pd.Timedelta(hours=1)
+        ax.axhline(0.0, color="0.8", linewidth=0.8, zorder=1)
+        ax.plot(elapsed, rows_for_day[price.forecast_column], color="C0", linewidth=1.5, zorder=4)
+        ax.plot(elapsed, rows_for_day[price.target_column], color="black", linewidth=1.4, zorder=5)
+        label = pd.Timestamp(day).strftime("%a %d %b %Y")
+        ax.set_title(f"{label} | MAE {day_mae[day]:.1f}", loc="left", fontsize=9)
+        ax.grid(True, color="0.92")
+        ax.tick_params(labelsize=8)
+    for ax in axes.flat[len(days) :]:
+        ax.set_visible(False)
+    for ax in axes[:, 0]:
+        ax.set_ylabel("EUR / MWh", fontsize=8)
+    for ax in axes[-1, :]:
+        ax.set_xticks([0, 6, 12, 18, 24])
+        ax.set_xlabel("hour of delivery day (Europe/Berlin)", fontsize=8)
+        ax.tick_params(labelbottom=True)
+
+    cutoff_set = str(result.report["config"]["cutoff_set"])
+    summary = result.report["summary"]["price"]
+    fig.suptitle(
+        f"{cutoff_set.capitalize()} days: actual vs D+1 forecast price "
+        f"(MAE {summary['mae']:.1f} EUR/MWh over {len(days)} days; y-axes differ per day)",
+        fontsize=11,
+    )
+    fig.legend(
+        handles=[
+            matplotlib.lines.Line2D([], [], color="black", linewidth=1.4, label="actual"),
+            matplotlib.lines.Line2D([], [], color="C0", linewidth=1.5, label="forecast"),
+        ],
+        loc="upper right",
+        ncol=2,
+        fontsize=9,
+        frameon=False,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    path = reports_dir / report_filename(EVAL_DAYS_PLOT, cutoff_set, ".png")
+    fig.savefig(path, dpi=120)
+    plt.close(fig)
+    return path
 
 
 def _save_report(report: dict[str, Any], stem: str, reports_dir: Path) -> Path:

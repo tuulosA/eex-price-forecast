@@ -196,7 +196,7 @@ eex analyze ablation --target price         # remove features and measure the ch
 eex analyze aggregation wind                # compare weather representations
 eex analyze anchors wind                    # compare anchor selections (also load / solar)
 eex model tune --target wind                # Optuna tuning with incumbent protection
-eex analyze eval --holdout                  # report on the untouched holdout days
+eex analyze eval --holdout --plot           # report on the untouched holdout days
 ```
 
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
@@ -205,14 +205,19 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 
 | Model | MAE | RMSE |
 |---|---:|---:|
-| Wind | 1,803.702 MW | 2,203.244 MW |
-| Solar | 1,373.845 MW | 2,177.160 MW |
-| Load | 1,848.801 MW | 2,107.155 MW |
-| Price | 26.814 EUR/MWh | 39.977 EUR/MWh |
+| Wind | 1,803.70 MW | 2,203.24 MW |
+| Solar | 1,373.84 MW | 2,177.16 MW |
+| Load | 1,848.80 MW | 2,107.15 MW |
+| Price | 26.81 EUR/MWh | 39.98 EUR/MWh |
+
+![Actual vs D+1 forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
+
+> Each panel is one holdout day: the actual price in black, the D+1 forecast in blue, each on its
+> own y-scale. Written by `eex analyze eval --holdout --plot`.
 
 Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
 666 EUR/MWh peak on 24 June. Those three account for 40% of the price error; without them the MAE is
-19.259 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+19.26 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
 
 Even the holdout figure is **optimistic** as a measure of live forecast error:
 
