@@ -212,11 +212,13 @@ eex analyze eval --holdout --plot           # ...and draw each day's actual vs f
 
 Each fold forecasts wind, solar, and load before price. The reports at
 `data/evaluation/model_eval.json` (development) and `model_eval_holdout.json` (holdout) contain
-per-cutoff details and headline MAE/RMSE, and record which set they scored. `--plot` adds
-`eval_days.png` / `eval_days_holdout.png`: one panel per scored day, actual price against the D+1
-forecast, each on its own y-scale, so a reader can see whether the daily profile is caught and which
-days are missed outright. Fundamental metrics are
-in MW and price metrics are in EUR/MWh; only compare runs of the same target, on the same set.
+per-cutoff details and headline MAE/RMSE, and record which set they scored. `--plot` adds one figure
+per model - `eval_days[_holdout].png` for price and `eval_days_<wind|solar|load>[_holdout].png` for
+the fundamentals: one panel per scored day, actual against the D+1 forecast, each on its own
+y-scale, so a reader can see whether the daily profile is caught and which days are missed
+outright. The fundamentals' forecasts are the fold's fresh sub-model forecasts, the same ones the
+price model was given. Fundamental metrics are in MW and price metrics are in EUR/MWh; only compare
+runs of the same target, on the same set.
 
 The adopted configuration on the 18 holdout days, the out-of-sample headline, is:
 

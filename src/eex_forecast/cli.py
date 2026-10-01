@@ -46,7 +46,7 @@ from eex_forecast.analysis import (
     aggregation,
     correlation_matrix,
     evaluation,
-    plot_evaluation_days,
+    plot_all_evaluation_days,
     plot_points_map,
     save_heatmap,
 )
@@ -1054,7 +1054,9 @@ def analyze_eval(
     holdout: _HoldoutOpt = False,
     plot: Annotated[
         bool,
-        typer.Option(help="Also draw each scored day's actual vs forecast price (eval_days*.png)."),
+        typer.Option(
+            help="Also draw each scored day's actual vs forecast, per model (eval_days*.png)."
+        ),
     ] = False,
 ) -> None:
     """Backtest the complete sub-models -> price pipeline and report per-model 24h MAE.
@@ -1079,7 +1081,7 @@ def analyze_eval(
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)
-    plot_path = plot_evaluation_days(result) if plot else None
+    plot_paths = plot_all_evaluation_days(result) if plot else []
 
     typer.echo(
         f"Frozen-cutoff eval, {result.report['config']['cutoff_set']} set "
@@ -1093,7 +1095,7 @@ def analyze_eval(
             f"RMSE {model_eval.mean_rmse:.3f} | {model_eval.n_cutoffs} cutoffs"
         )
     typer.echo(f"  report -> {path}")
-    if plot_path is not None:
+    for plot_path in plot_paths:
         typer.echo(f"  plot   -> {plot_path}")
 
 
