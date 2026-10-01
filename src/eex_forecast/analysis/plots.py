@@ -17,11 +17,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from eex_forecast.analysis.evaluation import EvaluationResult, report_filename
+from eex_forecast.analysis.evaluation import EVAL_UNITS, EvaluationResult, report_filename
 from eex_forecast.backtest_cutoffs import cutoff_utc
 from eex_forecast.config import EVALUATION_DIR
 from eex_forecast.features import TIMESTAMP
-from eex_forecast.model import REGISTRY
+from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather.candidates import Candidate, Ring
 from eex_forecast.weather.point_search import SelectedPoint
 
@@ -156,31 +156,54 @@ def save_heatmap(
 # -- evaluation day panels (eex analyze eval --plot) ---------------------------------------
 EVAL_DAYS_PLOT = "eval_days"
 _PLOT_COLUMNS = 3
+# Forecast colour per model, matching the forecast product's plots (price C0; wind/solar/load the
+# tab10 blue/orange/red of fundamentals.png). The actual is always black and drawn on top.
+_EVAL_DAY_COLORS: dict[str, str] = {"price": "C0", "wind": "C0", "solar": "C1", "load": "C3"}
+# Models whose zero is a meaningful level - negative prices, solar's night - get a zero reference line.
+# Drawing it for load or wind would pull every axis down to 0 and squeeze a 40-60 GW day into a strip.
+_EVAL_DAY_ZERO_LINE = frozenset({"price", "solar"})
 
 
-def plot_evaluation_days(result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR) -> Path:
-    """Draw every scored delivery day's actual and D+1 forecast price, one small panel per day.
+def eval_days_filename(model: str, cutoff_set: str) -> str:
+    """``eval_days[_<model>][_holdout].png``: price keeps the bare name the README links to."""
+    stem = EVAL_DAYS_PLOT if model == "price" else f"{EVAL_DAYS_PLOT}_{model}"
+    return report_filename(stem, cutoff_set, ".png")
+
+
+def _format_error(value: float, unit: str) -> str:
+    """One decimal for EUR/MWh; whole numbers with thousands separators for MW."""
+    return f"{value:,.0f}" if unit == "MW" else f"{value:.1f}"
+
+
+def plot_evaluation_days(
+    result: EvaluationResult, *, model: str = "price", reports_dir: Path = EVALUATION_DIR
+) -> Path:
+    """Draw every scored delivery day's actual and D+1 forecast for ``model``, one panel per day.
 
     A mean MAE says how far off the forecast is on average, not what it looks like: whether it follows
-    the day's shape (the morning and evening peaks, the midday solar dip) and which days it misses
-    entirely. Small multiples answer that at a glance. Each panel is one delivery day in chronological
-    order, titled with its weekday and that day's MAE, and drawn in the same encoding as
-    ``forecast.png``: the actual price black and on top, the forecast in matplotlib's default blue.
+    the day's shape (for price the morning and evening peaks and the midday solar dip; for solar the
+    daylight curve; for wind the timing of a front) and which days it misses entirely. Small multiples
+    answer that at a glance. Each panel is one delivery day in chronological order, titled with its
+    weekday and that day's MAE: the actual black and on top, the forecast in the model's colour from
+    the forecast plots. The wind, solar, and load forecasts are the fold's fresh sub-model forecasts -
+    the same ones the price model was given.
 
     Panels deliberately do **not** share a y-axis. Day ranges differ by an order of magnitude (a calm
     winter weekday spans ~60 EUR/MWh, a spring holiday can fall to -500), and one shared scale would
     flatten every ordinary day into a line. The x-axis is hours since the local delivery-day start, so
-    23- and 25-hour DST days keep their true length. Written to ``eval_days[_holdout].png``.
+    23- and 25-hour DST days keep their true length. Written to :func:`eval_days_filename`.
     """
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    price = REGISTRY["price"]
+    spec = REGISTRY[model]
+    unit = EVAL_UNITS[model]
+    color = _EVAL_DAY_COLORS.get(model, "C0")
     hourly = result.hourly
     days = list(dict.fromkeys(hourly["delivery_day"]))
-    folds = next(model for model in result.models if model.model == "price").folds
+    folds = next(evaluated for evaluated in result.models if evaluated.model == model).folds
     day_mae = {fold["delivery_day"]: fold["mae"] for fold in folds}
     rows = -(-len(days) // _PLOT_COLUMNS)
     fig, axes = plt.subplots(
@@ -191,33 +214,35 @@ def plot_evaluation_days(result: EvaluationResult, *, reports_dir: Path = EVALUA
         elapsed = (
             pd.to_datetime(rows_for_day[TIMESTAMP], utc=True) - cutoff_utc(day)
         ) / pd.Timedelta(hours=1)
-        ax.axhline(0.0, color="0.8", linewidth=0.8, zorder=1)
-        ax.plot(elapsed, rows_for_day[price.forecast_column], color="C0", linewidth=1.5, zorder=4)
-        ax.plot(elapsed, rows_for_day[price.target_column], color="black", linewidth=1.4, zorder=5)
+        if model in _EVAL_DAY_ZERO_LINE:
+            ax.axhline(0.0, color="0.8", linewidth=0.8, zorder=1)
+        ax.plot(elapsed, rows_for_day[spec.forecast_column], color=color, linewidth=1.5, zorder=4)
+        ax.plot(elapsed, rows_for_day[spec.target_column], color="black", linewidth=1.4, zorder=5)
         label = pd.Timestamp(day).strftime("%a %d %b %Y")
-        ax.set_title(f"{label} | MAE {day_mae[day]:.1f}", loc="left", fontsize=9)
+        ax.set_title(f"{label} | MAE {_format_error(day_mae[day], unit)}", loc="left", fontsize=9)
         ax.grid(True, color="0.92")
         ax.tick_params(labelsize=8)
     for ax in axes.flat[len(days) :]:
         ax.set_visible(False)
     for ax in axes[:, 0]:
-        ax.set_ylabel("EUR / MWh", fontsize=8)
+        ax.set_ylabel(unit.replace("EUR/MWh", "EUR / MWh"), fontsize=8)
     for ax in axes[-1, :]:
         ax.set_xticks([0, 6, 12, 18, 24])
         ax.set_xlabel("hour of delivery day (Europe/Berlin)", fontsize=8)
         ax.tick_params(labelbottom=True)
 
     cutoff_set = str(result.report["config"]["cutoff_set"])
-    summary = result.report["summary"]["price"]
+    summary = result.report["summary"][model]
     fig.suptitle(
-        f"{cutoff_set.capitalize()} days: actual vs D+1 forecast price "
-        f"(MAE {summary['mae']:.1f} EUR/MWh over {len(days)} days; y-axes differ per day)",
+        f"{cutoff_set.capitalize()} days: actual vs D+1 forecast {model} "
+        f"(MAE {_format_error(summary['mae'], unit)} {unit} over {len(days)} days; "
+        "y-axes differ per day)",
         fontsize=11,
     )
     fig.legend(
         handles=[
             matplotlib.lines.Line2D([], [], color="black", linewidth=1.4, label="actual"),
-            matplotlib.lines.Line2D([], [], color="C0", linewidth=1.5, label="forecast"),
+            matplotlib.lines.Line2D([], [], color=color, linewidth=1.5, label="forecast"),
         ],
         loc="upper right",
         ncol=2,
@@ -226,7 +251,15 @@ def plot_evaluation_days(result: EvaluationResult, *, reports_dir: Path = EVALUA
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
     reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / report_filename(EVAL_DAYS_PLOT, cutoff_set, ".png")
+    path = reports_dir / eval_days_filename(model, cutoff_set)
     fig.savefig(path, dpi=120)
     plt.close(fig)
     return path
+
+
+def plot_all_evaluation_days(
+    result: EvaluationResult, *, reports_dir: Path = EVALUATION_DIR
+) -> list[Path]:
+    """:func:`plot_evaluation_days` for every model the eval scored, price first."""
+    order = ["price", *(name for name in ALL_MODELS if name != "price")]
+    return [plot_evaluation_days(result, model=name, reports_dir=reports_dir) for name in order]

@@ -19,7 +19,7 @@ from eex_forecast.analysis.evaluation import (
     save_evaluation_report,
     save_oracle_report,
 )
-from eex_forecast.analysis.plots import plot_evaluation_days
+from eex_forecast.analysis.plots import plot_all_evaluation_days, plot_evaluation_days
 from eex_forecast.backtest_cutoffs import DEVELOPMENT, HOLDOUT, cutoff_utc, horizon_end_utc
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY, SUBMODELS
@@ -138,6 +138,15 @@ def test_evaluation_keeps_hourly_rows_and_plots_each_day(tmp_path: Path) -> None
 
     path = plot_evaluation_days(result, reports_dir=tmp_path)
     assert path.name == "eval_days_holdout.png" and path.stat().st_size > 0
+    # Every model gets its own figure; price keeps the bare name the README links to.
+    names = [p.name for p in plot_all_evaluation_days(result, reports_dir=tmp_path)]
+    assert names == [
+        "eval_days_holdout.png",
+        "eval_days_wind_holdout.png",
+        "eval_days_solar_holdout.png",
+        "eval_days_load_holdout.png",
+    ]
+    assert all((tmp_path / name).stat().st_size > 0 for name in names)
 
 
 def test_named_cutoff_sets_resolve_to_the_frozen_days() -> None:
