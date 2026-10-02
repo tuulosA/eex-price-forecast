@@ -1144,6 +1144,30 @@ Before changing a production feature/model:
     --breakdown` (`data/evaluation/model_eval_breakdown.json`). Run as a report on the holdout, the
     same pattern appears and stronger: price bias -8.30 EUR/MWh (+57.42 in negative hours, -177.35
     in spikes, daily level 12% of the error), solar +1,222.84 MW, and load -634.03 MW.
+- Tested residual load (load minus wind and solar) for the price model, the experiment the breakdown
+  pointed to (`eex analyze residual-load`): five variants added to the production price features,
+  scored on the 92 development days with actual fundamentals, three seeds, and a day-level bootstrap
+  of the difference from production. **No variant gave a reliable gain:**
+
+  | Added to production | Price MAE | vs production (90% over days) | Better on |
+  |---|---:|---|---:|
+  | all four below | 15.004 | -0.315 [-0.867, +0.234] | 58% |
+  | + residual load net of nuclear and imports | 15.166 | -0.152 [-0.639, +0.332] | 58% |
+  | + renewable share | 15.181 | -0.138 [-0.562, +0.293] | 58% |
+  | + position within the day | 15.259 | -0.059 [-0.547, +0.424] | 58% |
+  | residual load alone | 15.291 | -0.028 [-0.469, +0.417] | 54% |
+  | production | 15.319 | - | - |
+
+  Every interval includes zero, and the best variant is also the pick of five. Residual load alone
+  changed almost nothing, so the trees were already combining load, wind, and solar well. The
+  timidity did not respond either: against production, the best variant's bias was -5.65 vs -4.73
+  overall, -15.54 vs -12.92 in high-price hours, -15.19 vs -12.63 in the evening, and -163.34 vs
+  -167.34 in spikes. **The under-forecast in tight hours is not a missing input** - the model
+  already has what residual load encodes and still will not predict high enough. That points at the
+  model's form (squared-error leaves averaging toward the middle, capped extremes in training, rare
+  high-price hours), so the next experiment should target how the price target and loss are set up
+  rather than add features; fuel and carbon prices, being further inputs, also drop down the list.
+  No variant was adopted; the features stay experiment-only.
 
 ### 2026-10-01
 

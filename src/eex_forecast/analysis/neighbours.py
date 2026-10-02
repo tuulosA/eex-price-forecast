@@ -32,13 +32,17 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
-import numpy as np
 import pandas as pd
 
 from eex_forecast.analysis.anchors import (
     HistoryFetcher,
     WeatherAnchor,
     select_with_minimum_distance,
+)
+from eex_forecast.analysis.comparison import (
+    BOOTSTRAP_RESAMPLES,
+    day_means,
+    paired_day_bootstrap,
 )
 from eex_forecast.backtest_cutoffs import DAY_AHEAD_DAYS, DEV_CUTOFFS, horizon_end_utc
 from eex_forecast.config import (
@@ -61,7 +65,6 @@ DEFAULT_MIN_DISTANCE_KM = NEIGHBOUR_MIN_DISTANCE_KM  # production's spacing rule
 CACHE_DIR = WEATHER_CACHE_DIR / "neighbour_anchors"
 REPORT_NAME = "neighbour_anchor_experiment.json"
 _NEIGHBOUR_COLUMN = re.compile(r"^ws_([a-z]{2})(\d+)$")
-_BOOTSTRAP_RESAMPLES = 5000
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,43 +218,6 @@ def _is_neighbour_column(column: str) -> bool:
     return match is not None and match.group(1) != "de"
 
 
-def paired_day_bootstrap(
-    candidate: Mapping[str, float],
-    baseline: Mapping[str, float],
-    *,
-    resamples: int = _BOOTSTRAP_RESAMPLES,
-    seed: int = 0,
-) -> dict[str, float]:
-    """Mean per-day MAE difference (candidate - baseline) with a 90% interval over delivery days.
-
-    Days are resampled with replacement, keeping each day's candidate and baseline error together, so
-    the interval reflects how much the comparison depends on which days were sampled. Negative values
-    favour the candidate. ``share_better`` is the fraction of days the candidate wins outright.
-    """
-    days = sorted(set(candidate) & set(baseline))
-    if not days:
-        raise ValueError("No common delivery days to compare.")
-    deltas = np.array([candidate[day] - baseline[day] for day in days])
-    rng = np.random.default_rng(seed)
-    means = deltas[rng.integers(0, len(deltas), size=(resamples, len(deltas)))].mean(axis=1)
-    return {
-        "mean_delta": round(float(deltas.mean()), 4),
-        "ci90_low": round(float(np.quantile(means, 0.05)), 4),
-        "ci90_high": round(float(np.quantile(means, 0.95)), 4),
-        "share_better": round(float((deltas < 0).mean()), 4),
-        "n_days": len(days),
-    }
-
-
-def _day_means(folds_by_seed: Sequence[Sequence[Mapping[str, Any]]]) -> dict[str, float]:
-    """Each delivery day's MAE averaged over seeds."""
-    totals: dict[str, list[float]] = {}
-    for folds in folds_by_seed:
-        for fold in folds:
-            totals.setdefault(str(fold["delivery_day"]), []).append(float(fold["mae"]))
-    return {day: float(np.mean(values)) for day, values in totals.items()}
-
-
 def run_neighbour_count_analysis(
     frame: pd.DataFrame,
     *,
@@ -320,7 +286,7 @@ def run_neighbour_count_analysis(
                 "std_mae": round(metrics["std_mae"], 4),
                 "mean_rmse": round(metrics["mean_rmse"], 4),
                 "per_seed_mae": [round(v, 4) for v in metrics["per_seed_mae"]],
-                "day_mae": _day_means(metrics["folds_by_seed"]),
+                "day_mae": day_means(metrics["folds_by_seed"]),
                 "points": {
                     c: [asdict(a) for a in anchors] for c, anchors in variant.per_country.items()
                 },
@@ -352,7 +318,7 @@ def run_neighbour_count_analysis(
             "countries": countries,
             "n_cutoffs": len(cutoffs),
             "seeds": seed_values,
-            "bootstrap_resamples": _BOOTSTRAP_RESAMPLES,
+            "bootstrap_resamples": BOOTSTRAP_RESAMPLES,
             "params": parameters,
         },
         "cutoffs": list(cutoffs),

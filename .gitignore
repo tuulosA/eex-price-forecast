@@ -40,6 +40,7 @@ data/**
 !data/analysis/load_anchor_experiment.json
 !data/analysis/solar_anchor_experiment.json
 !data/analysis/neighbour_anchor_experiment.json
+!data/analysis/residual_load_experiment.json
 data/pytest_tmp/
 
 # OS / editor

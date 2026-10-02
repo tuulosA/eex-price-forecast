@@ -49,6 +49,8 @@ src/eex_forecast/
     aggregation.py     # A/B weather aggregation per fundamental + neighbour
     anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
     neighbours.py      # neighbour-wind points per country for price, with a day bootstrap
+    residual_load.py   # residual-load feature variants for price, with the regime-bias check
+    comparison.py      # shared per-day errors and day-level bootstrap for experiments
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
     breakdown.py       # systematic-error breakdown of an eval: bias by regime/hour/season/day type
     solar.py           # solar error slices + physics/irradiance feature A/B commands
