@@ -43,6 +43,91 @@ development:
   - "2026-06-17"  # Wed
   - "2026-07-07"  # Tue
 
+# development_extra - added 2026-10-01 to cut day-sampling noise in development comparisons. Unlike
+#   the hand-picked development stress set above, these are a systematic grid: every 17th day from
+#   2024-10-01 to 2026-09-30 (17 is not a multiple of 7, so the weekday rotates), skipping any day
+#   within the holdout buffer or within one day of an existing development day. Every tool uses the
+#   union of both lists; the original 22 remain available as DEV_CORE_CUTOFFS for comparing against
+#   reports made before the expansion.
+development_extra:
+  - "2024-10-01"  # Tue
+  - "2024-10-18"  # Fri
+  - "2024-11-04"  # Mon
+  - "2024-11-21"  # Thu
+  - "2024-12-08"  # Sun (weekend)
+  - "2024-12-25"  # Wed - Erster Weihnachtstag
+  - "2025-01-11"  # Sat (weekend)
+  - "2025-01-28"  # Tue
+  - "2025-02-14"  # Fri
+  - "2025-03-03"  # Mon
+  - "2025-04-06"  # Sun (weekend)
+  - "2025-04-23"  # Wed
+  - "2025-05-10"  # Sat (weekend)
+  - "2025-05-27"  # Tue
+  - "2025-06-30"  # Mon
+  - "2025-07-17"  # Thu
+  - "2025-08-03"  # Sun (weekend)
+  - "2025-08-20"  # Wed
+  - "2025-09-06"  # Sat (weekend)
+  - "2025-09-23"  # Tue
+  - "2025-10-10"  # Fri
+  - "2025-10-27"  # Mon
+  - "2025-11-13"  # Thu
+  - "2025-11-30"  # Sun (weekend)
+  - "2025-12-17"  # Wed
+  - "2026-01-20"  # Tue
+  - "2026-03-12"  # Thu
+  - "2026-05-19"  # Tue
+  - "2026-07-09"  # Thu
+  - "2026-09-15"  # Tue
+
+# development_confirmation - added 2026-10-02. Forty days drawn at random (seed 20261002) from the
+#   same window, again skipping the holdout buffer and days next to an existing development day.
+#   They were scored once, as fresh days, to confirm the neighbour-wind result (three points per
+#   country) found on the days above, then folded in here because they have now been looked at. See
+#   the 2026-10-02 entry in docs/model-development.md.
+development_confirmation:
+  - "2024-10-11"  # Fri
+  - "2024-10-29"  # Tue
+  - "2024-11-24"  # Sun (weekend)
+  - "2024-11-27"  # Wed
+  - "2024-12-12"  # Thu
+  - "2024-12-20"  # Fri
+  - "2024-12-23"  # Mon
+  - "2025-01-20"  # Mon
+  - "2025-01-23"  # Thu
+  - "2025-02-20"  # Thu
+  - "2025-02-21"  # Fri
+  - "2025-02-28"  # Fri
+  - "2025-03-08"  # Sat (weekend)
+  - "2025-03-30"  # Sun (weekend)
+  - "2025-04-27"  # Sun (weekend)
+  - "2025-05-21"  # Wed
+  - "2025-06-21"  # Sat (weekend)
+  - "2025-07-19"  # Sat (weekend)
+  - "2025-08-01"  # Fri
+  - "2025-08-05"  # Tue
+  - "2025-08-23"  # Sat (weekend)
+  - "2025-08-24"  # Sun (weekend)
+  - "2025-08-29"  # Fri
+  - "2025-10-17"  # Fri
+  - "2025-10-22"  # Wed
+  - "2025-11-11"  # Tue
+  - "2025-11-16"  # Sun (weekend)
+  - "2025-11-21"  # Fri
+  - "2025-11-27"  # Thu
+  - "2025-12-14"  # Sun (weekend)
+  - "2026-05-08"  # Fri
+  - "2026-05-11"  # Mon
+  - "2026-05-12"  # Tue
+  - "2026-05-14"  # Thu - Christi Himmelfahrt
+  - "2026-06-12"  # Fri
+  - "2026-06-20"  # Sat (weekend)
+  - "2026-06-29"  # Mon
+  - "2026-07-02"  # Thu
+  - "2026-07-21"  # Tue
+  - "2026-08-04"  # Tue
+
 holdout:
   - "2026-01-01"  # Thu - Neujahr (New Year's Day)
   - "2026-01-13"  # Tue

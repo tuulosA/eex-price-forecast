@@ -203,7 +203,7 @@ eex analyze eval --holdout --plot           # report on the untouched holdout da
 ```
 
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
-anchors, and the end-to-end adoption gate - is made on 22 **development** days. The headline below
+anchors, and the end-to-end adoption gate - is made on 92 **development** days. The headline below
 is scored on 18 **holdout** days (January-September 2026) that nothing was ever tuned or chosen on:
 
 | Model | MAE | RMSE |

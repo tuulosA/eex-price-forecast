@@ -98,10 +98,26 @@ Committed reports:
 
 ### Current end-to-end baseline
 
-The adopted 135 km / 20-point wind and 100 km / 31-point solar configurations were evaluated with
-one seed over all 22 development cutoffs. These are the figures to compare model changes against; on
-the untouched holdout the same configuration scores 26.814 EUR/MWh price MAE (see the 2026-10-01
-decision), because the development days are both in-sample for every choice and calmer:
+**The reference for model changes is the 92-day development set (2026-10-02).** The adopted
+configuration, with all models at their configured tree counts, one seed:
+
+| Model | MAE (92 days) | RMSE (92 days) | Original 22 | 30 systematic | 40 random |
+|---|---:|---:|---:|---:|---:|
+| Wind | 1,426.052 MW | 1,803.784 MW | 1,504.538 MW | 1,228.647 MW | 1,530.938 MW |
+| Solar | 787.849 MW | 1,313.190 MW | 847.183 MW | 596.268 MW | 898.900 MW |
+| Load | 1,741.388 MW | 2,014.971 MW | 1,488.821 MW | 1,692.891 MW | 1,916.672 MW |
+| Price | 16.483 EUR/MWh | 21.398 EUR/MWh | 11.327 EUR/MWh | 15.253 EUR/MWh | 20.242 EUR/MWh |
+
+The original-22 column reproduces the pre-expansion report exactly, so neither expansion changed an
+earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.3),
+the systematic grid in between (15.3), and the randomly drawn days the hardest (20.2) - close to the
+holdout's 26.8 once its three extreme days are set aside (19.3). Which days are sampled moves price
+MAE far more than most model changes do, which is why comparisons need the larger set and a
+day-level bootstrap. The 92-day oracle: `all_actual` 15.271 EUR/MWh; forecasting wind alone +0.090,
+solar +0.865, load +0.396, and all three +1.212 (16.483, matching eval). On the untouched holdout
+the same configuration scores 26.814 EUR/MWh price MAE (see the 2026-10-01 decision).
+
+The earlier 22-day baseline, kept for comparison with reports made before the expansion, was:
 
 | Model | MAE | RMSE | Unit |
 |---|---:|---:|---|
@@ -176,9 +192,9 @@ not evidence that imperfect fundamentals are intrinsically better than actuals.
 
 ### Known limits of the baseline
 
-- Hyperparameters, aggregation, ablation, and the development eval reuse the same 22 frozen cutoffs,
-  so the development figures here are partly in-sample. The holdout result in the 2026-10-01
-  decision is the out-of-sample reference.
+- Hyperparameters, aggregation, ablation, and the development eval reuse the same development
+  cutoffs (22 until 2026-10-01, 52 since), so the development figures here are partly
+  in-sample. The holdout result in the 2026-10-01 decision is the out-of-sample reference.
 - Weather anchors were selected against 2025 actuals, overlapping some development dates (but none
   of the holdout days).
 - The cutoff set intentionally includes holidays and wind extremes. It is a useful stress test, not an
@@ -910,12 +926,17 @@ Only `forecast_all` is production-like. Oracle deltas are signed and non-additiv
 **Status: already implemented for the current D+1 scope.**
 
 Each frozen cutoff trains only on earlier rows and evaluates the following German delivery day. This is
-rolling-origin validation, so no separate cross-validation engine is needed. The present 22 cutoffs are a
-small, deliberately selected stress set rather than a regular sample of all production days.
+rolling-origin validation, so no separate cross-validation engine is needed. The original 22 cutoffs
+were a small, deliberately selected stress set rather than a regular sample of all production days.
 
-If broader representativeness becomes important, expand the cutoff configuration with regularly spaced
-delivery days across seasons and years. Keep those exploratory cutoffs separate from any future untouched
-holdout set.
+**Expanded 2026-10-01 and 2026-10-02.** Thirty systematic days were added as `development_extra` -
+every 17th day from 2024-10-01 to 2026-09-30, skipping the holdout buffer and days next to an
+existing cutoff - and then forty randomly drawn days as `development_confirmation`, after they had
+been used once to confirm the neighbour-wind experiment, for 92 development days in all. The aim is
+less day-sampling noise in development comparisons: with 22 days, close variants such as
+neighbouring anchor spacings could not be told apart. The original 22 remain available as
+`DEV_CORE_CUTOFFS`; results reported before the expansion used only them and are not directly
+comparable with runs on the full set.
 
 ### Development versus holdout cutoffs
 

@@ -11,8 +11,10 @@ import pytest
 
 from eex_forecast.backtest_cutoffs import (
     CUTOFF_SETS,
+    DEV_CORE_CUTOFFS,
     DEV_CUTOFFS,
     DEVELOPMENT,
+    DEVELOPMENT_EXTRA,
     HOLDOUT,
     HOLDOUT_BUFFER_DAYS,
     HOLDOUT_CUTOFFS,
@@ -39,6 +41,39 @@ def test_load_cutoff_sets_parses_yaml_into_the_frozen_tuples() -> None:
     assert loaded.holdout == HOLDOUT_CUTOFFS
     assert CUTOFF_SETS == {DEVELOPMENT: DEV_CUTOFFS, HOLDOUT: HOLDOUT_CUTOFFS}
     assert len(DEV_CUTOFFS) >= 12 and len(HOLDOUT_CUTOFFS) >= 12
+
+
+def test_development_is_the_core_set_plus_the_systematic_extra_days() -> None:
+    """The original 22 stay identifiable inside the expanded development set."""
+    assert len(DEV_CORE_CUTOFFS) == 22
+    assert set(DEV_CORE_CUTOFFS) < set(DEV_CUTOFFS)
+    assert len(DEV_CUTOFFS) >= 2 * len(DEV_CORE_CUTOFFS)
+    # No extra day sits on or right next to a core day: adjacent days share weather.
+    core = [dt.date.fromisoformat(day) for day in DEV_CORE_CUTOFFS]
+    for day in sorted(set(DEV_CUTOFFS) - set(DEV_CORE_CUTOFFS)):
+        assert min(abs((dt.date.fromisoformat(day) - c).days) for c in core) > 1
+
+
+def test_extra_development_days_are_optional_validated_and_buffered(tmp_path: Path) -> None:
+    def write(extra: list[str], holdout: list[str]) -> Path:
+        path = tmp_path / "cutoffs.yaml"
+        lines = [f"{DEVELOPMENT}:", '  - "2025-03-01"', f"{DEVELOPMENT_EXTRA}:"]
+        lines += [f'  - "{day}"' for day in extra]
+        lines += [f"{HOLDOUT}:"] + [f'  - "{day}"' for day in holdout]
+        path.write_text("\n".join(lines) + "\n")
+        return path
+
+    loaded = load_cutoff_sets(write(["2025-06-01"], ["2026-01-01"]))
+    assert loaded.development == ("2025-03-01", "2025-06-01")  # the union, chronological
+    assert loaded.development_core == ("2025-03-01",)
+    with pytest.raises(ValueError, match="appears in both"):
+        load_cutoff_sets(write(["2025-03-01"], ["2026-01-01"]))
+    with pytest.raises(ValueError, match="2026-01-02"):  # the buffer applies to extra days too
+        load_cutoff_sets(write(["2026-01-01"], ["2026-01-02"]))
+    # Without the extra list the core set is the whole development set.
+    assert load_cutoff_sets(_yaml(tmp_path, ["2025-03-01"], ["2026-01-01"])).development == (
+        "2025-03-01",
+    )
 
 
 def test_load_cutoff_sets_rejects_a_bad_yaml(tmp_path: Path) -> None:
@@ -73,7 +108,7 @@ def test_both_sets_are_sorted_unique_and_recent() -> None:
         dates = [dt.date.fromisoformat(c) for c in days]
         assert dates == sorted(dates)  # chronological
         assert len(set(dates)) == len(dates)  # unique
-        assert all(d.year in (2025, 2026) for d in dates)  # recent regime only
+        assert all(d.year in (2024, 2025, 2026) for d in dates)  # recent regime only
 
 
 def _balance(days: tuple[str, ...]) -> tuple[set[int], set[int], int, int]:

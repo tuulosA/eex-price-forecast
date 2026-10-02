@@ -59,7 +59,7 @@ honestly:
 
 | Set | Days | Used by | Purpose |
 |---|---|---|---|
-| `development` | 22, Jan 2025 – Jul 2026 | tuning, aggregation, ablation, anchors, solar diagnostics, and `eex analyze eval` / `oracle` by default | every **selection** decision, including the end-to-end adoption gate |
+| `development` | 92: 22 hand-picked (Jan 2025 – Jul 2026), 30 systematic and 40 random (Oct 2024 – Sep 2026) | tuning, aggregation, ablation, anchors, solar diagnostics, and `eex analyze eval` / `oracle` by default | every **selection** decision, including the end-to-end adoption gate |
 | `holdout` | 18, Jan – Sep 2026 | only `eex analyze eval --holdout` / `oracle --holdout` | **reporting** the adopted configuration out-of-sample |
 
 Reusing the development days across tuning, aggregation, and ablation is ordinary validation
@@ -193,6 +193,7 @@ experiment and by 40.8% after production backfill and matched retuning. Exact re
 alternatives are recorded in the
 [development record](model-development.md) and `data/analysis/wind_anchor_experiment.json`.
 
+
 ## Ablation
 
 Ablation removes selected features and measures the loss:
@@ -247,15 +248,18 @@ Its price error is concentrated in three extreme days (26 April, 1 May, and 24 J
 prices from -499 to 666 EUR/MWh): they carry 40% of it, and the MAE without them is 19.259 EUR/MWh.
 See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
 
-The development result over the 22 development days - the reference for comparing model changes -
+The development result over the 92 development days - the reference for comparing model changes -
 is:
 
 | Model | MAE | RMSE |
 |---|---:|---:|
-| Wind | 1,504.538 MW | 1,925.817 MW |
-| Solar | 847.183 MW | 1,417.605 MW |
-| Load | 1,488.821 MW | 1,746.757 MW |
-| Price | 11.327 EUR/MWh | 14.664 EUR/MWh |
+| Wind | 1,426.052 MW | 1,803.784 MW |
+| Solar | 787.849 MW | 1,313.190 MW |
+| Load | 1,741.388 MW | 2,014.971 MW |
+| Price | 16.483 EUR/MWh | 21.398 EUR/MWh |
+
+Reports made before the 2026-10-01 expansion used only the original 22 days (price 11.327 EUR/MWh);
+compare a new run with them on `DEV_CORE_CUTOFFS`, not on the full 52.
 
 These development figures are partly in-sample and drawn from calmer days; the holdout is the honest
 estimate. Neither is a guarantee of live 14-day accuracy.
