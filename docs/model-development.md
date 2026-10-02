@@ -1108,6 +1108,42 @@ Before changing a production feature/model:
   informed one choice and is no longer strictly untouched. One look on one small decision leaves it
   useful as a report, but later holdout figures should be read with that in mind, and a fresh
   holdout of later days is the remedy if more decisions come to depend on it.
+- Broke the production end-to-end price error on the 92 development days (MAE 16.483 EUR/MWh) down
+  hour by hour, to aim the next experiments at where the error actually is:
+
+  | Actual price | Share of hours | MAE | Bias (forecast - actual) | Share of error |
+  |---|---:|---:|---:|---:|
+  | negative (< 0) | 6.2% | 14.9 | +11.3 | 5.6% |
+  | low (0-50) | 11.1% | 14.5 | +9.3 | 9.7% |
+  | normal (50-150) | 72.8% | 11.9 | -6.2 | 52.5% |
+  | high (150-250) | 8.1% | 22.8 | -18.9 | 11.2% |
+  | spike (> 250) | 1.9% | 182.1 | -182.1 | 21.0% |
+
+  - **The forecast is systematically too low and too timid.** Mean bias is -7.811 EUR/MWh (-5.649
+    without the most extreme day), negative in every year (2024 -18.4, 2025 -5.0, 2026 -8.9). It is
+    too high in negative and low-price hours and too low in high and spike hours: predictions are
+    pulled toward the middle.
+  - **Mostly shape, not level.** Correcting every day's average level exactly would lower MAE only
+    from 16.483 to 12.979, so 21% of the error is the daily level and 79% lies within the day. The
+    median day's forecast range is 0.93 of the actual range.
+  - **Concentrated in tight-supply hours.** Evenings 16-20h carry 25% of the error (MAE 24.7, bias
+    -16.3), winter 36% (MAE 25.6, bias -15.3), and working days 76% (MAE 18.0, bias -9.7) - high
+    demand, no sun, often little wind.
+  - **One day dominates the extremes.** The 2024-12-12 dunkelflaute (actual peak 936 EUR/MWh,
+    forecast 285) is 14% of all error on its own; the remaining spike hours add 9%. Otherwise the
+    error is broad: the worst 10% of days carry 31% of it, and the median day's MAE is 13.1.
+  - **Implications.** Residual load (load minus wind and solar) is the best-aimed next experiment:
+    the error sits where residual load is high, and a tree model cannot easily form that difference
+    from separate inputs. Fuel and carbon prices remain plausible but are less likely to dominate,
+    since the daily level is only a fifth of the error. Recency weighting is not supported - the
+    bias does not grow over time. A robust loss (Huber or absolute error), suggested in the
+    2026-10-01 winsorising entry, would likely make the compression *worse*, because it reduces the
+    pull of extreme hours further; it drops down the list.
+  - The breakdown used the eval's hourly rows from a rerun of the production 92-day eval, which
+    reproduced the committed report's 16.483 exactly. It is now reproducible as `eex analyze eval
+    --breakdown` (`data/evaluation/model_eval_breakdown.json`). Run as a report on the holdout, the
+    same pattern appears and stronger: price bias -8.30 EUR/MWh (+57.42 in negative hours, -177.35
+    in spikes, daily level 12% of the error), solar +1,222.84 MW, and load -634.03 MW.
 
 ### 2026-10-01
 

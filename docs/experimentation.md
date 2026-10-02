@@ -243,6 +243,7 @@ eex analyze eval                            # development days: the adoption gat
 eex analyze eval --seeds 5
 eex analyze eval --holdout                  # holdout days: report an adopted configuration
 eex analyze eval --holdout --plot           # ...and draw each day's actual vs forecast price
+eex analyze eval --breakdown                # ...and break the error down (see below)
 ```
 
 Each fold forecasts wind, solar, and load before price. The reports at
@@ -254,6 +255,16 @@ y-scale, so a reader can see whether the daily profile is caught and which days 
 outright. The fundamentals' forecasts are the fold's fresh sub-model forecasts, the same ones the
 price model was given. Fundamental metrics are in MW and price metrics are in EUR/MWh; only compare
 runs of the same target, on the same set.
+
+`--breakdown` shows *how* each model is wrong, not just how much, and writes
+`model_eval_breakdown[_holdout].json` beside the report. For every model it gives the **bias** (mean
+forecast minus actual) alongside MAE, by hour block, season, and day type, each with its share of
+hours versus its share of the error, plus the share of error in the worst tenth of days and the
+worst days themselves. For price it adds the **actual price regime** (negative to spike), which
+shows whether forecasts are pulled toward the middle, and the **level versus shape** split: how much
+error would remain if every day's average level were exact. It reuses the eval's hourly rows, so it
+costs nothing extra; rerun it after a model change to see whether a systematic error shrank. Its
+errors are hour-weighted, so they can differ from the day-averaged headline in the third decimal.
 
 The adopted configuration on the 18 holdout days, the out-of-sample headline, is:
 
