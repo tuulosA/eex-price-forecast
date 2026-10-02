@@ -214,6 +214,22 @@ The first run (2026-10-02) found three or more points per country about 0.3 EUR/
 development days; the change passed the end-to-end gate but not the holdout and was reverted. See
 the 2026-10-02 decision in the [development record](model-development.md#decision-history).
 
+## Residual load
+
+```bash
+eex analyze residual-load                   # all five variants against production
+eex analyze residual-load --variants residual_load,residual_load_all --seeds 5
+```
+
+Adds residual-load features (load minus wind and solar, built from the same actual-or-forecast
+fundamentals as the rest of the price features) to the production price features and scores each
+variant on the development days with actual fundamentals, over several seeds, with a day-level
+bootstrap of the difference from production. For production and the best variant it also rebuilds
+the hourly predictions and reports the bias by price regime and hour, to show whether the
+under-forecast in tight hours shrank. The report is `data/analysis/residual_load_experiment.json`.
+The first run (2026-10-02) found no reliable gain and no change in the bias; see the 2026-10-02
+decision in the [development record](model-development.md#decision-history).
+
 ## Ablation
 
 Ablation removes selected features and measures the loss:

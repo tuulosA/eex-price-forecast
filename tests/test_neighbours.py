@@ -12,9 +12,9 @@ import pytest
 from tests.conftest import make_timeseries
 
 from eex_forecast.analysis.anchors import WeatherAnchor
+from eex_forecast.analysis.comparison import paired_day_bootstrap
 from eex_forecast.analysis.neighbours import (
     build_count_variants,
-    paired_day_bootstrap,
     run_neighbour_count_analysis,
     save_neighbour_report,
     variant_frame,

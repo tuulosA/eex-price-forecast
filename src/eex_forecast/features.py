@@ -754,3 +754,62 @@ def price_features_with_neighbours(
     adopted :data:`PRICE_NEIGHBOUR_STRATEGY`. Used by the neighbour aggregation to A/B the aggregations.
     """
     return pd.concat([_price_base(frame), neighbour_wind_block(frame, neighbour_strategy)], axis=1)
+
+
+# -- residual load (an experimental price-model feature block) --------------------
+# The price is set by whatever generation must cover demand after wind and solar: residual load. The
+# price model already sees load, wind, and solar, but a tree must approximate their difference with
+# many splits, and the systematic-error breakdown found its error concentrated exactly where residual
+# load is high (winter working-day evenings, forecast too low). These variants are scored by
+# `eex analyze residual-load`; none is part of the production price features until adopted.
+RESIDUAL_LOAD_VARIANTS: tuple[str, ...] = (
+    "residual_load",
+    "residual_load_share",
+    "residual_load_net",
+    "residual_load_daily",
+    "residual_load_all",
+)
+
+
+def residual_load_block(frame: pd.DataFrame, variant: str) -> pd.DataFrame:
+    """Residual-load features under ``variant``, from the actual-or-forecast fundamentals.
+
+    Every variant includes ``residual_load`` = load - wind - solar (MW). On top of it:
+
+    - ``_share``: ``renewable_share`` = (wind + solar) / load - how much of demand the weather covers.
+    - ``_net``: ``residual_load_net`` = residual load - French nuclear availability - total import
+      capacity, a proxy for what domestic dispatchable plants must still supply.
+    - ``_daily``: ``residual_load_vs_day_mean`` (residual load minus its German delivery-day mean) and
+      ``residual_load_day_max`` - where an hour sits within its day, since most price error is
+      within-day shape rather than the daily level.
+    - ``_all``: all of the above.
+
+    Built from :func:`fundamentals`, the same coalesce the price model reads, so training sees measured
+    fundamentals and live forecasts see sub-model forecasts - the features exist at serve time for
+    every forecast hour. Day statistics group by the Europe/Berlin delivery day.
+    """
+    if variant not in RESIDUAL_LOAD_VARIANTS:
+        raise ValueError(
+            f"Unknown residual-load variant '{variant}'. Known: {', '.join(RESIDUAL_LOAD_VARIANTS)}."
+        )
+    fund = fundamentals(frame)
+    residual = fund["load"] - fund["wind"] - fund["solar"]
+    out = pd.DataFrame({"residual_load": residual}, index=frame.index)
+    if variant in ("residual_load_share", "residual_load_all"):
+        load = fund["load"].where(fund["load"] > 0)
+        out["renewable_share"] = (fund["wind"] + fund["solar"]) / load
+    if variant in ("residual_load_net", "residual_load_all"):
+        nuclear = nuclear_feature(frame).reindex(columns=[NUCLEAR_COLUMN])[NUCLEAR_COLUMN]
+        imports = ntc_features(frame).reindex(columns=["ntc_imp_total"])["ntc_imp_total"]
+        out["residual_load_net"] = residual - nuclear - imports
+    if variant in ("residual_load_daily", "residual_load_all"):
+        day = pd.to_datetime(frame[TIMESTAMP], utc=True).dt.tz_convert(MARKET_TIMEZONE).dt.date
+        grouped = residual.groupby(day.to_numpy())
+        out["residual_load_vs_day_mean"] = residual - grouped.transform("mean")
+        out["residual_load_day_max"] = grouped.transform("max")
+    return out
+
+
+def price_features_with_residual_load(frame: pd.DataFrame, *, variant: str) -> pd.DataFrame:
+    """The production price features plus one residual-load variant (an experiment builder)."""
+    return pd.concat([price_features(frame), residual_load_block(frame, variant)], axis=1)

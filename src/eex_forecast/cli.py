@@ -61,6 +61,9 @@ from eex_forecast.analysis import (
     neighbours as neighbour_analysis,
 )
 from eex_forecast.analysis import (
+    residual_load as residual_load_analysis,
+)
+from eex_forecast.analysis import (
     shap as shap_analysis,
 )
 from eex_forecast.analysis import (
@@ -1021,6 +1024,67 @@ def analyze_ablation(
     else:
         verdict = direction
     typer.echo(f"  dropping {verdict} | report -> {path}")
+
+
+@analyze_app.command("residual-load")
+def analyze_residual_load(
+    variants: Annotated[
+        str,
+        typer.Option(help="Comma-separated residual-load variants to compare with production."),
+    ] = ",".join(residual_load_analysis.DEFAULT_VARIANTS),
+    seeds: _SeedsOpt = 3,
+) -> None:
+    """Test residual-load features (load - wind - solar) for the price model.
+
+    Scores each variant added to the production price features on the development days with actual
+    fundamentals, over several seeds, with a day-level bootstrap of the difference from production. For
+    production and the best variant it also prints the bias in tight hours, to show whether the
+    under-forecast shrank. Production features are never changed.
+    """
+    chosen = tuple(value.strip() for value in variants.split(",") if value.strip())
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+    try:
+        result = residual_load_analysis.run_residual_load_analysis(
+            frame, variants=chosen, seeds=seeds
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    path = residual_load_analysis.save_residual_load_report(result)
+    typer.echo(
+        f"Residual load, price model ({len(result.cutoffs)} development days x {seeds} seed(s)):"
+    )
+    for variant in result.variants:
+        boot = variant["day_bootstrap_vs_production"]
+        versus = (
+            "production"
+            if boot is None
+            else (
+                f"delta {boot['mean_delta']:+.3f} [90% {boot['ci90_low']:+.3f}, "
+                f"{boot['ci90_high']:+.3f}] | better on {boot['share_better']:.0%} of days"
+            )
+        )
+        typer.echo(
+            f"  {variant['variant']:<20} {_mae_cell(variant['mean_mae'], variant['std_mae'], seeds)} "
+            f"EUR/MWh | {versus}"
+        )
+    for variant in result.variants:
+        if "breakdown" not in variant:
+            continue
+        tight = {row["group"]: row["bias"] for row in variant["breakdown"]["by_price_regime"]}
+        evening = next(
+            row["bias"]
+            for row in variant["breakdown"]["by_hour_block"]
+            if row["group"].startswith("evening")
+        )
+        typer.echo(
+            f"  bias, {variant['variant']}: overall {variant['breakdown']['bias']:+.2f} | "
+            f"high {tight.get('high (150-250)', float('nan')):+.2f} | "
+            f"spike {tight.get('spike (>=250)', float('nan')):+.2f} | evening {evening:+.2f}"
+        )
+    typer.echo(f"  report -> {path}")
 
 
 @analyze_app.command("solar-errors")
