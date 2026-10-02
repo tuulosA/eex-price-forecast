@@ -55,6 +55,9 @@ from eex_forecast.analysis import (
     anchors as anchor_analysis,
 )
 from eex_forecast.analysis import (
+    breakdown as breakdown_analysis,
+)
+from eex_forecast.analysis import (
     neighbours as neighbour_analysis,
 )
 from eex_forecast.analysis import (
@@ -1161,6 +1164,13 @@ def analyze_eval(
             help="Also draw each scored day's actual vs forecast, per model (eval_days*.png)."
         ),
     ] = False,
+    breakdown: Annotated[
+        bool,
+        typer.Option(
+            help="Also break the error down: bias and error share by hour, season, day type, and "
+            "(for price) price regime and level vs shape (model_eval_breakdown*.json)."
+        ),
+    ] = False,
 ) -> None:
     """Backtest the complete sub-models -> price pipeline and report per-model 24h MAE.
 
@@ -1200,6 +1210,13 @@ def analyze_eval(
     typer.echo(f"  report -> {path}")
     for plot_path in plot_paths:
         typer.echo(f"  plot   -> {plot_path}")
+    if breakdown:
+        report = breakdown_analysis.eval_breakdown(result)
+        breakdown_path = breakdown_analysis.save_breakdown(report)
+        typer.echo("Systematic-error breakdown (hour-weighted):")
+        for line in breakdown_analysis.format_breakdown(report):
+            typer.echo(line)
+        typer.echo(f"  breakdown -> {breakdown_path}")
 
 
 @analyze_app.command("oracle")

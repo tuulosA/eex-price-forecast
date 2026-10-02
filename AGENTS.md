@@ -50,6 +50,7 @@ src/eex_forecast/
     anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
     neighbours.py      # neighbour-wind points per country for price, with a day bootstrap
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
+    breakdown.py       # systematic-error breakdown of an eval: bias by regime/hour/season/day type
     solar.py           # solar error slices + physics/irradiance feature A/B commands
   ensemble/            # optional weather-ensemble product; depends on core, never vice versa
     client.py          # Open-Meteo Ensemble API (ecmwf_ifs025, 51 members) + weighted rate limiter
