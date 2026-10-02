@@ -55,6 +55,9 @@ from eex_forecast.analysis import (
     anchors as anchor_analysis,
 )
 from eex_forecast.analysis import (
+    neighbours as neighbour_analysis,
+)
+from eex_forecast.analysis import (
     shap as shap_analysis,
 )
 from eex_forecast.analysis import (
@@ -895,6 +898,60 @@ def anchors_solar(
         coverage_weights,
         seeds,
     )
+
+
+@anchors_app.command("neighbour")
+def anchors_neighbour(
+    counts: Annotated[
+        str, typer.Option(help="Comma-separated neighbour points per country to compare.")
+    ] = ",".join(str(count) for count in neighbour_analysis.DEFAULT_COUNTS),
+    distance: Annotated[
+        float, typer.Option(help="Minimum spacing between a country's points (km).")
+    ] = neighbour_analysis.DEFAULT_MIN_DISTANCE_KM,
+    seeds: _SeedsOpt = 3,
+) -> None:
+    """Compare how many neighbour-wind points per country the price model averages.
+
+    Selects each count per country from the saved rankings (same spacing rule as production), scores
+    the price model on the development days over several seeds, and bootstraps each variant's
+    difference from production over delivery days. Production configuration is never changed.
+    """
+    try:
+        count_values = tuple(int(value) for value in counts.split(",") if value.strip())
+    except ValueError as error:
+        raise typer.BadParameter("--counts must be comma-separated integers.") from error
+    if not count_values or any(count < 1 for count in count_values):
+        raise typer.BadParameter("Give at least one point count, each at least 1.")
+    with connect(get_settings().db_path) as conn:
+        frame = read_frame(conn)
+    if frame.empty:
+        raise typer.BadParameter("No data in the database. Run the backfills first.")
+    try:
+        result = neighbour_analysis.run_neighbour_count_analysis(
+            frame, counts=count_values, min_distance_km=distance, seeds=seeds
+        )
+    except (FileNotFoundError, ValueError) as error:
+        raise typer.BadParameter(str(error)) from error
+    path = neighbour_analysis.save_neighbour_report(result)
+    typer.echo(
+        f"Neighbour points per country, price model ({len(result.cutoffs)} development days "
+        f"x {seeds} seed(s)):"
+    )
+    for variant in result.variants:
+        boot = variant["day_bootstrap_vs_current"]
+        versus = (
+            "production"
+            if boot is None
+            else (
+                f"delta {boot['mean_delta']:+.3f} [90% {boot['ci90_low']:+.3f}, "
+                f"{boot['ci90_high']:+.3f}] | better on {boot['share_better']:.0%} of days"
+            )
+        )
+        typer.echo(
+            f"  {variant['variant']:<14} {_mae_cell(variant['mean_mae'], variant['std_mae'], seeds)} "
+            f"EUR/MWh | {versus}"
+        )
+    typer.echo(f"  report -> {path}")
 
 
 @analyze_app.command("ablation")

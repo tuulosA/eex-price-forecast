@@ -193,6 +193,26 @@ experiment and by 40.8% after production backfill and matched retuning. Exact re
 alternatives are recorded in the
 [development record](model-development.md) and `data/analysis/wind_anchor_experiment.json`.
 
+### Neighbour-wind points per country
+
+```bash
+eex analyze anchors neighbour                      # 1, 2 (production), 3, 4, 6 per country
+eex analyze anchors neighbour --counts 2,3 --seeds 5
+```
+
+Neighbour wind reaches the price model as one feature per country, the mean wind over that country's
+points, so this varies how many points each mean averages rather than the feature count. Each count
+is selected per country from the saved rankings with production's 50 km spacing (`--distance`), and
+the price model is scored on the development days with actual fundamentals. Besides the seed spread,
+each variant's difference from production is bootstrapped over delivery days and reported as a 90%
+interval with the share of days it wins: the seed spread only shows how much the model fit varies,
+while the day bootstrap shows how much the result depends on which days were sampled. Histories are
+cached under `data/weather_cache/neighbour_anchors/`; the report is
+`data/analysis/neighbour_anchor_experiment.json`.
+
+The first run (2026-10-02) found three or more points per country about 0.3 EUR/MWh better on the
+development days; the change passed the end-to-end gate but not the holdout and was reverted. See
+the 2026-10-02 decision in the [development record](model-development.md#decision-history).
 
 ## Ablation
 

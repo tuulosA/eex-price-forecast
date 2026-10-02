@@ -1075,6 +1075,40 @@ Before changing a production feature/model:
 
 ## Decision history
 
+### 2026-10-02
+
+- Tested how many neighbour-wind points per country the price model averages (`eex analyze anchors
+  neighbour`). Production used two, a convention: the saved rankings are nearly flat at the top.
+  Each count was selected per country from those rankings with production's 50 km spacing and scored
+  on the 52 development days with actual fundamentals, three seeds, and a day-level bootstrap of the
+  difference from production:
+
+  | Points per country | Price MAE | vs production (90% over days) | Better on |
+  |---|---:|---|---:|
+  | 3 | 12.258 | -0.323 [-0.493, -0.151] | 60% |
+  | 4 | 12.271 | -0.310 [-0.501, -0.104] | 58% |
+  | 6 | 12.290 | -0.291 [-0.522, -0.050] | 56% |
+  | 1 | 12.411 | -0.169 [-0.368, +0.029] | 52% |
+  | 2 (production) | 12.581 | - | - |
+
+  Three or more formed a plateau; three was taken forward as its smallest member. Forty fresh days,
+  drawn at random from days in neither set, confirmed the direction but at a smaller size: -0.179
+  [-0.452, +0.079], better on 60% of days. Those days were then added to the development set.
+- Ran the full promotion gate for three per country: backfilled the seven new points from 2023;
+  retuned price on the 92 days (the incumbent parameters were kept); scored end-to-end. Price MAE
+  fell from 16.483 to 16.187 EUR/MWh (-0.297, 90% over days [-0.534, -0.070], better on 62% of
+  days), the sub-models were unchanged, and a live forecast fetched all 21 neighbour points with no
+  missing hour - the gate passed.
+- The holdout, run once as the report, did not confirm it: 26.934 against 26.814 EUR/MWh (+0.120,
+  90% [-0.336, +0.530]), better on only 28% of its 18 days. The change was **reverted** by decision
+  of the project owner: production keeps two points per country, the models were retrained, and the
+  seven extra SQLite columns stay inactive. The expanded development set, the experiment command,
+  and its report are kept.
+- **This decision used the holdout.** A holdout result changed an adoption, so the holdout has now
+  informed one choice and is no longer strictly untouched. One look on one small decision leaves it
+  useful as a report, but later holdout figures should be read with that in mind, and a fresh
+  holdout of later days is the remedy if more decisions come to depend on it.
+
 ### 2026-10-01
 
 - Added an untouched holdout: 18 delivery days from January to September 2026, scored only by

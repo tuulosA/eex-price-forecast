@@ -48,6 +48,7 @@ src/eex_forecast/
     ablation.py        # remove chosen features and measure the loss, any model
     aggregation.py     # A/B weather aggregation per fundamental + neighbour
     anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
+    neighbours.py      # neighbour-wind points per country for price, with a day bootstrap
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
     solar.py           # solar error slices + physics/irradiance feature A/B commands
   ensemble/            # optional weather-ensemble product; depends on core, never vice versa
