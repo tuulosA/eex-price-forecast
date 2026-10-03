@@ -78,6 +78,8 @@ Committed reports:
 - [Solar geometry/clear-sky experiment](../data/analysis/solar_feature_experiment.json)
 - [Solar irradiance/cloud experiment](../data/analysis/solar_irradiance_experiment.json)
 - [Solar azimuth experiment](../data/analysis/solar_azimuth_experiment.json)
+- [Solar clear-sky/regional/temperature/leave-one-out experiment](../data/analysis/solar_ideas_experiment.json) and its
+  [combined follow-up with azimuth](../data/analysis/solar_combined_experiment.json)
 - Aggregation: [wind](../data/aggregation/wind_aggregation.json),
   [solar](../data/aggregation/solar_aggregation.json),
   [load](../data/aggregation/load_aggregation.json), and
@@ -390,6 +392,62 @@ Azimuth beats hour angle and is the candidate to carry forward. It has not been 
 1.4% of solar MAE needs the usual promotion gate first - a solar retune with azimuth, then `eex analyze
 eval` and `oracle` on the development days to see whether the price forecast benefits. Refine Power,
 the desktop successor, includes azimuth as a default-on solar feature with its own toggle.
+
+#### Test clear-sky ratio, spatial GHI, temperature, and the auxiliary blocks
+
+**Status: tested 2026-10-04; nothing adopted here yet.**
+
+An outside review of the 39-feature solar set suggested a clear-sky-normalised irradiance (the "most
+obvious" addition), keeping some location information instead of collapsing the 31 GHI points to
+national statistics, and temperature for module efficiency. It also guessed that direct, DNI, and cloud
+add little once GHI and geometry are present. Each idea was appended to (or, for the leave-one-out
+variants, removed from) the production `solar_features`, with the same runner, 92 development days,
+five seeds, and fixed tuned parameters as the azimuth test:
+
+| Variant | MAE (MW) | Delta | RMSE delta | Features |
+|---|---:|---:|---:|---:|
+| + pointwise clearness stats | 787.640 | -3.152 | -3.0 | 43 |
+| + five regional GHI means | 788.412 | -2.380 | **-8.7** | 44 |
+| - direct radiation block | 789.018 | -1.775 | -3.4 | 34 |
+| + national clear-sky ratio | 790.316 | -0.476 | -1.3 | 40 |
+| Production | 790.792 | +0.000 | +0.0 | 39 |
+| + temperature mean | 792.304 | +1.512 | +5.9 | 40 |
+| - cloud-cover block | 795.071 | +4.279 | +9.0 | 34 |
+| - DNI block | 798.815 | +8.023 | +13.4 | 34 |
+
+- **National clear-sky ratio** (`irr_solar / clear_sky_ghi`, missing below 10 W/m2 clear-sky, capped at
+  2) is noise, as the earlier clear-sky-index test was before the auxiliary blocks existed. With
+  direct/diffuse/DNI and geometry present the trees already recover it.
+- **Pointwise clearness** (each point's GHI over Haurwitz clear-sky GHI at its own coordinates, then
+  mean/std/min/max) helps a little.
+- **Regional GHI** (the GHI mean of five deterministic k-means clusters of the solar points, added on top
+  of the statistics rather than replacing them as the old `regional` aggregation did) mainly cuts large
+  misses: its RMSE gain is several times its MAE gain.
+- **Temperature** was only testable as the national temperature-point mean, since temperature is not
+  fetched at the solar points; it slightly hurts.
+- **Leave-one-out:** direct radiation looks redundant, but DNI and cloud cover clearly earn their place,
+  contrary to the review's guess.
+
+The combined follow-up stacked the promising additions on azimuth:
+
+| Variant | MAE (MW) | Delta vs production | Delta vs azimuth | RMSE (MW) | Features |
+|---|---:|---:|---:|---:|---:|
+| Production | 790.792 | +0.000 | | 1,317.570 | 39 |
+| + azimuth | 779.862 | -10.930 | +0.000 | 1,307.126 | 41 |
+| + azimuth + clearness | 778.524 | -12.268 | -1.338 | 1,307.002 | 45 |
+| + azimuth + regional | 776.737 | -14.055 | -3.125 | 1,299.910 | 46 |
+| + azimuth + clearness + regional | **775.515** | **-15.277** | -4.347 | **1,298.423** | 50 |
+
+Clearness becomes nearly redundant once azimuth is in. Regional GHI keeps about 3 MW of MAE and 7 MW of
+RMSE on top of azimuth in the five-seed means, but its per-day effect is noisy and seasonal: on the
+primary seed it was -43 MW/day in spring and +29 MW/day in autumn against azimuth, with a 95%
+day-bootstrap interval of [-21.6, +18.2] MW. No addition beyond azimuth clears day-level noise on its
+own.
+
+Carry forward: azimuth first, regional GHI as a secondary candidate whose large-miss reduction may
+matter more to price than its MAE suggests, and the direct-radiation removal as a later simplification.
+All need the usual retune and `eex analyze eval`/`oracle` gate. Capacity-weighted GHI was suggested
+too but needs regional PV capacity, which the data does not include.
 
 ### Wind
 
@@ -1108,6 +1166,16 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-10-04
+
+- Tested an outside review's solar suggestions on top of production (92 development days, five seeds,
+  fixed parameters): national clear-sky ratio -0.5 MW, pointwise clearness stats -3.2 MW, five regional
+  GHI means -2.4 MW (RMSE -8.7 MW), temperature mean +1.5 MW; removing direct radiation -1.8 MW, cloud
+  +4.3 MW, DNI +8.0 MW. Stacked on azimuth, regional GHI added a further -3.1 MW (RMSE -7.2 MW) and
+  clearness -1.3 MW, best combination 775.5 MW (-15.3 vs production). Nothing adopted; azimuth stays the
+  lead candidate with regional GHI second. See the
+  [solar suggestions test](#test-clear-sky-ratio-spatial-ghi-temperature-and-the-auxiliary-blocks).
 
 ### 2026-10-03
 
