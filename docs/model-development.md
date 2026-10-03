@@ -77,6 +77,7 @@ Committed reports:
 - [Solar error slices](../data/analysis/solar_error_slices.json)
 - [Solar geometry/clear-sky experiment](../data/analysis/solar_feature_experiment.json)
 - [Solar irradiance/cloud experiment](../data/analysis/solar_irradiance_experiment.json)
+- [Solar azimuth experiment](../data/analysis/solar_azimuth_experiment.json)
 - Aggregation: [wind](../data/aggregation/wind_aggregation.json),
   [solar](../data/aggregation/solar_aggregation.json),
   [load](../data/aggregation/load_aggregation.json), and
@@ -356,6 +357,39 @@ The richer inputs reduced daylight MAE by 233 MW without disturbing the night-ti
 not improve: spring is +1.23 GW, summer +1.31 GW, and the 20-40% actual-capacity-factor bin is +1.99 GW.
 The next solar work should therefore address regime-dependent calibration or geography, not add another
 darkness rule.
+
+#### Add solar azimuth
+
+**Status: tested 2026-10-03; not adopted here yet.**
+
+The geometry block gives elevation, cosine of zenith, and clear-sky GHI. Elevation and zenith carry the
+same information for a tree, so the model cannot tell a morning sun from an afternoon sun at the same
+height, while mostly south-facing PV responds asymmetrically to them. The clock-time hour features only
+approximate this: local time drifts about 30 minutes against solar time across Germany and jumps at DST.
+
+The test appended sin/cos of the solar azimuth to the production `solar_features` (39 features). Azimuth
+uses the same NOAA approximation, interval midpoint, and reference point (51.0 N, 10.5 E) as
+`solar_geometry_features`, measured from north clockwise. A second variant appended sin/cos of the solar
+hour angle instead. It ran through `analysis.solar._run_solar_builder_experiment` from an ad hoc script:
+the 92 development days, five seeds, the tuned solar parameters held fixed, and the shared
+post-processing. No CLI variant exists yet.
+
+| Variant | MAE (MW) | Delta | RMSE (MW) | Features |
+|---|---:|---:|---:|---:|
+| Production | 790.792 +/- 1.739 | +0.000 | 1,317.570 | 39 |
+| + azimuth sin/cos | **779.862 +/- 1.278** | **-10.930** | **1,307.126** | 41 |
+| + hour angle sin/cos | 782.048 +/- 1.618 | -8.745 | 1,309.841 | 41 |
+
+The gain is about seven times the seed spread and RMSE improves with it, but it is uneven across days.
+On the primary seed's per-day results, azimuth beat production on 45 of 92 days; the mean difference was
+-8.8 MW with a 95% day-bootstrap interval of [-18.5, +0.4]. By season it was -37.6 MW in summer, -2.1 MW
+in spring, +1.1 MW in autumn, and +5.3 MW in winter. Summer is where the morning/afternoon asymmetry of
+south-facing panels is largest, so the pattern is physically plausible.
+
+Azimuth beats hour angle and is the candidate to carry forward. It has not been adopted here: about
+1.4% of solar MAE needs the usual promotion gate first - a solar retune with azimuth, then `eex analyze
+eval` and `oracle` on the development days to see whether the price forecast benefits. Refine Power,
+the desktop successor, includes azimuth as a default-on solar feature with its own toggle.
 
 ### Wind
 
@@ -1074,6 +1108,15 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-10-03
+
+- Tested solar azimuth (sin/cos at the geometry reference point) as an addition to the production
+  solar features: 790.792 -> 779.862 MW MAE over the 92 development days with five seeds and fixed
+  parameters (seed spread about 1.5 MW), better on 45 of 92 days, gain concentrated in summer. A signed
+  solar hour angle reached 782.048 MW. Not wired in yet; azimuth is the candidate for a retune and
+  end-to-end check. See [Add solar azimuth](#add-solar-azimuth) and the
+  [report](../data/analysis/solar_azimuth_experiment.json).
 
 ### 2026-10-02
 
