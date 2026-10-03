@@ -161,10 +161,11 @@ SOLAR_AUXILIARY_WEATHER_ROLES: tuple[str, ...] = (
     "dni_solar",
     "cloud_solar",
 )
-# Frozen-cutoff testing found the three radiation components plus cloud cover materially better than
+# Frozen-cutoff testing found the radiation components plus cloud cover materially better than
 # geometry/GHI alone. GTI was deliberately left out: adding it increased both feature count and MAE.
+# Direct radiation was dropped on 2026-10-04: Open-Meteo's GHI is exactly direct + diffuse, so it
+# duplicated GHI and diffuse, and removing it changed MAE by -1.8 MW, inside seed noise.
 SOLAR_PRODUCTION_WEATHER_ROLES: tuple[str, ...] = (
-    "direct_solar",
     "diffuse_solar",
     "dni_solar",
     "cloud_solar",
@@ -555,12 +556,13 @@ def solar_features_with_clear_sky(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Adopted solar drivers: geometry, irradiance components, and cloud cover.
+    """Adopted solar drivers: geometry, diffuse and direct-normal irradiance, and cloud cover.
 
     Geometry reduced the five-seed frozen-cutoff MAE by about 31 MW versus the irradiance/calendar
     baseline. Direct, diffuse, and direct-normal irradiance plus cloud-cover spatial statistics then
-    reduced it by another 104 MW. GTI added five redundant features and slightly worsened MAE, so it
-    remains available to the experiment command but is not part of production.
+    reduced it by another 104 MW. Direct radiation was later removed as an exact duplicate (GHI is
+    direct + diffuse). GTI added five redundant features and slightly worsened MAE. Both remain
+    fetched and available to the experiment commands but are not part of production.
     """
     return solar_features_with_aggregation(frame, strategy="stats")
 

@@ -449,6 +449,28 @@ matter more to price than its MAE suggests, and the direct-radiation removal as 
 All need the usual retune and `eex analyze eval`/`oracle` gate. Capacity-weighted GHI was suggested
 too but needs regional PV capacity, which the data does not include.
 
+#### Remove direct radiation
+
+**Status: completed and adopted 2026-10-04.**
+
+Direct radiation is an exact duplicate in this data. Open-Meteo defines GHI as direct plus diffuse on
+the horizontal plane, and across all 1,030,440 stored solar point-hours `GHI - direct - diffuse` is 0.0
+to the last digit, so the national `direct_solar` mean is exactly `irr_solar - diffuse_solar`. Direct
+also overlaps DNI (direct is about DNI times the sine of the solar elevation; their daylight correlation
+is 0.88). Only its spread/min/max statistics carried anything not already present.
+
+Dropping the direct statistics block (five features, 39 -> 34) changed the five-seed development MAE by
+-1.775 MW and RMSE by -3.4 MW, inside the seed spread (+/-2.4 MW for this variant). On the primary seed
+it was +1.2 MW per day, better on 41 of 92 days, 95% day-bootstrap interval [-8.3, +10.3]. It neither
+helps nor hurts measurably, so it was removed as a simplification: fewer features and less column
+subsampling spent on a duplicate. DNI stays: removing it cost +8.0 MW, because beam irradiance on a
+sun-facing plane is not something trees can rebuild from GHI and diffuse.
+
+`SOLAR_PRODUCTION_WEATHER_ROLES` is now diffuse, DNI, and cloud cover. Direct radiation is still fetched
+and stays available to the experiment commands, as GTI is. The production solar model was retrained
+(34 features) with the incumbent parameters. Because the removal is a measured no-op on solar, the full
+retune and `eex analyze eval`/`oracle` gate were not run; run them with the next solar change.
+
 ### Wind
 
 Aggregation result:
@@ -1176,6 +1198,10 @@ Before changing a production feature/model:
   clearness -1.3 MW, best combination 775.5 MW (-15.3 vs production). Nothing adopted; azimuth stays the
   lead candidate with regional GHI second. See the
   [solar suggestions test](#test-clear-sky-ratio-spatial-ghi-temperature-and-the-auxiliary-blocks).
+- Removed direct radiation from the production solar features (39 -> 34). GHI is exactly direct plus
+  diffuse in the stored data, and dropping it changed MAE by -1.8 MW, inside seed noise. It is still
+  fetched for experiments. The solar model was retrained; no end-to-end gate was run for this no-op.
+  See [Remove direct radiation](#remove-direct-radiation).
 
 ### 2026-10-03
 

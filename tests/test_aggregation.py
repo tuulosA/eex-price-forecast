@@ -100,11 +100,11 @@ def test_solar_stats_variant_exactly_matches_production_features() -> None:
     pd.testing.assert_frame_equal(variant, production)
     assert {
         "solar_elevation_deg",
-        "direct_solar",
         "diffuse_solar",
         "dni_solar",
         "cloud_solar",
     } <= set(variant)
+    assert "direct_solar" not in variant
 
 
 def test_run_aggregation_without_capacity_scaling() -> None:

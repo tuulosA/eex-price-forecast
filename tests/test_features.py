@@ -290,9 +290,9 @@ def test_solar_auxiliary_weather_aligns_radiation_but_not_cloud(
         features["cloud_solar"], frame["cloud_ghi_de01"], check_names=False
     )
     production = solar_features(frame)
-    assert "gti_solar" not in production
+    # GTI and direct radiation are fetched for experiments only; direct is exactly GHI - diffuse.
+    assert "gti_solar" not in production and "direct_solar" not in production
     assert {
-        "direct_solar",
         "diffuse_solar",
         "dni_solar",
         "cloud_solar",
@@ -494,9 +494,9 @@ def test_price_features_adopts_country_mean_neighbours() -> None:
     assert set(prod.columns) - set(none.columns) == {"nbr_wind_dk", "nbr_wind_nl"}
 
 
-def test_model_weather_roles_are_every_role_except_the_unadopted_gti() -> None:
-    """GTI is fetched for experiments but read by no model; every other registered role is used."""
+def test_model_weather_roles_are_every_role_except_the_unadopted_gti_and_direct() -> None:
+    """GTI and direct radiation are fetched for experiments but read by no model; every other role is."""
     from eex_forecast.features import MODEL_WEATHER_ROLES, WEATHER_AGGREGATES
 
-    assert set(WEATHER_AGGREGATES) - MODEL_WEATHER_ROLES == {"gti_solar"}
+    assert set(WEATHER_AGGREGATES) - MODEL_WEATHER_ROLES == {"gti_solar", "direct_solar"}
     assert set(WEATHER_AGGREGATES) >= MODEL_WEATHER_ROLES
