@@ -97,17 +97,18 @@ docs/
   `t + 1 h`, using a timestamp lookup rather than a row shift. Keep the raw DB source timestamps
   unchanged, preserve this alignment in production/analysis builders and point ranking, and reserve the
   following weather hour when deciding forecast coverage.
-- **Solar's auxiliary weather contract is part of production.** The adopted builder uses direct,
-  diffuse, and direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
+- **Solar's auxiliary weather contract is part of production.** The adopted builder uses diffuse and
+  direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
   alongside GHI and deterministic geometry. The adopted point set is the 31-anchor, 100 km-spaced
   selection recorded by the anchor experiment; changing it requires a complete weather backfill,
-  matched retune, end-to-end/oracle comparison, and live coverage check. GTI is fetched for reproducible
-  experiments but was not adopted. Historical and live Open-Meteo calls must request the same variables;
+  matched retune, end-to-end/oracle comparison, and live coverage check. GTI and direct radiation are
+  fetched for reproducible experiments but are not production features (direct is exactly GHI minus
+  diffuse). Historical and live Open-Meteo calls must request the same variables;
   adding a solar auxiliary requires forecast-coverage checks and preceding-hour alignment when it is
   radiation.
 - **Solar aggregation varies only GHI.** `aggregation._variant_spec` routes solar through
   `features.solar_features_with_aggregation`, retaining production geometry and
-  direct/diffuse/DNI/cloud statistics. The `stats` variant must exactly equal `solar_features`; keep the
+  diffuse/DNI/cloud statistics. The `stats` variant must exactly equal `solar_features`; keep the
   feature-parity regression test when changing either builder.
 - **New sub-model weather roles do not implicitly enter price.** `WEATHER_AGGREGATES` is the registry
   used by feature helpers, while `PRICE_WEATHER_ROLES` is the explicit original price weather block.
