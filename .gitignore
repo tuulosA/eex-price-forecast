@@ -36,6 +36,7 @@ data/**
 !data/analysis/solar_error_slices.json
 !data/analysis/solar_feature_experiment.json
 !data/analysis/solar_irradiance_experiment.json
+!data/analysis/solar_azimuth_experiment.json
 !data/analysis/wind_anchor_experiment.json
 !data/analysis/load_anchor_experiment.json
 !data/analysis/solar_anchor_experiment.json
