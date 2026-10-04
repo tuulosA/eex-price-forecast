@@ -36,7 +36,7 @@ the *shapes* between charts, not the heights.
 
 ![Actual vs forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **26.81 EUR/MWh** in a typical hour.
+Over the 18 days the price forecast is off by **26.86 EUR/MWh** in a typical hour.
 
 - **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
   when people use more power, and lower around midday, when solar panels produce most. The forecast
@@ -47,7 +47,7 @@ Over the 18 days the price forecast is off by **26.81 EUR/MWh** in a typical hou
   solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
   training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
   hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 40% of the total error.** Without them the MAE would be 19.26
+- **Those three extreme days carry 40% of the total error.** Without them the MAE would be 19.29
   EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
 - **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
   forecast stayed 30-60 EUR/MWh higher.
@@ -69,15 +69,15 @@ Typical miss: **1,804 MW**.
 
 ![Solar: actual vs forecast on each holdout day](data/evaluation/eval_days_solar_holdout.png)
 
-Typical miss: **1,374 MW**.
+Typical miss: **1,386 MW**.
 
 - **The shape of the solar day is always right** - zero at night, a smooth arc peaking around noon.
 - **The midday peak is forecast too high on most days.** This is the clearest systematic error of
   the four models. Two causes fit the data. First, the amount of solar power produced per unit of
   sunlight has been falling year on year relative to the official installed capacity, so a model
   that learned from earlier years expects too much. Second, on days with negative prices, some solar
-  parks switch off because producing would cost them money. That is why the gap is largest on 26
-  April and 1 May, where the real curve is visibly flattened.
+  parks switch off because producing would cost them money. That is why the gap is largest on the
+  1 May holiday and large on Sunday 26 April, where the real curve is visibly flattened.
 - On clear days without negative prices, such as 15 April and 11 August, the forecast is very close.
 
 ### Electricity use (load)
@@ -103,9 +103,9 @@ so on - and turns them into one number. **SHAP** is a method that answers: *for 
 hour, how much did each input push the forecast up or down?*
 
 Think of it like splitting a restaurant bill. The model starts from an **average** forecast, the
-*base value* (for the price model, 91.82 EUR/MWh). Each input then adds or subtracts its own share.
-For one hour it might read: base 91.82, plus 30 because demand is high, minus 25 because it is
-sunny, minus 10 because it is windy - giving a forecast of 86.82. The shares always add up exactly
+*base value* (for the price model, 91.84 EUR/MWh). Each input then adds or subtracts its own share.
+For one hour it might read: base 91.84, plus 30 because demand is high, minus 25 because it is
+sunny, minus 10 because it is windy - giving a forecast of 86.84. The shares always add up exactly
 to the forecast. Each share is that input's **SHAP value** for that hour, measured in the forecast's
 own unit (EUR/MWh for price, MW for the others).
 
@@ -182,13 +182,15 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 
 ![SHAP summary of the solar model](data/analysis/shap_solar.png)
 
-- **Sunlight reaching the ground (GHI) dominates**, at about 9,400 MW of push in a typical hour. The
-  "irr_solar" row shows it clearly: bright hours (red) add up to about 20,000 MW; dark hours (blue)
-  subtract about 5,000 MW from the average.
-- **Direct sunlight** (sunshine coming straight from the sun rather than scattered by clouds) is the
-  second most useful input, at about 2,100 MW.
-- The calendar, the sun's position, and cloud cover add only small refinements. Most of what they
-  carry is already contained in the sunlight measurements.
+- **Sunlight reaching the ground (GHI) dominates**, at about 10,800 MW of push in a typical hour.
+  The "irr_solar" row shows it clearly: bright hours (red) add up to about 27,000 MW; dark hours
+  (blue) subtract about 6,000 MW from the average.
+- **The sun's position** comes second, at about 600 MW. It now includes the compass direction of
+  the sun ("solar_azimuth_cos"): most panels face south, so the same sun height gives more power
+  around midday than in the morning or evening.
+- **Direct normal irradiance** (sunshine measured facing the sun) adds about 500 MW. The calendar,
+  cloud cover, and scattered (diffuse) light add only small refinements. Direct sunlight on flat
+  ground is no longer an input: it is exactly GHI minus the scattered part, so it added nothing.
 
 ### Load model
 

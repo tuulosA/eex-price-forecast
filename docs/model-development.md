@@ -113,8 +113,8 @@ configured tree counts, one seed:
 | Price | 16.473 EUR/MWh | 21.380 EUR/MWh | 11.315 EUR/MWh | 15.229 EUR/MWh | 20.242 EUR/MWh |
 
 The 2026-10-02 report, before those two solar changes, had solar 787.849 MW (RMSE 1,313.190; groups
-847.183 / 596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242).
-The paragraph below and its oracle figures describe that report.
+847.183 / 596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242). All reports, plots, SHAP
+figures, and the live forecast were regenerated on 2026-10-04 for the current configuration.
 
 The original-22 column reproduces the pre-expansion report exactly, so neither expansion changed an
 earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.3),
@@ -122,8 +122,10 @@ the systematic grid in between (15.3), and the randomly drawn days the hardest (
 holdout's 26.8 once its three extreme days are set aside (19.3). Which days are sampled moves price
 MAE far more than most model changes do, which is why comparisons need the larger set and a
 day-level bootstrap. The 92-day oracle: `all_actual` 15.271 EUR/MWh; forecasting wind alone +0.090,
-solar +0.865, load +0.396, and all three +1.212 (16.483, matching eval). On the untouched holdout
-the same configuration scores 26.814 EUR/MWh price MAE (see the 2026-10-01 decision).
+solar +0.856, load +0.396, and all three +1.202 (16.473, matching eval). On the untouched holdout
+the same configuration scores 26.858 EUR/MWh price MAE (26.814 before the 2026-10-04 solar changes;
+see the 2026-10-01 decision). The holdout oracle: `all_actual` 23.898; wind +0.720, solar +1.430,
+load +1.199, all three +2.961.
 
 The earlier 22-day baseline, kept for comparison with reports made before the expansion, was:
 
@@ -249,19 +251,21 @@ direction, and market regime of each error.
 
 ### Solar
 
-Aggregation result:
+Aggregation result (rerun 2026-10-04 on the 92 development days, one seed):
 
-| Representation | MAE (MW) |
-|---|---:|
-| Statistics | 1,169.2 |
-| Spread | 1,320.9 |
-| Mean | 1,324.8 |
-| Raw points | 1,329.5 |
-| Regional means | 1,360.8 |
+| Representation | MAE (MW) | Features |
+|---|---:|---:|
+| Statistics | 781.5 | 36 |
+| Spread | 922.6 | 33 |
+| Mean | 927.7 | 32 |
+| Regional means | 940.5 | 34 |
+| Raw points | 955.3 | 62 |
 
-This comparison now retains the adopted geometry and direct/diffuse/DNI/cloud blocks in every variant,
-changing only the primary GHI aggregation. Statistics wins by 152 MW over spread and exactly reproduces
-the 39-feature production solar model's 1,169.164 MW score.
+This comparison retains the adopted geometry, azimuth, and diffuse/DNI/cloud blocks in every variant,
+changing only the primary GHI aggregation. Statistics wins by 141 MW over spread and exactly reproduces
+the 36-feature production solar model's 781.455 MW score. The 2026-07-29 run on the original 22 days
+(39-feature model) had the same order: statistics 1,169.2, spread 1,320.9, mean 1,324.8, raw
+1,329.5, regional 1,360.8.
 
 In the earlier, pre-alignment comparison, the darkness constraint changed historical MAE by only about
 +4 MW. Its purpose is physical plausibility, not backtest optimization.
@@ -413,7 +417,9 @@ earlier geometry experiments stay reproducible.
   26.858 EUR/MWh, solar 1,373.845 -> 1,386.124 MW.
 
 Azimuth was adopted as a physically motivated, small solar improvement that does not harm price. The
-production solar model was retrained with 36 features.
+production solar model was retrained with 36 features. The refreshed five-seed error slices of the
+adopted model: all hours 780.4 MW, daylight 1,392.0 MW with a +760.6 MW mean error (still
+over-forecasting), dark 13.3 MW.
 
 #### Test clear-sky ratio, spatial GHI, temperature, and the auxiliary blocks
 

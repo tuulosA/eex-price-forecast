@@ -287,12 +287,12 @@ The adopted configuration on the 18 holdout days, the out-of-sample headline, is
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,803.702 MW | 2,203.244 MW |
-| Solar | 1,373.845 MW | 2,177.160 MW |
+| Solar | 1,386.124 MW | 2,198.653 MW |
 | Load | 1,848.801 MW | 2,107.155 MW |
-| Price | 26.814 EUR/MWh | 39.976 EUR/MWh |
+| Price | 26.858 EUR/MWh | 40.044 EUR/MWh |
 
 Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
-prices from -499 to 666 EUR/MWh): they carry 40% of it, and the MAE without them is 19.259 EUR/MWh.
+prices from -499 to 666 EUR/MWh): they carry 40% of it, and the MAE without them is 19.293 EUR/MWh.
 See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
 
 The development result over the 92 development days - the reference for comparing model changes -
@@ -301,9 +301,9 @@ is:
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,426.052 MW | 1,803.784 MW |
-| Solar | 787.849 MW | 1,313.190 MW |
+| Solar | 781.455 MW | 1,305.612 MW |
 | Load | 1,741.388 MW | 2,014.971 MW |
-| Price | 16.483 EUR/MWh | 21.398 EUR/MWh |
+| Price | 16.473 EUR/MWh | 21.380 EUR/MWh |
 
 Reports made before the 2026-10-01 expansion used only the original 22 days (price 11.327 EUR/MWh);
 compare a new run with them on `DEV_CORE_CUTOFFS`, not on the full 52.
