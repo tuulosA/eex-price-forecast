@@ -39,6 +39,7 @@ from eex_forecast.features import (
     TIMESTAMP,
     WEATHER_AGGREGATES,
     calendar_features,
+    solar_azimuth_features,
     solar_geometry_features,
 )
 from eex_forecast.model import TrainedModel, capacity_for
@@ -70,7 +71,9 @@ _FUNDAMENTAL_FAMILIES: dict[str, str] = {
 }
 _PROBE = pd.Series(pd.to_datetime(["2025-06-01 12:00"], utc=True))
 _CALENDAR = frozenset(calendar_features(_PROBE).columns)
-_GEOMETRY = frozenset(solar_geometry_features(_PROBE).columns)
+_GEOMETRY = frozenset(solar_geometry_features(_PROBE).columns) | frozenset(
+    solar_azimuth_features(_PROBE).columns
+)
 
 
 def feature_family(feature: str) -> str:

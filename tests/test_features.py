@@ -21,6 +21,7 @@ from eex_forecast.features import (
     price_features_with_neighbours,
     price_lags,
     set_active_weather_columns,
+    solar_azimuth_features,
     solar_features,
     solar_features_baseline,
     solar_features_with_auxiliary_weather,
@@ -108,6 +109,24 @@ def test_solar_geometry_tracks_interval_midpoint_and_season() -> None:
     assert 10.0 < geometry["solar_elevation_deg"].iloc[2] < 20.0
     assert geometry["clear_sky_ghi"].iloc[0] == 0.0
     assert geometry["clear_sky_ghi"].iloc[1] > geometry["clear_sky_ghi"].iloc[2] > 0.0
+
+
+def test_solar_azimuth_follows_the_sun_and_enters_only_production_solar(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    # Interval midpoints 04:00Z, 11:00Z and 17:00Z on midsummer at the reference point: north-east
+    # shortly after sunrise, near south at midday, west in the evening.
+    times = pd.Series(
+        pd.to_datetime(["2026-06-21T03:30Z", "2026-06-21T10:30Z", "2026-06-21T16:30Z"], utc=True)
+    )
+    azimuth = solar_azimuth_features(times)
+    degrees = (
+        np.degrees(np.arctan2(azimuth["solar_azimuth_sin"], azimuth["solar_azimuth_cos"])) % 360
+    )
+    assert degrees.tolist() == pytest.approx([60.3, 170.5, 281.8], abs=0.2)
+    assert set(solar_geometry_features(times).columns).isdisjoint(azimuth.columns)
+    assert {"solar_azimuth_sin", "solar_azimuth_cos"} <= set(solar_features(timeseries_frame))
+    assert "solar_azimuth_sin" not in price_features(timeseries_frame)
 
 
 def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataFrame) -> None:
@@ -235,7 +254,10 @@ def test_solar_physics_variants_add_geometry_and_stable_clear_sky_index(
     clear_sky = solar_features_with_clear_sky(timeseries_frame)
     baseline = solar_features_baseline(timeseries_frame)
 
-    pd.testing.assert_frame_equal(solar_features(timeseries_frame), geometry)
+    # Without fetched auxiliary roles, production is the geometry variant plus azimuth.
+    production = solar_features(timeseries_frame)
+    azimuth = ["solar_azimuth_sin", "solar_azimuth_cos"]
+    pd.testing.assert_frame_equal(production.drop(columns=azimuth), geometry)
     assert set(elevation.columns) - set(baseline.columns) == {"solar_elevation_deg"}
     assert set(clear_sky_ghi.columns) - set(baseline.columns) == {"clear_sky_ghi"}
     assert set(geometry.columns) - set(baseline.columns) == {

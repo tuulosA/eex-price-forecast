@@ -101,15 +101,20 @@ Committed reports:
 
 ### Current end-to-end baseline
 
-**The reference for model changes is the 92-day development set (2026-10-02).** The adopted
-configuration, with all models at their configured tree counts, one seed:
+**The reference for model changes is the 92-day development set (updated 2026-10-04 for the solar
+azimuth adoption and direct-radiation removal).** The adopted configuration, with all models at their
+configured tree counts, one seed:
 
 | Model | MAE (92 days) | RMSE (92 days) | Original 22 | 30 systematic | 40 random |
 |---|---:|---:|---:|---:|---:|
 | Wind | 1,426.052 MW | 1,803.784 MW | 1,504.538 MW | 1,228.647 MW | 1,530.938 MW |
-| Solar | 787.849 MW | 1,313.190 MW | 847.183 MW | 596.268 MW | 898.900 MW |
+| Solar | 781.455 MW | 1,305.612 MW | 864.566 MW | 592.608 MW | 877.381 MW |
 | Load | 1,741.388 MW | 2,014.971 MW | 1,488.821 MW | 1,692.891 MW | 1,916.672 MW |
-| Price | 16.483 EUR/MWh | 21.398 EUR/MWh | 11.327 EUR/MWh | 15.253 EUR/MWh | 20.242 EUR/MWh |
+| Price | 16.473 EUR/MWh | 21.380 EUR/MWh | 11.315 EUR/MWh | 15.229 EUR/MWh | 20.242 EUR/MWh |
+
+The 2026-10-02 report, before those two solar changes, had solar 787.849 MW (RMSE 1,313.190; groups
+847.183 / 596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242).
+The paragraph below and its oracle figures describe that report.
 
 The original-22 column reproduces the pre-expansion report exactly, so neither expansion changed an
 earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.3),
@@ -362,7 +367,7 @@ darkness rule.
 
 #### Add solar azimuth
 
-**Status: tested 2026-10-03; not adopted here yet.**
+**Status: tested 2026-10-03; adopted 2026-10-04.**
 
 The geometry block gives elevation, cosine of zenith, and clear-sky GHI. Elevation and zenith carry the
 same information for a tree, so the model cannot tell a morning sun from an afternoon sun at the same
@@ -388,10 +393,27 @@ On the primary seed's per-day results, azimuth beat production on 45 of 92 days;
 in spring, +1.1 MW in autumn, and +5.3 MW in winter. Summer is where the morning/afternoon asymmetry of
 south-facing panels is largest, so the pattern is physically plausible.
 
-Azimuth beats hour angle and is the candidate to carry forward. It has not been adopted here: about
-1.4% of solar MAE needs the usual promotion gate first - a solar retune with azimuth, then `eex analyze
-eval` and `oracle` on the development days to see whether the price forecast benefits. Refine Power,
-the desktop successor, includes azimuth as a default-on solar feature with its own toggle.
+Azimuth beats hour angle and was carried forward. Refine Power, the desktop successor, includes
+azimuth as a default-on solar feature with its own toggle.
+
+**Adoption (2026-10-04).** `features.solar_azimuth_features` adds `solar_azimuth_sin` and
+`solar_azimuth_cos` to production solar (34 -> 36 features, after the direct-radiation removal). It
+shares the solar-position calculation with `solar_geometry_features`, whose output is unchanged, so the
+earlier geometry experiments stay reproducible.
+
+- **Retune.** The incumbent parameters scored 781.455 MW on the new representation and beat all 20
+  fresh Optuna trials (best 796.060 MW), so `config/hyperparams.json` is unchanged.
+- **End-to-end eval** (92 development days, one seed, against the 2026-10-02 report): solar 787.849
+  -> 781.455 MW (-6.4; better on 45 days, worse on 47; 90% day-bootstrap interval [-17.8, +4.4]),
+  RMSE 1,313.190 -> 1,305.612. By season the solar change was -40.4 MW/day in summer, +12.7 in spring,
+  +4.5 in winter, and +0.7 in autumn. Wind and load are identical. Price 16.483 -> 16.473 EUR/MWh
+  (-0.011; 45 better, 45 worse; [-0.038, +0.016]): neutral. The comparison also contains the
+  direct-radiation removal, which was a measured no-op.
+- **Holdout** (reported after adoption, not used to decide): price 26.814 ->
+  26.858 EUR/MWh, solar 1,373.845 -> 1,386.124 MW.
+
+Azimuth was adopted as a physically motivated, small solar improvement that does not harm price. The
+production solar model was retrained with 36 features.
 
 #### Test clear-sky ratio, spatial GHI, temperature, and the auxiliary blocks
 
@@ -1190,6 +1212,13 @@ Before changing a production feature/model:
 ## Decision history
 
 ### 2026-10-04
+
+- Adopted solar azimuth (sin/cos) into production solar features (36). The incumbent solar parameters
+  beat 20 fresh trials and were kept. End-to-end on the 92 development days: solar 787.849 -> 781.455
+  MW (summer -40 MW/day, spring +13), wind and load unchanged, price 16.483 -> 16.473 EUR/MWh (neutral,
+  90% interval [-0.038, +0.016]). Holdout, reported afterwards: price 26.814 ->
+  26.858 EUR/MWh, solar 1,373.845 -> 1,386.124 MW. See
+  [Add solar azimuth](#add-solar-azimuth).
 
 - Tested an outside review's solar suggestions on top of production (92 development days, five seeds,
   fixed parameters): national clear-sky ratio -0.5 MW, pointwise clearness stats -3.2 MW, five regional

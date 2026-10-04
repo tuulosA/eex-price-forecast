@@ -99,7 +99,7 @@ docs/
   following weather hour when deciding forecast coverage.
 - **Solar's auxiliary weather contract is part of production.** The adopted builder uses diffuse and
   direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
-  alongside GHI and deterministic geometry. The adopted point set is the 31-anchor, 100 km-spaced
+  alongside GHI, deterministic geometry, and solar azimuth (sin/cos). The adopted point set is the 31-anchor, 100 km-spaced
   selection recorded by the anchor experiment; changing it requires a complete weather backfill,
   matched retune, end-to-end/oracle comparison, and live coverage check. GTI and direct radiation are
   fetched for reproducible experiments but are not production features (direct is exactly GHI minus

@@ -221,18 +221,13 @@ def calendar_features(timestamps: pd.Series) -> pd.DataFrame:
     )
 
 
-def solar_geometry_features(
-    timestamps: pd.Series,
-    *,
-    latitude: float = SOLAR_REFERENCE_LATITUDE,
-    longitude: float = SOLAR_REFERENCE_LONGITUDE,
-) -> pd.DataFrame:
-    """Solar elevation and a clear-sky GHI proxy for each delivery interval.
+def _solar_position(
+    timestamps: pd.Series, latitude: float, longitude: float
+) -> tuple[pd.Series, pd.Series, float, pd.Series]:
+    """NOAA fractional-year solar position at each interval midpoint.
 
-    Radiation and generation are hourly interval means, so geometry is evaluated at the interval
-    midpoint rather than its start label. Solar position follows NOAA's compact fractional-year
-    approximation. The Haurwitz clear-sky model then converts positive cosine-of-zenith into surface GHI.
-    Both are deterministic from UTC timestamp and location, avoiding a history/live data contract.
+    Returns ``(declination, hour_angle, latitude_radians, cosine_zenith)``; the hour angle is
+    negative in the morning and positive in the afternoon.
     """
     utc = pd.to_datetime(timestamps, utc=True) + pd.Timedelta(minutes=30)
     day_of_year = utc.dt.dayofyear.astype(float)
@@ -260,11 +255,28 @@ def solar_geometry_features(
     )
     solar_minutes = (fractional_hour * 60.0 + equation_of_time + 4.0 * longitude) % 1440.0
     hour_angle = np.radians(solar_minutes / 4.0 - 180.0)
-    latitude_radians = np.radians(latitude)
+    latitude_radians = float(np.radians(latitude))
     cosine_zenith = (
         np.sin(latitude_radians) * np.sin(declination)
         + np.cos(latitude_radians) * np.cos(declination) * np.cos(hour_angle)
     ).clip(-1.0, 1.0)
+    return declination, hour_angle, latitude_radians, cosine_zenith
+
+
+def solar_geometry_features(
+    timestamps: pd.Series,
+    *,
+    latitude: float = SOLAR_REFERENCE_LATITUDE,
+    longitude: float = SOLAR_REFERENCE_LONGITUDE,
+) -> pd.DataFrame:
+    """Solar elevation and a clear-sky GHI proxy for each delivery interval.
+
+    Radiation and generation are hourly interval means, so geometry is evaluated at the interval
+    midpoint rather than its start label. Solar position follows NOAA's compact fractional-year
+    approximation. The Haurwitz clear-sky model then converts positive cosine-of-zenith into surface GHI.
+    Both are deterministic from UTC timestamp and location, avoiding a history/live data contract.
+    """
+    _, _, _, cosine_zenith = _solar_position(timestamps, latitude, longitude)
     elevation = np.degrees(np.arcsin(cosine_zenith))
     daylight_cosine = cosine_zenith.clip(lower=0.0)
     clear_sky_ghi = pd.Series(0.0, index=timestamps.index)
@@ -278,6 +290,36 @@ def solar_geometry_features(
             "solar_zenith_cos": daylight_cosine.to_numpy(),
             "clear_sky_ghi": clear_sky_ghi.to_numpy(),
         },
+        index=timestamps.index,
+    )
+
+
+def solar_azimuth_features(
+    timestamps: pd.Series,
+    *,
+    latitude: float = SOLAR_REFERENCE_LATITUDE,
+    longitude: float = SOLAR_REFERENCE_LONGITUDE,
+) -> pd.DataFrame:
+    """Sine and cosine of the solar azimuth (from north, clockwise) at each interval midpoint.
+
+    Elevation alone cannot tell a morning sun from an afternoon sun at the same height, while mostly
+    south-facing PV responds asymmetrically to them; the clock-time hour only approximates this. The
+    sin/cos encoding keeps north continuous. Adopted 2026-10-04 after a five-seed frozen-cutoff test
+    lowered solar MAE by about 11 MW (see docs/model-development.md, "Add solar azimuth").
+    """
+    declination, hour_angle, latitude_radians, cosine_zenith = _solar_position(
+        timestamps, latitude, longitude
+    )
+    # Clamp so an overhead sun (sin zenith = 0) cannot divide by zero; it never occurs in Germany.
+    sine_zenith = np.sqrt(1.0 - cosine_zenith**2).clip(lower=1e-9)
+    cosine_azimuth = (
+        (np.sin(declination) - np.sin(latitude_radians) * cosine_zenith)
+        / (np.cos(latitude_radians) * sine_zenith)
+    ).clip(-1.0, 1.0)
+    morning = np.arccos(cosine_azimuth)
+    azimuth = np.where(hour_angle > 0.0, 2.0 * np.pi - morning, morning)
+    return pd.DataFrame(
+        {"solar_azimuth_sin": np.sin(azimuth), "solar_azimuth_cos": np.cos(azimuth)},
         index=timestamps.index,
     )
 
@@ -556,7 +598,7 @@ def solar_features_with_clear_sky(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Adopted solar drivers: geometry, diffuse and direct-normal irradiance, and cloud cover.
+    """Adopted solar drivers: geometry, azimuth, diffuse and direct-normal irradiance, and cloud cover.
 
     Geometry reduced the five-seed frozen-cutoff MAE by about 31 MW versus the irradiance/calendar
     baseline. Direct, diffuse, and direct-normal irradiance plus cloud-cover spatial statistics then
@@ -601,6 +643,7 @@ def solar_features_with_aggregation(
                 n_regions=n_regions,
             ),
             solar_geometry_features(frame[TIMESTAMP]),
+            solar_azimuth_features(frame[TIMESTAMP]),
             *_solar_auxiliary_blocks(frame, SOLAR_PRODUCTION_WEATHER_ROLES),
         ],
         axis=1,
