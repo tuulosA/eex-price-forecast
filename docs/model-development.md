@@ -102,19 +102,21 @@ Committed reports:
 ### Current end-to-end baseline
 
 **The reference for model changes is the 92-day development set (updated 2026-10-04 for the solar
-azimuth adoption and direct-radiation removal).** The adopted configuration, with all models at their
+azimuth adoption, the direct-radiation removal, and the `load_d1` TSO load companion).** The adopted configuration, with all models at their
 configured tree counts, one seed:
 
 | Model | MAE (92 days) | RMSE (92 days) | Original 22 | 30 systematic | 40 random |
 |---|---:|---:|---:|---:|---:|
 | Wind | 1,426.052 MW | 1,803.784 MW | 1,504.538 MW | 1,228.647 MW | 1,530.938 MW |
 | Solar | 781.455 MW | 1,305.612 MW | 864.566 MW | 592.608 MW | 877.381 MW |
-| Load | 1,741.388 MW | 2,014.971 MW | 1,488.821 MW | 1,692.891 MW | 1,916.672 MW |
-| Price | 16.473 EUR/MWh | 21.380 EUR/MWh | 11.315 EUR/MWh | 15.229 EUR/MWh | 20.242 EUR/MWh |
+| Load | 1,576.739 MW | 1,821.171 MW | 1,538.042 MW | 1,572.274 MW | 1,601.372 MW |
+| Price | 16.238 EUR/MWh | 21.287 EUR/MWh | 11.341 EUR/MWh | 15.144 EUR/MWh | 19.753 EUR/MWh |
 
 The 2026-10-02 report, before those two solar changes, had solar 787.849 MW (RMSE 1,313.190; groups
 847.183 / 596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242). All reports, plots, SHAP
-figures, and the live forecast were regenerated on 2026-10-04 for the current configuration.
+figures, and the live forecast were regenerated on 2026-10-04 for the current configuration. Before
+`load_d1`, load was 1,741.388 MW (RMSE 2,014.971; groups 1,488.821 / 1,692.891 / 1,916.672) and price
+16.473 EUR/MWh (RMSE 21.380; groups 11.315 / 15.229 / 20.242).
 
 The original-22 column reproduces the pre-expansion report exactly, so neither expansion changed an
 earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.3),
@@ -122,10 +124,10 @@ the systematic grid in between (15.3), and the randomly drawn days the hardest (
 holdout's 26.8 once its three extreme days are set aside (19.3). Which days are sampled moves price
 MAE far more than most model changes do, which is why comparisons need the larger set and a
 day-level bootstrap. The 92-day oracle: `all_actual` 15.271 EUR/MWh; forecasting wind alone +0.090,
-solar +0.856, load +0.396, and all three +1.202 (16.473, matching eval). On the untouched holdout
-the same configuration scores 26.858 EUR/MWh price MAE (26.814 before the 2026-10-04 solar changes;
-see the 2026-10-01 decision). The holdout oracle: `all_actual` 23.898; wind +0.720, solar +1.430,
-load +1.199, all three +2.961.
+solar +0.856, load -0.012, and all three +0.967 (16.238, matching eval). On the untouched holdout
+the same configuration scores 26.753 EUR/MWh price MAE (26.858 before `load_d1`, 26.814 before the
+2026-10-04 solar changes; see the 2026-10-01 decision). The holdout oracle: `all_actual` 23.893; wind
++0.720, solar +1.434, load +1.018, all three +2.860.
 
 The earlier 22-day baseline, kept for comparison with reports made before the expansion, was:
 
@@ -812,17 +814,69 @@ Test:
 - Christmas Eve and New Year's Eve;
 - school/vacation periods if a reliable source is selected.
 
-#### Benchmark ENTSO-E's day-ahead load forecast
+#### Use ENTSO-E's day-ahead load forecast
 
-Keep the provider series in a separate column and compare:
+**Status: completed and adopted 2026-10-04 as the `load_d1` day-ahead companion.**
 
-1. provider alone;
-2. current model alone;
-3. provider as a model feature;
-4. residual correction of the provider forecast;
-5. a simple development-set blend.
+The TSOs' day-ahead total load forecast (ENTSO-E 6.1.B, process A01) is stored in its own column,
+`load_tso_forecast_mw`; `load_forecast_mw` stays this project's model output. It is published around
+10:00 Berlin for the next delivery day only (on Sunday 2026-10-04 it appeared between 10:03 and 10:08).
+So it exists for a morning run's first unknown delivery day - exactly the D+1 the tools score - and never
+for an evening run, whose first unknown day is the day after tomorrow, nor for days 2-14.
 
-Do not overwrite `load_forecast_mw`; preserve provenance.
+Screen on the 92 development days, five seeds, tuned load parameters held fixed (load MAE):
+
+| Variant | MAE (MW) | Seed spread |
+|---|---:|---:|
+| Production load model | 1,757.5 | 22.6 |
+| TSO forecast alone | 1,957.5 | - |
+| 50/50 blend | 1,641.5 | 8.3 |
+| TSO as a feature, all days | 1,609.4 | 8.8 |
+| Model corrects the TSO forecast (residual target) | 1,607.5 | 12.3 |
+| TSO as a feature on working days only | 1,574.6 | 9.9 |
+| TSO feature nulled on 13/14 of training rows (one 14-day model) | 1,737.2 | 7.9 |
+
+The model beats the TSO forecast on its own, but the two combined are about 9% better. The gain is on
+weekdays (-288 MW/day) and in winter (-479 MW/day), where the production model under-forecast cold
+working days by several GW; on weekends the TSO forecast is poor (+859 MW/day worse than the model alone)
+and the feature variant loses +240 MW/day there. Masking the input on most training rows taught the
+model to ignore it, so a single model for the whole horizon gains nothing.
+
+End-to-end over three seeds (42, 1,055, 2,068) with the untuned load parameters:
+
+| Variant | Load MAE (MW) | Price MAE (EUR/MWh) | Price by seed |
+|---|---:|---:|---|
+| Production | 1,764.7 | 16.473 | 16.473 / 16.493 / 16.454 |
+| TSO feature, all days | 1,610.3 | **16.209** | 16.235 / 16.214 / 16.178 |
+| TSO feature, working days only | 1,573.0 | 16.249 | 16.341 / 16.214 / 16.192 |
+
+All days gained on every seed (-0.264 EUR/MWh, 90% day interval [-0.573, +0.038], better on 53 of 92
+days). Working days only forecast load better but price no better (+0.040 against all days, [-0.155,
++0.250], the gap coming from the six holidays), so the simpler all-days feature was adopted - another
+case where a better load MAE did not carry to price.
+
+**Adoption.** `model.DAY_AHEAD_COMPANIONS` defines `load_d1`: the production load features plus
+`load_tso_forecast_mw`, trained with the input on every row and used only on rows that carry it
+(`model.combine_day_ahead`); the base `load` model serves every other row and remains the fallback when
+the TSO forecast or the `load_d1` artefact is missing. The live forecast, the ensemble members, and the
+end-to-end eval/oracle folds all apply the same switch. The series is fetched by `eex backfill entsoe`
+and `eex update` (their ENTSO-E window already reaches tomorrow) and again by the forecast step.
+
+- **Retune.** `load_d1` started from the load parameters (1,622.755 MW) and a fresh trial reached
+  1,576.740 MW, so it has its own entry in `config/hyperparams.json`.
+- **End-to-end eval** (92 development days, one seed): load 1,741.388 -> 1,576.739 MW (90% day interval
+  [-320, -14]; RMSE 2,014.971 -> 1,821.171); price 16.473 -> 16.238 EUR/MWh (-0.234; better on 43 days,
+  worse on 49, [-0.551, +0.071]; RMSE 21.380 -> 21.287). The price gain is in winter (-0.614/day) and
+  autumn (-0.421) weekdays. Wind and solar are unchanged.
+- **Oracle.** Forecasting load now costs price -0.012 EUR/MWh against actual load (was +0.396): on the
+  first day the load forecast is as good for price as the measurement. All three forecast: +0.967 (was
+  +1.202).
+- **Holdout** (reported after adoption): load 1,848.801 -> 1,590.191 MW, price 26.858 -> 26.753 EUR/MWh;
+  the holdout oracle's load penalty fell from +1.199 to +1.018.
+
+The gain applies to the first forecast day of runs made between the TSO publication (~10:10 Berlin) and
+the auction result; evening runs and days 2-14 use the base model as before. The stored series is the
+latest version ENTSO-E serves, which may include revisions after the 10:00 publication.
 
 ### 3. Wind geography and target structure
 
@@ -1218,6 +1272,14 @@ Before changing a production feature/model:
 ## Decision history
 
 ### 2026-10-04
+
+- Adopted the TSO day-ahead load forecast through a `load_d1` companion model used for the first
+  forecast day wherever the forecast exists. Five-seed load screen: 1,757.5 -> 1,609.4 MW; three-seed
+  end-to-end price 16.473 -> 16.209 EUR/MWh (all seeds -0.24 to -0.28). After a `load_d1` retune
+  (1,622.8 -> 1,576.7 MW): end-to-end load 1,741.4 -> 1,576.7 MW, price 16.473 -> 16.238, the oracle's
+  load penalty +0.396 -> -0.012. Holdout, reported afterwards: load 1,848.8 -> 1,590.2 MW, price
+  26.858 -> 26.753. A working-days-only variant forecast load better but price no better and was not
+  adopted. See [Use ENTSO-E's day-ahead load forecast](#use-entso-es-day-ahead-load-forecast).
 
 - Adopted solar azimuth (sin/cos) into production solar features (36). The incumbent solar parameters
   beat 20 fresh trials and were kept. End-to-end on the 92 development days: solar 787.849 -> 781.455

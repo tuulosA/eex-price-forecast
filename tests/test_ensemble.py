@@ -36,7 +36,7 @@ from eex_forecast.ensemble.store import (
     write_member_weather,
 )
 from eex_forecast.ensemble.summary import QUANTILES, spread_width, summarise_members
-from eex_forecast.model import ALL_MODELS, REGISTRY, train
+from eex_forecast.model import ALL_MODELS, REGISTRY, TrainedModel, train
 
 TINY = {
     "n_estimators": 12,
@@ -46,6 +46,17 @@ TINY = {
     "random_state": 0,
     "n_jobs": 0,
 }
+
+
+def serve_models(models):  # type: ignore[no-untyped-def]
+    """A ``TrainedModel.load`` stand-in; an untrained companion is a missing artefact, as in production."""
+
+    def load(cls, spec, models_dir=None):  # type: ignore[no-untyped-def]
+        if spec.name not in models:
+            raise FileNotFoundError(spec.name)
+        return models[spec.name]
+
+    return load
 
 
 def _payload(hours: int = 6, members: int = 3) -> dict[str, Any]:
@@ -373,11 +384,7 @@ def _stub_forecast_env(
     history = frame.loc[~future]
     models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
     monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
-    monkeypatch.setattr(
-        forecast_ops.TrainedModel,
-        "load",
-        classmethod(lambda cls, spec, models_dir=None: models[spec.name]),
-    )
+    monkeypatch.setattr(TrainedModel, "load", classmethod(serve_models(models)))
     monkeypatch.setattr(forecast_ops, "FORECAST_DIR", tmp_path / "out")
     return db_path, now, models
 

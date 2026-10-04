@@ -35,7 +35,7 @@ from eex_forecast.config import (
 from eex_forecast.db import connect, read_frame, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.features import TIMESTAMP, active_weather_columns
-from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
+from eex_forecast.model import DAY_AHEAD_COMPANIONS, REGISTRY, SUBMODELS, load_for_forecast
 from eex_forecast.plots import (
     numeric_column,
     plot_drivers,
@@ -44,7 +44,7 @@ from eex_forecast.plots import (
     plot_forecast,
     plot_fundamentals,
 )
-from eex_forecast.sources import ntc, nuclear
+from eex_forecast.sources import entsoe, ntc, nuclear
 from eex_forecast.weather.openmeteo import fetch_forecast
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
@@ -143,6 +143,24 @@ def fetch_forecast_ntc(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int
     return rows
 
 
+def fetch_forecast_load_tso(db_path: str) -> int:
+    """Fetch the TSO day-ahead load forecast for today and tomorrow (published ~10:00 Berlin).
+
+    `update` already fetches it with the other ENTSO-E series; this keeps a standalone `eex forecast`
+    complete too. Before publication, or on an evening run whose first unknown day is the day after
+    tomorrow, there is simply no row for the horizon and the base load model serves it.
+    """
+    now = pd.Timestamp.now(tz="UTC").floor("h")
+    frame = entsoe.fetch_load_tso_forecast(now - pd.Timedelta(days=1), now + pd.Timedelta(days=3))
+    if frame.empty:
+        return 0
+    with connect(db_path) as conn:
+        create_schema(conn)
+        rows = upsert(conn, frame)
+    logger.info("Fetched the TSO day-ahead load forecast into %d rows", rows)
+    return rows
+
+
 def fetch_forecast_inputs(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> None:
     """Fetch every forward-looking model input for the horizon into the database: the weather forecast
     plus the known-ahead nuclear and NTC series. After this the frame is complete through the horizon, so
@@ -150,6 +168,7 @@ def fetch_forecast_inputs(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> 
     fetch_forecast_weather(db_path, horizon_days=horizon_days)
     fetch_forecast_nuclear(db_path, horizon_days=horizon_days)
     fetch_forecast_ntc(db_path, horizon_days=horizon_days)
+    fetch_forecast_load_tso(db_path)
 
 
 # Domestic weather column prefixes; a future row missing any of these has no genuine weather forecast.
@@ -321,10 +340,23 @@ def run_forecast(
     # (its actual-or-forecast coalesce still prefers the measured value where a row already has one).
     for name in (*SUBMODELS, "price"):
         spec = REGISTRY[name]
-        frame[spec.forecast_column] = TrainedModel.load(spec).predict(frame)
+        frame[spec.forecast_column] = load_for_forecast(name).predict(frame)
         logger.info(
             "Forecast %s: horizon mean %.1f", name, frame.loc[future, spec.forecast_column].mean()
         )
+        link = DAY_AHEAD_COMPANIONS.get(name)
+        if link is not None and link.input_column in frame.columns:
+            # Counted from now, not over the published days: after the auction the first unknown
+            # delivery day is the day after tomorrow, which the TSO forecast does not reach.
+            with_input = future & frame[link.input_column].notna()
+            logger.info(
+                "Forecast %s: %s serves %d hours from now (%s ends %s)",
+                name,
+                link.spec.name,
+                int(with_input.sum()),
+                link.input_column,
+                times[with_input].max() if with_input.any() else "before now",
+            )
 
     # Trim the historical edge to a whole German delivery day, then end after the requested number of
     # unknown delivery days. Predictions are already computed over the buffered frame, so price lags and

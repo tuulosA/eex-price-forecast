@@ -13,9 +13,10 @@ wind/solar/load fundamentals, and cross-border market drivers.
 
 `eex-price-forecast` provides a Python 3.11+ package and an `eex` command-line interface that:
 
-1. backfills German prices, generation, load, capacity, weather, nuclear availability, and transfer
-   capacity into SQLite;
-2. forecasts wind, solar, and load from ECMWF weather with three XGBoost sub-models;
+1. backfills German prices, generation, load, the TSOs' day-ahead load forecast, capacity, weather,
+   nuclear availability, and transfer capacity into SQLite;
+2. forecasts wind, solar, and load from ECMWF weather with three XGBoost sub-models (for the first
+   forecast day, load also reads the TSOs' day-ahead load forecast through a `load_d1` companion);
 3. forecasts German day-ahead price from those fundamentals, calendar and lag features, German weather,
    and cross-border conditions;
 4. writes a forecast CSV and optional price, fundamentals, and driver plots;
@@ -94,7 +95,7 @@ eex backfill weather --start 2023-01-01     # history at the committed weather p
 eex backfill nuclear --start 2023-01-01     # French nuclear availability
 eex backfill ntc --start 2023-01-01         # cross-border transfer capacity
 eex update                                  # refresh the most recent actuals and weather
-eex model train                             # train wind, solar, load, and price
+eex model train                             # train wind, solar, load, load_d1, and price
 eex forecast --plot                         # write data/forecast/*
 ```
 
@@ -210,8 +211,8 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 |---|---:|---:|
 | Wind | 1,803.70 MW | 2,203.24 MW |
 | Solar | 1,386.12 MW | 2,198.65 MW |
-| Load | 1,848.80 MW | 2,107.15 MW |
-| Price | 26.86 EUR/MWh | 40.04 EUR/MWh |
+| Load | 1,590.19 MW | 1,845.07 MW |
+| Price | 26.75 EUR/MWh | 40.32 EUR/MWh |
 
 ![Actual vs D+1 forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
 
@@ -269,8 +270,8 @@ Every `eex` invocation also writes a timestamped file under `logs/`. Logs older 
 
 ## Data sources
 
-- [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — prices, generation, load,
-  installed capacity, nuclear outages, and transfer capacity;
+- [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — prices, generation, load, the
+  TSOs' day-ahead load forecast, installed capacity, nuclear outages, and transfer capacity;
 - [Open-Meteo](https://open-meteo.com/) — live and archived ECMWF IFS forecasts;
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) — country land geometry;
 - [Marine Regions](https://www.marineregions.org/) — maritime and EEZ geometry.
