@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-10-04T06:37:09.369105+00:00",
+  "run_at": "2026-10-04T11:09:05.504193+00:00",
   "cutoff_set": "development",
   "n_cutoffs": 92,
   "models": {
@@ -273,132 +273,132 @@
       "unit": "MW",
       "hours": 2207,
       "days": 92,
-      "mae": 1741.7724,
-      "bias": -444.4738,
+      "mae": 1577.0275,
+      "bias": 62.7661,
       "by_hour_block": [
         {
           "group": "night 0-6",
           "hours_pct": 24.97,
-          "mae": 1534.6835,
-          "bias": -786.4436,
-          "error_pct": 22.0
+          "mae": 1432.92,
+          "bias": -273.8633,
+          "error_pct": 22.68
         },
         {
           "group": "morning 6-10",
           "hours_pct": 16.67,
-          "mae": 1730.3271,
-          "bias": -673.5117,
-          "error_pct": 16.56
+          "mae": 1657.3788,
+          "bias": 111.981,
+          "error_pct": 17.52
         },
         {
           "group": "midday 10-16",
           "hours_pct": 25.01,
-          "mae": 1874.034,
-          "bias": 111.7982,
-          "error_pct": 26.91
+          "mae": 1705.0382,
+          "bias": 401.5824,
+          "error_pct": 27.04
         },
         {
           "group": "evening 16-20",
           "hours_pct": 16.67,
-          "mae": 1816.3812,
-          "bias": -286.7494,
-          "error_pct": 17.39
+          "mae": 1595.1593,
+          "bias": 99.0181,
+          "error_pct": 16.87
         },
         {
           "group": "late 20-24",
           "hours_pct": 16.67,
-          "mae": 1790.287,
-          "bias": -695.5428,
-          "error_pct": 17.14
+          "mae": 1502.2984,
+          "bias": -26.8956,
+          "error_pct": 15.88
         }
       ],
       "by_season": [
         {
           "group": "winter",
           "hours_pct": 22.84,
-          "mae": 2427.2765,
-          "bias": -429.8255,
-          "error_pct": 31.82
+          "mae": 1857.3147,
+          "bias": -488.1287,
+          "error_pct": 26.9
         },
         {
           "group": "spring",
           "hours_pct": 22.79,
-          "mae": 1324.7002,
-          "bias": -251.4996,
-          "error_pct": 17.33
+          "mae": 1338.3203,
+          "bias": 68.9105,
+          "error_pct": 19.34
         },
         {
           "group": "summer",
           "hours_pct": 26.1,
-          "mae": 1361.8347,
-          "bias": -135.246,
-          "error_pct": 20.41
+          "mae": 1456.2571,
+          "bias": 314.9053,
+          "error_pct": 24.1
         },
         {
           "group": "autumn",
           "hours_pct": 28.27,
-          "mae": 1875.0054,
-          "bias": -897.3006,
-          "error_pct": 30.44
+          "mae": 1654.5417,
+          "bias": 270.023,
+          "error_pct": 29.66
         }
       ],
       "by_day_type": [
         {
           "group": "working day",
           "hours_pct": 69.6,
-          "mae": 1834.2887,
-          "bias": -381.4335,
-          "error_pct": 73.29
+          "mae": 1508.0021,
+          "bias": -22.6675,
+          "error_pct": 66.55
         },
         {
           "group": "weekend",
           "hours_pct": 23.88,
-          "mae": 1409.6306,
-          "bias": -605.1423,
-          "error_pct": 19.33
+          "mae": 1730.4162,
+          "bias": 283.5448,
+          "error_pct": 26.2
         },
         {
           "group": "holiday",
           "hours_pct": 6.52,
-          "mae": 1970.4787,
-          "bias": -528.9013,
-          "error_pct": 7.38
+          "mae": 1751.939,
+          "bias": 166.07,
+          "error_pct": 7.25
         }
       ],
-      "worst_tenth_of_days_error_pct": 22.74,
-      "median_day_mae": 1532.1293,
+      "worst_tenth_of_days_error_pct": 21.13,
+      "median_day_mae": 1386.6753,
       "worst_days": [
         {
           "day": "2024-12-23",
-          "mae": 9272.0184
+          "mae": 5664.4565
         },
         {
           "day": "2024-11-24",
-          "mae": 5105.6111
-        },
-        {
-          "day": "2025-10-10",
-          "mae": 3622.4032
+          "mae": 4168.9493
         },
         {
           "day": "2024-12-08",
-          "mae": 3521.0131
-        },
-        {
-          "day": "2024-11-27",
-          "mae": 3201.5198
-        },
-        {
-          "day": "2025-12-14",
-          "mae": 3111.4431
+          "mae": 3590.9733
         },
         {
           "day": "2025-02-20",
-          "mae": 2905.7515
+          "mae": 3135.5591
         },
         {
-          "day": "2025-11-27",
-          "mae": 2853.7113
+          "day": "2025-08-03",
+          "mae": 2986.5905
+        },
+        {
+          "day": "2025-10-03",
+          "mae": 2983.3244
+        },
+        {
+          "day": "2024-10-29",
+          "mae": 2797.5567
+        },
+        {
+          "day": "2025-11-08",
+          "mae": 2674.3285
         }
       ]
     },
@@ -406,175 +406,175 @@
       "unit": "EUR/MWh",
       "hours": 2207,
       "days": 92,
-      "mae": 16.4725,
-      "bias": -7.8006,
+      "mae": 16.2377,
+      "bias": -6.8739,
       "by_hour_block": [
         {
           "group": "night 0-6",
           "hours_pct": 24.97,
-          "mae": 10.8084,
-          "bias": -5.9905,
-          "error_pct": 16.38
+          "mae": 10.3345,
+          "bias": -5.1974,
+          "error_pct": 15.89
         },
         {
           "group": "morning 6-10",
           "hours_pct": 16.67,
-          "mae": 17.7375,
-          "bias": -8.6409,
-          "error_pct": 17.95
+          "mae": 17.6632,
+          "bias": -6.8652,
+          "error_pct": 18.14
         },
         {
           "group": "midday 10-16",
           "hours_pct": 25.01,
-          "mae": 18.0963,
-          "bias": -3.5514,
-          "error_pct": 27.48
+          "mae": 18.0157,
+          "bias": -3.392,
+          "error_pct": 27.75
         },
         {
           "group": "evening 16-20",
           "hours_pct": 16.67,
-          "mae": 24.6937,
-          "bias": -16.1898,
-          "error_pct": 25.0
+          "mae": 24.3859,
+          "bias": -15.2064,
+          "error_pct": 25.04
         },
         {
           "group": "late 20-24",
           "hours_pct": 16.67,
-          "mae": 13.0316,
-          "bias": -7.6552,
-          "error_pct": 13.19
+          "mae": 12.8354,
+          "bias": -6.2828,
+          "error_pct": 13.18
         }
       ],
       "by_season": [
         {
           "group": "winter",
           "hours_pct": 22.84,
-          "mae": 25.5798,
-          "bias": -15.2885,
-          "error_pct": 35.46
+          "mae": 24.9659,
+          "bias": -15.4605,
+          "error_pct": 35.11
         },
         {
           "group": "spring",
           "hours_pct": 22.79,
-          "mae": 16.4125,
-          "bias": -5.8191,
-          "error_pct": 22.71
+          "mae": 16.5365,
+          "bias": -5.2912,
+          "error_pct": 23.21
         },
         {
           "group": "summer",
           "hours_pct": 26.1,
-          "mae": 12.6985,
-          "bias": -5.8176,
-          "error_pct": 20.12
+          "mae": 12.6836,
+          "bias": -5.1612,
+          "error_pct": 20.39
         },
         {
           "group": "autumn",
           "hours_pct": 28.27,
-          "mae": 12.6488,
-          "bias": -5.1805,
-          "error_pct": 21.71
+          "mae": 12.2277,
+          "bias": -2.7952,
+          "error_pct": 21.29
         }
       ],
       "by_day_type": [
         {
           "group": "working day",
           "hours_pct": 69.6,
-          "mae": 17.9945,
-          "bias": -9.6793,
-          "error_pct": 76.03
+          "mae": 17.6529,
+          "bias": -9.0139,
+          "error_pct": 75.66
         },
         {
           "group": "weekend",
           "hours_pct": 23.88,
-          "mae": 13.2638,
-          "bias": -4.493,
-          "error_pct": 19.23
+          "mae": 13.2559,
+          "bias": -2.9538,
+          "error_pct": 19.49
         },
         {
           "group": "holiday",
           "hours_pct": 6.52,
-          "mae": 11.9818,
-          "bias": 0.134,
-          "error_pct": 4.75
+          "mae": 12.0538,
+          "bias": 1.6072,
+          "error_pct": 4.84
         }
       ],
-      "worst_tenth_of_days_error_pct": 30.64,
-      "median_day_mae": 12.9863,
+      "worst_tenth_of_days_error_pct": 30.61,
+      "median_day_mae": 13.2011,
       "worst_days": [
         {
           "day": "2024-12-12",
-          "mae": 204.9471
+          "mae": 209.7573
         },
         {
           "day": "2025-01-20",
-          "mae": 77.8859
-        },
-        {
-          "day": "2026-01-20",
-          "mae": 28.1876
+          "mae": 72.7567
         },
         {
           "day": "2025-03-03",
-          "mae": 27.8332
+          "mae": 27.7255
         },
         {
-          "day": "2024-12-23",
-          "mae": 25.8866
+          "day": "2026-01-20",
+          "mae": 26.5086
         },
         {
           "day": "2025-04-06",
-          "mae": 25.5616
+          "mae": 25.7366
         },
         {
-          "day": "2024-11-27",
-          "mae": 25.4676
+          "day": "2025-02-14",
+          "mae": 24.1688
         },
         {
           "day": "2024-10-29",
-          "mae": 24.7115
+          "mae": 23.6249
+        },
+        {
+          "day": "2026-08-04",
+          "mae": 23.551
         }
       ],
       "by_price_regime": [
         {
           "group": "negative (<0)",
           "hours_pct": 6.16,
-          "mae": 14.9339,
-          "bias": 11.3734,
-          "error_pct": 5.59
+          "mae": 15.58,
+          "bias": 11.6061,
+          "error_pct": 5.91
         },
         {
           "group": "low (0-50)",
           "hours_pct": 11.06,
-          "mae": 14.5647,
-          "bias": 9.3171,
-          "error_pct": 9.78
+          "mae": 15.161,
+          "bias": 10.6092,
+          "error_pct": 10.32
         },
         {
           "group": "normal (50-150)",
           "hours_pct": 72.81,
-          "mae": 11.8747,
-          "bias": -6.2331,
-          "error_pct": 52.49
+          "mae": 11.5137,
+          "bias": -5.3968,
+          "error_pct": 51.63
         },
         {
           "group": "high (150-250)",
           "hours_pct": 8.07,
-          "mae": 22.7632,
-          "bias": -19.0103,
-          "error_pct": 11.15
+          "mae": 21.908,
+          "bias": -17.1284,
+          "error_pct": 10.88
         },
         {
           "group": "spike (>=250)",
           "hours_pct": 1.9,
-          "mae": 181.8021,
-          "bias": -181.8021,
-          "error_pct": 21.0
+          "mae": 181.3363,
+          "bias": -181.3363,
+          "error_pct": 21.25
         }
       ],
       "level_vs_shape": {
-        "mae": 16.4725,
-        "mae_with_exact_daily_level": 12.9558,
-        "daily_level_share_pct": 21.35
+        "mae": 16.2377,
+        "mae_with_exact_daily_level": 13.0191,
+        "daily_level_share_pct": 19.82
       }
     }
   }

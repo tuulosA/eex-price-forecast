@@ -117,7 +117,14 @@ def test_run_train_flag_retrains_all_models_before_forecast(
 
     assert result.exit_code == 0, result.output
     trained = [step for step in order if step.startswith("train:")]
-    assert trained == ["train:wind", "train:solar", "train:load", "train:price"]
+    # The day-ahead load companion is trained alongside the chain.
+    assert trained == [
+        "train:wind",
+        "train:solar",
+        "train:load",
+        "train:price",
+        "train:load_d1",
+    ]
     # fetch inputs before training, and forecast (pure predict) after all training.
     assert order.index("fetch_inputs") < order.index("train:wind")
     assert order.index("forecast") > order.index("train:price")

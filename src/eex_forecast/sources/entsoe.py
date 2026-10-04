@@ -30,7 +30,7 @@ import requests
 from entsoe import EntsoePandasClient
 from entsoe.exceptions import NoMatchingDataError
 
-from eex_forecast.config import ENTSOE_ZONE, get_settings
+from eex_forecast.config import ENTSOE_ZONE, LOAD_TSO_FORECAST_COLUMN, get_settings
 from eex_forecast.quality import clip_implausible, window_scale
 
 logger = logging.getLogger(__name__)
@@ -230,6 +230,26 @@ def fetch_load(start: str | date | datetime, end: str | date | datetime) -> pd.D
     else:
         series = raw
     return _to_frame(_to_hourly_utc(series, guard=True, baseline=True), "load_actual_mw")
+
+
+def fetch_load_tso_forecast(
+    start: str | date | datetime, end: str | date | datetime
+) -> pd.DataFrame:
+    """TSO day-ahead total load forecast -> frame[``timestamp``, ``load_tso_forecast_mw``] (hourly UTC).
+
+    A forecast, not a measurement, so it is not glitch-guarded like actual load; quarter-hours are
+    averaged to the delivery hour. Only the day-ahead process (A01) is requested.
+    """
+    raw = _fetch_windowed(
+        lambda c, s, e: c.query_load_forecast(ENTSOE_ZONE, start=s, end=e, process_type="A01"),
+        start,
+        end,
+        label="load forecast",
+    )
+    if len(raw) == 0:
+        return _empty([LOAD_TSO_FORECAST_COLUMN])
+    series = raw.iloc[:, 0] if isinstance(raw, pd.DataFrame) else raw
+    return _to_frame(_to_hourly_utc(series, guard=False), LOAD_TSO_FORECAST_COLUMN)
 
 
 def fetch_capacity(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:

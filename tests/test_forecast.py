@@ -22,7 +22,7 @@ from eex_forecast.forecast import (
     _weather_limited_forecast_end,
     run_forecast,
 )
-from eex_forecast.model import ALL_MODELS, REGISTRY, train
+from eex_forecast.model import ALL_MODELS, REGISTRY, TrainedModel, train
 from eex_forecast.plots import _forward_only, plot_features, raw_feature_panels
 
 TINY = {
@@ -39,6 +39,17 @@ _ACTUAL_COLUMNS = [
     "solar_actual_mw",
     "load_actual_mw",
 ]
+
+
+def serve_models(models):  # type: ignore[no-untyped-def]
+    """A ``TrainedModel.load`` stand-in; an untrained companion is a missing artefact, as in production."""
+
+    def load(cls, spec, models_dir=None):  # type: ignore[no-untyped-def]
+        if spec.name not in models:
+            raise FileNotFoundError(spec.name)
+        return models[spec.name]
+
+    return load
 
 
 def test_run_forecast_fills_fundamentals_then_price(
@@ -60,11 +71,7 @@ def test_run_forecast_fills_fundamentals_then_price(
     models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
     # No network: stub the forward-looking input fetch (weather forecast + nuclear + NTC) entirely.
     monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
-    monkeypatch.setattr(
-        forecast_ops.TrainedModel,
-        "load",
-        classmethod(lambda cls, spec, models_dir=None: models[spec.name]),
-    )
+    monkeypatch.setattr(TrainedModel, "load", classmethod(serve_models(models)))
     monkeypatch.setattr(forecast_ops, "FORECAST_DIR", tmp_path / "out")
 
     result = run_forecast(str(db_path), horizon_days=3, history_days=30, plot=True)
@@ -333,11 +340,7 @@ def test_history_days_defaults_to_the_config_value_and_governs_every_output(
     history = frame.loc[times < now]
     models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
     monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
-    monkeypatch.setattr(
-        forecast_ops.TrainedModel,
-        "load",
-        classmethod(lambda cls, spec, models_dir=None: models[spec.name]),
-    )
+    monkeypatch.setattr(TrainedModel, "load", classmethod(serve_models(models)))
     monkeypatch.setattr(forecast_ops, "FORECAST_DIR", tmp_path / "out")
 
     short = run_forecast(str(db_path), horizon_days=2, history_days=10)

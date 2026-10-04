@@ -249,3 +249,24 @@ def test_run_evaluation_scores_a_dst_exact_delivery_day() -> None:
 def test_run_evaluation_rejects_zero_seeds() -> None:
     with pytest.raises(ValueError, match="seeds"):
         run_evaluation(pd.DataFrame(), seeds=0)
+
+
+def test_held_out_load_uses_the_tso_companion_where_the_forecast_exists() -> None:
+    # A perfect TSO forecast makes the companion's effect unmistakable on the held-out day.
+    frame = _hourly_frame("2024-01-01", "2024-04-03")
+    learnable = {
+        name: {**params, "n_estimators": 60, "max_depth": 3} for name, params in FAST_PARAMS.items()
+    }
+    plain = run_evaluation(frame, params_by_model=learnable, cutoffs=CUTOFFS)
+    noisy = frame["load_actual_mw"] + np.random.default_rng(0).normal(0, 3_000, len(frame))
+    frame = frame.assign(load_actual_mw=noisy, load_tso_forecast_mw=noisy)
+    plain_noisy = run_evaluation(
+        frame.drop(columns="load_tso_forecast_mw"), params_by_model=learnable, cutoffs=CUTOFFS
+    )
+    with_tso = run_evaluation(frame, params_by_model=learnable, cutoffs=CUTOFFS)
+    load = {r.model: r for r in with_tso.models}["load"]
+    load_plain = {r.model: r for r in plain_noisy.models}["load"]
+    assert load.mean_mae < 0.5 * load_plain.mean_mae
+    assert {r.model for r in plain.models} == set(
+        ALL_MODELS
+    )  # the companion is not a reported model

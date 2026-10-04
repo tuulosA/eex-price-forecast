@@ -52,12 +52,16 @@ from eex_forecast.config import EVALUATION_DIR
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import (
     ALL_MODELS,
+    DAY_AHEAD_COMPANIONS,
     REGISTRY,
     SUBMODELS,
+    TRAINED_MODELS,
     ModelSpec,
     TrainedModel,
     apply_train_nan_lag_mask,
     capacity_scaled,
+    combine_day_ahead,
+    companion_base,
     load_params,
 )
 from eex_forecast.tuning import seed_list
@@ -229,6 +233,18 @@ def _prepare_fold(
         if trained is None:
             return None
         prediction = trained.predict(fold_frame)
+        link = DAY_AHEAD_COMPANIONS.get(name)
+        if link is not None:
+            # The held-out day keeps the companion's input: it was published the day before.
+            companion = _fit_before(
+                link.spec, fold_frame, times, start, params_by_model[link.spec.name]
+            )
+            prediction = combine_day_ahead(
+                link,
+                fold_frame,
+                prediction,
+                companion.predict(fold_frame) if companion is not None else None,
+            )
         fold_frame.loc[window, spec.forecast_column] = prediction.loc[window]
         scored = _fold_error(spec, frame, times, window, prediction, delivery_day)
         if scored is None:
@@ -463,15 +479,21 @@ def _evaluate_oracle_seed(
 def _resolve_params(
     params_by_model: dict[str, dict[str, Any]] | None,
 ) -> dict[str, dict[str, Any]]:
-    """Resolve optional injected params over the tuned/default params for all pipeline models."""
-    return {
-        name: (
-            dict(params_by_model[name])
-            if params_by_model is not None and name in params_by_model
-            else load_params(name)
-        )
-        for name in ALL_MODELS
-    }
+    """Resolve optional injected params over the tuned/default params for all pipeline models.
+
+    A day-ahead companion without injected params takes its base model's injected ones, so a caller
+    that sets the four chain models (tests, tuning seams) also sets the companion consistently.
+    """
+    resolved: dict[str, dict[str, Any]] = {}
+    for name in TRAINED_MODELS:
+        base = companion_base(name)
+        if params_by_model is not None and name in params_by_model:
+            resolved[name] = dict(params_by_model[name])
+        elif params_by_model is not None and base is not None and base in params_by_model:
+            resolved[name] = dict(params_by_model[base])
+        else:
+            resolved[name] = load_params(name)
+    return resolved
 
 
 def run_evaluation(
@@ -505,7 +527,7 @@ def run_evaluation(
     first_hourly: pd.DataFrame | None = None
     for index, seed in enumerate(seed_values):
         seeded_params = {
-            name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
+            name: {**resolved_params[name], "random_state": int(seed)} for name in TRAINED_MODELS
         }
         evaluated, hourly = _evaluate_seed(
             frame,
@@ -621,7 +643,7 @@ def run_oracle_diagnostics(
     by_seed: list[dict[str, dict[str, Any]]] = []
     for index, seed in enumerate(seed_values):
         seeded_params = {
-            name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
+            name: {**resolved_params[name], "random_state": int(seed)} for name in TRAINED_MODELS
         }
         evaluated = _evaluate_oracle_seed(
             frame,

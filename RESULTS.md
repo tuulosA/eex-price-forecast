@@ -36,7 +36,7 @@ the *shapes* between charts, not the heights.
 
 ![Actual vs forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **26.86 EUR/MWh** in a typical hour.
+Over the 18 days the price forecast is off by **26.75 EUR/MWh** in a typical hour.
 
 - **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
   when people use more power, and lower around midday, when solar panels produce most. The forecast
@@ -47,7 +47,7 @@ Over the 18 days the price forecast is off by **26.86 EUR/MWh** in a typical hou
   solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
   training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
   hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 40% of the total error.** Without them the MAE would be 19.29
+- **Those three extreme days carry 42% of the total error.** Without them the MAE would be 18.67
   EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
 - **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
   forecast stayed 30-60 EUR/MWh higher.
@@ -84,15 +84,18 @@ Typical miss: **1,386 MW**.
 
 ![Actual vs forecast load on each holdout day](data/evaluation/eval_days_load_holdout.png)
 
-Typical miss: **1,849 MW**.
+Typical miss: **1,590 MW**.
 
 - **The daily pattern is captured well:** low at night, a steep rise in the morning, a working-day
   plateau, and an evening bump.
-- **On winter working days the forecast is too low by 3-4.5 GW** (13 January, 3 and 21 February).
-  The shape is right, so the model underestimates how much power Germany now uses on cold days.
-  Possible reasons, not yet tested, include more electric heating than the model learned from.
-- Weekends and holidays, when use is lower, are mostly reasonable. The largest weekend miss is
-  Saturday 6 June, about 4 GW too high around midday.
+- **For the next day, the model also reads the grid operators' own load forecast**, published each
+  morning. That forecast knows things the weather cannot show, such as industrial schedules. It
+  closed most of the old gap on cold working days, when the model alone was 3-4.5 GW too low:
+  13 January and 21 February now track closely, while 3 February is still 2-4 GW too low around
+  midday.
+- **Weekends and holidays are now the weaker side**: on Sunday 26 April and the 1 May holiday the
+  forecast is 2-4 GW too high, and on New Year's Day it was too high all morning. The grid
+  operators' forecast is least reliable on such days.
 
 ## Part 2 - What does each model rely on?
 
@@ -212,7 +215,7 @@ input's effect depends a lot on circumstances, not that the model is unsure.
   27 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
 - **Of the three supporting models, solar has the clearest systematic error** (too high at midday),
   linked to falling output per unit of sunlight and to solar parks switching off at negative prices.
-  Load is too low on cold winter working days.
+  Load is now close on working days; weekends and holidays tend to come out somewhat high.
 - **The models rely on sensible inputs in sensible directions:** demand and sunshine drive the
   price, wind speed drives wind output, sunlight drives solar, and routines drive demand.
 - These results cover only the next day. Forecasts further ahead depend on less accurate weather
