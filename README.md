@@ -209,9 +209,9 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,803.70 MW | 2,203.24 MW |
-| Solar | 1,373.84 MW | 2,177.16 MW |
+| Solar | 1,386.12 MW | 2,198.65 MW |
 | Load | 1,848.80 MW | 2,107.15 MW |
-| Price | 26.81 EUR/MWh | 39.98 EUR/MWh |
+| Price | 26.86 EUR/MWh | 40.04 EUR/MWh |
 
 ![Actual vs D+1 forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
 
