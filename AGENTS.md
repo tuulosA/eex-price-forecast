@@ -133,6 +133,13 @@ docs/
   live forecast, every ensemble member, and the eval/oracle folds must all go through
   `model.combine_day_ahead` / `ChainPredictor` so they apply the same switch. Do not train one horizon-wide
   load model with the input masked instead: that tested worse (it learns to ignore the input).
+- **Serve known-ahead inputs the way their history was stored.** The NTC history is week-ahead, so the
+  forecast horizon carries the last week-ahead value forward (`sources.ntc.blend_week_over_month`);
+  month-ahead fills only where no week-ahead exists. Do not reintroduce a month-ahead far horizon:
+  its levels differ (DK1 500 vs 1,875 MW), and per-border inputs turn that into a ~40 EUR/MWh price
+  shift. D+1 backtests cannot catch such far-horizon mismatches, so check any new known-ahead input's
+  horizon values against its history. `ntc_imp_dk1` partly acts as a period marker (high capacity
+  pushes price up); it is kept, and a change in its published level is a known risk.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
 - **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values

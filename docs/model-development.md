@@ -1179,8 +1179,14 @@ but the far horizon fell back to month-ahead, whose levels differ (DK1 500 vs 1,
 1,500 vs 1,800). `sources.ntc.blend_week_over_month` now carries the last week-ahead value over the far
 horizon and uses month-ahead only where no week-ahead exists. History and the D+1 results are
 unchanged; in the 2026-10-05 live forecast, days 6-14 rose by 4-38 EUR/MWh (horizon mean 97.5 ->
-111.5) with no step at the old switch day. A new published DK1 level will still move the forecast
-through this learned association; dropping DK1 or masking it remain options if that proves unstable.
+111.5) with no step at the old switch day.
+
+**Decision (2026-10-05): DK1 is kept.** The carry-forward removes the train/serve mismatch, but not the
+learned association: when ENTSO-E publishes a new DK1 week-ahead level (for example back to 500 MW),
+the forecast will shift by an amount the physics does not justify, on every horizon day. Watch for a
+forecast level step on the day the published DK1 value changes. The D+1 backtests cannot reveal this,
+since every scored day has a week-ahead value and its DK1 level rarely changes between neighbouring
+days. If it proves unstable, drop `ntc_imp_dk1` or mask it, and rerun the screen and the gate.
 
 ## Weather-ensemble forecasting
 
@@ -1412,7 +1418,8 @@ Before changing a production feature/model:
   retune (14.146 -> 14.077). Five-seed screen on actual fundamentals: 15.278 -> 14.194 EUR/MWh; adding
   the exports was slightly worse (14.262). End-to-end price 16.047 -> 14.560, holdout 26.150 -> 24.728.
   DK1 imports act partly as a period marker (1,875 vs 500 MW moves the forecast ~40 EUR/MWh), so the NTC
-  far horizon now carries the last week-ahead value instead of switching to month-ahead. See
+  far horizon now carries the last week-ahead value instead of switching to month-ahead. DK1 is kept
+  for now; a change in its published level is the thing to watch. See
   [Per-border transfer capacity imports](#per-border-transfer-capacity-imports).
 
 - Adopted installed capacity (`solar_capacity_mw`, forward-filled) as a solar feature, with a matched
