@@ -2,7 +2,7 @@
 
 Each weather *role* correlates a different Open-Meteo variable against a different ENTSO-E actual:
 
-| Role  | Open-Meteo variable   | Target actual      | Column prefix | Geometry    |
+| Role  | Open-Meteo variable   | Target actual      | Column prefix | Grid points |
 |-------|-----------------------|--------------------|---------------|-------------|
 | wind  | ``wind_speed_100m``   | ``wind_actual_mw`` | ``ws_de``     | land + sea  |
 | temp  | ``temperature_2m``    | ``load_actual_mw`` | ``t_de``      | land only   |
@@ -31,7 +31,7 @@ from eex_forecast.config import (
     NEIGHBOUR_POINTS_PER_COUNTRY,
     WEATHER_POINTS_PATH,
 )
-from eex_forecast.weather.candidates import Candidate, Mode, haversine_km
+from eex_forecast.weather.grid import ALL_SURFACES, LAND, Candidate, haversine_km
 from eex_forecast.weather.openmeteo import (
     CLOUD_COVER,
     DIFFUSE_RADIATION,
@@ -59,13 +59,13 @@ class Role:
     variable: str
     target_column: str
     column_prefix: str
-    geometry: Mode
+    surfaces: tuple[str, ...]  # which DE grid points are candidates (land and/or sea)
 
 
 ROLES: dict[str, Role] = {
-    "wind": Role("wind", WIND_SPEED_100M, "wind_actual_mw", "ws_de", "zones"),
-    "temp": Role("temp", TEMPERATURE_2M, "load_actual_mw", "t_de", "land"),
-    "solar": Role("solar", SHORTWAVE_RADIATION, "solar_actual_mw", "ghi_de", "land"),
+    "wind": Role("wind", WIND_SPEED_100M, "wind_actual_mw", "ws_de", ALL_SURFACES),
+    "temp": Role("temp", TEMPERATURE_2M, "load_actual_mw", "t_de", (LAND,)),
+    "solar": Role("solar", SHORTWAVE_RADIATION, "solar_actual_mw", "ghi_de", (LAND,)),
 }
 
 

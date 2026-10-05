@@ -20,7 +20,7 @@ from eex_forecast.analysis.neighbours import (
     variant_frame,
 )
 from eex_forecast.features import active_weather_columns
-from eex_forecast.weather.candidates import haversine_km
+from eex_forecast.weather.grid import haversine_km
 
 TINY: dict[str, Any] = {
     "n_estimators": 10,

@@ -15,7 +15,7 @@ from eex_forecast.analysis import (
     save_correlation_csv,
 )
 from eex_forecast.model import REGISTRY
-from eex_forecast.weather.candidates import Candidate
+from eex_forecast.weather.grid import Candidate
 from eex_forecast.weather.point_search import SelectedPoint
 
 
@@ -77,9 +77,7 @@ def test_correlations_need_a_target() -> None:
 
 def test_plot_points_map_writes_png(tmp_path: Path) -> None:
     ring = [(8.0, 49.0), (12.0, 49.0), (12.0, 53.0), (8.0, 53.0), (8.0, 49.0)]
-    candidates = [Candidate("de_zones_001", 51.0, 10.0, "zones")]
-    selected = {
-        "wind": [SelectedPoint("ws_de01", 54.0, 8.0, "wind_speed_100m", "de_zones_001", 0.9, 0)]
-    }
+    candidates = [Candidate("de_001", 51.0, 10.0, "sea")]
+    selected = {"wind": [SelectedPoint("ws_de01", 54.0, 8.0, "wind_speed_100m", "de_001", 0.9, 0)]}
     out = plot_points_map([ring], [ring], candidates, selected, tmp_path / "map.png")
     assert out.exists() and out.stat().st_size > 0

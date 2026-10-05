@@ -39,6 +39,8 @@ the corresponding sub-model forecast.
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) supplies country land polygons.
 - [Marine Regions](https://www.marineregions.org/) supplies EEZ/maritime polygons used for offshore
   wind candidates.
+- Bidding-zone polygons split Denmark (entsoe-py's DK1/DK2 outlines), Sweden (Svenska kraftnat) and
+  Norway (NVE) into their zones.
 
 The relevant ENTSO-E publications include:
 
@@ -104,10 +106,12 @@ same hourly rows.
 
 ## Weather points and variables
 
-German candidates use two geometries:
-
-- `zones`: German land plus EEZ, used by wind so North Sea and Baltic conditions are represented;
-- `land`: German land only, used by temperature/load and solar.
+Candidates come from one grid per bidding zone (`eex points grid`, `weather/grid.py`): a ~50 km
+hex-offset grid laid over the zone's land and EEZ outline, with every point labelled `land` or `sea`
+by the GISCO coastline. Each location appears once. Wind ranks every German point, so North Sea and
+Baltic conditions are represented; temperature/load and solar rank the `land` points. Countries with
+several bidding zones (DK, SE, NO) get one country-wide grid partitioned into their zones. The grids
+in `data/candidates/grid_<zone>.csv` are the source refine-power copies its candidate grids from.
 
 The committed selections live in `config/weather_points.json`. Current production uses the adopted
 135 km-spaced, 20-point German wind set.
@@ -167,12 +171,12 @@ are unchanged.
 
 ### Neighbour wind
 
-For DK, NL, PL, FR, CH, CZ, and AT, land/sea wind candidates are ranked against German price rather than
-German generation. The two most spatially distinct points per country (at least 50 km apart) are retained
-as a low-cost price proxy.
+For DK (its DK1 zone), NL, PL, FR, BE, CH, CZ, and AT, land/sea wind candidates from each zone's grid
+are ranked against German price rather than German generation. The two most spatially distinct points
+per country (at least 50 km apart) are retained as a low-cost price proxy. BE is a ranking candidate
+but has no configured points yet; the configured set is in `config/weather_points.json`.
 
 ```bash
-eex points neighbours build
 eex points neighbours rank --year 2025
 eex points neighbours map
 ```

@@ -15,10 +15,9 @@ Building from empty is ordered because each stage feeds the next:
 
 ```bash
 eex db init
-eex geo download                            # land + land/EEZ geometry
+eex geo download                            # land, land/EEZ outline, bidding-zone polygons
 
-eex points build --mode zones               # German wind candidates, including offshore
-eex points build --mode land                # German temperature and solar candidates
+eex points grid                             # candidate grids for every bidding zone (land/sea labelled)
 eex backfill entsoe --start 2023-01-01      # actual targets and installed capacity
 
 # Ranking accepts --year YYYY or both --start YYYY-MM-DD --end YYYY-MM-DD.
@@ -26,7 +25,6 @@ eex points rank --target wind --year 2025
 eex points rank --target temp --year 2025
 eex points rank --target solar --year 2025
 
-eex points neighbours build
 eex points neighbours rank --year 2025
 
 eex backfill weather --start 2023-01-01
@@ -38,7 +36,7 @@ eex model train
 eex forecast --plot
 ```
 
-Candidate spacing, ranking window, retained point count, aggregation, feature set, and XGBoost
+Ranking window, retained point count, aggregation, feature set, and XGBoost
 hyperparameters are all experiment surfaces. The committed configuration is a reproducible starting
 point rather than a restriction.
 
