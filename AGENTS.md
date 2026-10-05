@@ -106,8 +106,9 @@ docs/
   direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
   alongside GHI, deterministic geometry, solar azimuth (sin/cos), and the forward-filled installed
   capacity (`solar_capacity_mw`, which lets the capacity-factor model tell fleet eras apart; trees treat
-  a new yearly figure above the training range as the latest era). The adopted point set is the 31-anchor, 100 km-spaced
-  selection recorded by the anchor experiment; changing it requires a complete weather backfill,
+  a new yearly figure above the training range as the latest era). The adopted point set is refine-power's DE_LU default (the
+  31-anchor, 100 km-spaced selection of the anchor experiment, snapped to the bidding-zone grid), and
+  every weather point must stay identical to refine-power's defaults; changing it requires a complete weather backfill,
   matched retune, end-to-end/oracle comparison, and live coverage check. GTI and direct radiation are
   fetched for reproducible experiments but are not production features (direct is exactly GHI minus
   diffuse). Historical and live Open-Meteo calls must request the same variables;

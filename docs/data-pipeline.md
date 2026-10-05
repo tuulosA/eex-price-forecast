@@ -173,8 +173,8 @@ are unchanged.
 
 For DK (its DK1 zone), NL, PL, FR, BE, CH, CZ, and AT, land/sea wind candidates from each zone's grid
 are ranked against German price rather than German generation. The two most spatially distinct points
-per country (at least 50 km apart) are retained as a low-cost price proxy. BE is a ranking candidate
-but has no configured points yet; the configured set is in `config/weather_points.json`.
+per country (at least 50 km apart) are retained as a low-cost price proxy. The configured set
+(`config/weather_points.json`) is refine-power's DE_LU default, two points per neighbour.
 
 ```bash
 eex points neighbours rank --year 2025

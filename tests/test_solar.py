@@ -21,6 +21,7 @@ from eex_forecast.analysis.solar import (
     save_solar_feature_report,
     save_solar_irradiance_report,
 )
+from eex_forecast.features import STATS_FEATURES_PER_ROLE
 
 FAST_PARAMS = {
     "n_estimators": 2,
@@ -161,9 +162,17 @@ def test_run_solar_irradiance_experiment_requires_and_compares_backfill() -> Non
 
     assert set(by_name) == set(SOLAR_IRRADIANCE_VARIANTS)
     assert by_name["baseline"]["mae_delta_vs_baseline"] == 0.0
-    assert by_name["gti"]["n_features"] == by_name["baseline"]["n_features"] + 5
-    assert by_name["radiation_cloud"]["n_features"] == by_name["baseline"]["n_features"] + 20
-    assert by_name["all"]["n_features"] == by_name["baseline"]["n_features"] + 25
+    assert (
+        by_name["gti"]["n_features"] == by_name["baseline"]["n_features"] + STATS_FEATURES_PER_ROLE
+    )
+    assert (
+        by_name["radiation_cloud"]["n_features"]
+        == by_name["baseline"]["n_features"] + 4 * STATS_FEATURES_PER_ROLE
+    )
+    assert (
+        by_name["all"]["n_features"]
+        == by_name["baseline"]["n_features"] + 5 * STATS_FEATURES_PER_ROLE
+    )
 
 
 def test_save_solar_irradiance_report_adds_timestamp(tmp_path: Path) -> None:

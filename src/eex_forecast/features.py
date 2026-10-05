@@ -425,6 +425,8 @@ def fundamentals(frame: pd.DataFrame) -> pd.DataFrame:
 WeatherBuilder = Callable[[pd.DataFrame], pd.DataFrame]
 
 KNOWN_STRATEGIES: tuple[str, ...] = ("mean", "cube", "spread", "stats", "regional", "raw")
+# Columns the ``stats`` strategy emits per weather role: mean, std, min, max.
+STATS_FEATURES_PER_ROLE = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -495,11 +497,11 @@ def _primary_block(
             return mean_block
         return mean_block.assign(**{f"{name}_std": primary.std(axis=1)})
     if strategy == "stats":
-        # Cross-point summary statistics: mean + sum, std, min, max over the role's points. (``sum`` is
-        # ``mean`` x point-count, so it is redundant for trees at a fixed point count - kept for parity.)
+        # Cross-point summary statistics: mean, std, min, max over the role's points, as refine-power.
+        # A sum was dropped on 2026-10-05: it is mean x point count, so redundant for trees (solar MAE
+        # 647.4 -> 647.0 MW without it, five seeds).
         return mean_block.assign(
             **{
-                f"{name}_sum": primary.sum(axis=1),
                 f"{name}_std": primary.std(axis=1),
                 f"{name}_min": primary.min(axis=1),
                 f"{name}_max": primary.max(axis=1),
