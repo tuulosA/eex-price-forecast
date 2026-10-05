@@ -9,12 +9,15 @@ forecasted NTC** [11.1] via entsoe-py (which parses the A61 documents for us):
     ntc_imp_<b>   capacity INTO Germany from neighbour <b>
     ntc_exp_<b>   capacity OUT of Germany to neighbour <b>
 
-"Best available" blends two contract horizons per day: **week-ahead** (the more refined revision,
-published ~1 week out) where it exists, falling back to **month-ahead** (coarser, but spanning the whole
-month) for the far horizon week-ahead has not reached - so the near ~week of a forecast gets the sharper
-level and the second week gets month-ahead. Both publish ahead, so - like nuclear outages - this covers
-the forecast horizon with real values rather than a guess. The per-border columns are stored; the price
-model reads the summed totals (:func:`eex_forecast.features.ntc_features`).
+"Best available" is the **week-ahead** contract (the refined revision, published ~1 week out), with its
+last published value carried forward over the far horizon it has not reached yet. **Month-ahead** only
+fills where no week-ahead has been published (before a border's first week-ahead value, or a border
+that publishes none). Month-ahead used to cover the far horizon, but its levels differ systematically
+from week-ahead (DK1 sits at a flat 500 MW against week-ahead's 1,875 MW in 2026; CZ 1,750 against
+450), and the stored history is week-ahead, so the second forecast week jumped to values the price
+model never trained on: with per-border inputs that moved the price forecast by ~40 EUR/MWh at the
+switch. The per-border columns are stored; the price model reads the per-border imports
+(:func:`eex_forecast.features.ntc_features`).
 
 The pure helpers :func:`series_to_hourly` and :func:`blend_week_over_month` are unit-tested; the
 ``fetch_*`` functions are thin orchestration over the entsoe-py client.
@@ -60,41 +63,30 @@ def series_to_hourly(series: pd.Series, hours: pd.DatetimeIndex) -> npt.NDArray[
     return pd.to_numeric(hourly, errors="coerce").to_numpy()
 
 
-def _daily_within_coverage(
-    series: pd.Series, days: pd.DatetimeIndex, *, limit_to_coverage: bool
-) -> pd.Series:
+def _daily(series: pd.Series, days: pd.DatetimeIndex) -> pd.Series:
     """Reduce a change-point NTC series to one value per day of ``days`` (each change holds until the
-    next). With ``limit_to_coverage`` the value is *not* carried past the series' last published day -
-    those days stay NaN - so a coarser contract can take over the far horizon rather than the finer one
-    leaking into a horizon it never reached."""
+    next, and the last one holds to the end of ``days``); days before the first value stay NaN."""
     if series.empty or len(days) == 0:
         return pd.Series(np.nan, index=days, dtype="float64")
     values = pd.to_numeric(series, errors="coerce")
     values.index = pd.to_datetime(values.index, utc=True).floor("D")
     values = values[~values.index.duplicated(keep="last")].sort_index()
-    daily = values.reindex(values.index.union(days)).sort_index().ffill().reindex(days)
-    if limit_to_coverage:
-        daily[days > values.index.max()] = np.nan
-    return daily
+    return values.reindex(values.index.union(days)).sort_index().ffill().reindex(days)
 
 
 def blend_week_over_month(
     week: pd.Series, month: pd.Series, hours: pd.DatetimeIndex
 ) -> npt.NDArray[np.float64]:
-    """Best-available NTC per hour: the refined **week-ahead** level within its ~1-week coverage, then
-    **month-ahead** for the far horizon it does not reach.
+    """Best-available NTC per hour: **week-ahead**, its last value carried over the far horizon, and
+    **month-ahead** only where no week-ahead has been published (see the module docstring for why).
 
-    Each contract is reduced to a daily value; week-ahead is limited to its own coverage so it never
-    ffill-leaks past where it was published, and month-ahead is left to carry the rest (a border that
-    publishes no week-ahead falls back to month-ahead cleanly). The blended daily series is then expanded
-    onto the hourly grid.
+    Each contract is reduced to a daily value and the blend is expanded onto the hourly grid. A border
+    that stops publishing week-ahead keeps its last week-ahead value.
     """
     if len(hours) == 0:
         return np.full(0, np.nan)
     days = pd.date_range(hours.min().floor("D"), hours.max().floor("D"), freq="D", tz="UTC")
-    blended = _daily_within_coverage(week, days, limit_to_coverage=True).combine_first(
-        _daily_within_coverage(month, days, limit_to_coverage=False)
-    )
+    blended = _daily(week, days).combine_first(_daily(month, days))
     return series_to_hourly(blended, hours)
 
 
@@ -125,8 +117,9 @@ def _fetch_direction(
     end_ts: pd.Timestamp,
     hours: pd.DatetimeIndex,
 ) -> npt.NDArray[np.float64] | None:
-    """Best-available hourly NTC from ``zone_from`` to ``zone_to``: week-ahead blended over month-ahead
-    (see :func:`blend_week_over_month`). ``None`` when the border publishes neither contract."""
+    """Best-available hourly NTC from ``zone_from`` to ``zone_to``: week-ahead carried forward, month-ahead
+    only where week-ahead is absent (see :func:`blend_week_over_month`). ``None`` when the border
+    publishes neither contract."""
     week = _fetch_contract(
         client.query_net_transfer_capacity_weekahead, zone_from, zone_to, start_ts, end_ts
     )
@@ -147,7 +140,8 @@ def fetch_ntc(
     """Per-border NTC -> frame[``timestamp``, ``ntc_imp_<b>``, ``ntc_exp_<b>`` ...] (hourly UTC).
 
     For each border we fetch capacity *into* DE (neighbour -> DE) and *out of* DE (DE -> neighbour),
-    blend week-ahead over month-ahead per day, and expand onto the hourly grid. Borders that publish
+    take week-ahead per day (carried forward, month-ahead only where it is absent), and expand onto the
+    hourly grid. Borders that publish
     nothing are simply omitted.
     """
     start_ts, end_ts = _normalize_bounds(start, end)

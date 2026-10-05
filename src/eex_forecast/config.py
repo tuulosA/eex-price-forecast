@@ -99,7 +99,7 @@ LOAD_TSO_FORECAST_COLUMN = "load_tso_forecast_mw"
 # directions - week-ahead blended over month-ahead (near week refined, far horizon on month-ahead) - which,
 # like nuclear outages, is published ahead and so covers the forecast horizon. Borders (label -> entsoe-py
 # zone) are DE's NTC-publishing neighbours. Per-border columns ntc_imp_<b> (into DE) / ntc_exp_<b> (out of
-# DE) are stored; the price model reads the summed totals.
+# DE) are stored; the price model reads the per-border imports.
 NTC_BORDERS: dict[str, str] = {
     "at": "AT",
     "be": "BE",

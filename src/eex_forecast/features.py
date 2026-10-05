@@ -32,7 +32,6 @@ from eex_forecast.config import (
     AREA_CODE,
     LOAD_TSO_FORECAST_COLUMN,
     MARKET_TIMEZONE,
-    NTC_EXPORT_PREFIX,
     NTC_IMPORT_PREFIX,
     NUCLEAR_COLUMN,
 )
@@ -733,29 +732,31 @@ def nuclear_feature(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def ntc_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Total cross-border transfer capacity: ``ntc_imp_total`` / ``ntc_exp_total`` summed over the borders.
+    """Per-border transfer capacity into DE: the stored ``ntc_imp_<b>`` columns, one per border.
 
-    The per-border ``ntc_imp_<b>`` / ``ntc_exp_<b>`` columns (stored by the NTC backfill) are collapsed to
-    one import + one export total - the aggregate "how coupled is DE to its neighbours right now" signal,
-    keeping the price model low-dimensional. Empty when no NTC columns are present.
+    Which border is constrained matters more than the total: a cut on the Danish or Austrian border
+    moves the German price differently from the same MW on another border, and a sum hides that. The
+    per-border imports replaced the import/export totals on 2026-10-05 (price MAE 15.278 -> 14.194 on
+    actual fundamentals, five seeds); adding the exports as well was slightly worse (14.262). Empty
+    when no NTC columns are present.
     """
     imports = sorted(c for c in frame.columns if c.startswith(NTC_IMPORT_PREFIX))
-    exports = sorted(c for c in frame.columns if c.startswith(NTC_EXPORT_PREFIX))
-    out: dict[str, pd.Series] = {}
-    if imports:
-        out["ntc_imp_total"] = (
-            frame[imports].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
-        )
-    if exports:
-        out["ntc_exp_total"] = (
-            frame[exports].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
-        )
-    return pd.DataFrame(out, index=frame.index)
+    block: pd.DataFrame = frame[imports].apply(pd.to_numeric, errors="coerce")
+    return block
+
+
+def ntc_import_total(frame: pd.DataFrame) -> pd.Series:
+    """Total transfer capacity into DE summed over the borders (NaN where no border has a value)."""
+    imports = sorted(c for c in frame.columns if c.startswith(NTC_IMPORT_PREFIX))
+    if not imports:
+        return pd.Series(np.nan, index=frame.index)
+    total: pd.Series = frame[imports].apply(pd.to_numeric, errors="coerce").sum(axis=1, min_count=1)
+    return total
 
 
 def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
     """Price drivers excluding the cross-border wind block: calendar + price lags + weather means +
-    fundamentals + nuclear availability + transfer-capacity totals."""
+    fundamentals + nuclear availability + per-border import transfer capacity."""
     return pd.concat(
         [
             calendar_features(frame[TIMESTAMP]),
@@ -885,8 +886,7 @@ def residual_load_block(frame: pd.DataFrame, variant: str) -> pd.DataFrame:
         out["renewable_share"] = (fund["wind"] + fund["solar"]) / load
     if variant in ("residual_load_net", "residual_load_all"):
         nuclear = nuclear_feature(frame).reindex(columns=[NUCLEAR_COLUMN])[NUCLEAR_COLUMN]
-        imports = ntc_features(frame).reindex(columns=["ntc_imp_total"])["ntc_imp_total"]
-        out["residual_load_net"] = residual - nuclear - imports
+        out["residual_load_net"] = residual - nuclear - ntc_import_total(frame)
     if variant in ("residual_load_daily", "residual_load_all"):
         day = pd.to_datetime(frame[TIMESTAMP], utc=True).dt.tz_convert(MARKET_TIMEZONE).dt.date
         grouped = residual.groupby(day.to_numpy())
