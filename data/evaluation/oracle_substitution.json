@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-10-04T11:24:51.896278+00:00",
+  "run_at": "2026-10-05T04:32:22.927700+00:00",
   "horizon": "24h",
   "days": 1,
   "reference_scenario": "all_actual",
@@ -21,10 +21,10 @@
       "unit": "EUR/MWh"
     },
     "forecast_solar": {
-      "mae": 16.1271,
-      "rmse": 21.0067,
+      "mae": 15.8984,
+      "rmse": 20.7162,
       "std_mae": 0.0,
-      "delta_mae": 0.856,
+      "delta_mae": 0.6273,
       "std_delta_mae": 0.0,
       "unit": "EUR/MWh"
     },
@@ -37,10 +37,10 @@
       "unit": "EUR/MWh"
     },
     "forecast_all": {
-      "mae": 16.2384,
-      "rmse": 21.2867,
+      "mae": 16.0474,
+      "rmse": 21.0644,
       "std_mae": 0.0,
-      "delta_mae": 0.9673,
+      "delta_mae": 0.7764,
       "std_delta_mae": 0.0,
       "unit": "EUR/MWh"
     }
@@ -2034,10 +2034,10 @@
         "load"
       ],
       "unit": "EUR/MWh",
-      "mean_mae": 16.1271,
+      "mean_mae": 15.8984,
       "std_mae": 0.0,
-      "mean_rmse": 21.0067,
-      "mean_delta_mae": 0.856,
+      "mean_rmse": 20.7162,
+      "mean_delta_mae": 0.6273,
       "std_delta_mae": 0.0,
       "n_cutoffs": 92,
       "folds": [
@@ -2046,920 +2046,920 @@
           "start_utc": "2024-09-30T22:00:00+00:00",
           "end_utc": "2024-10-01T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.0804,
-          "rmse": 13.1615,
-          "delta_mae": -1.538,
-          "delta_rmse": -1.6294
+          "mae": 10.1419,
+          "rmse": 13.1675,
+          "delta_mae": -1.4765,
+          "delta_rmse": -1.6234
         },
         {
           "delivery_day": "2024-10-11",
           "start_utc": "2024-10-10T22:00:00+00:00",
           "end_utc": "2024-10-11T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.3864,
-          "rmse": 11.2041,
-          "delta_mae": 0.0292,
-          "delta_rmse": 0.1702
+          "mae": 7.5396,
+          "rmse": 11.1496,
+          "delta_mae": 0.1824,
+          "delta_rmse": 0.1157
         },
         {
           "delivery_day": "2024-10-18",
           "start_utc": "2024-10-17T22:00:00+00:00",
           "end_utc": "2024-10-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.5581,
-          "rmse": 17.5734,
-          "delta_mae": -0.3977,
-          "delta_rmse": -1.1401
+          "mae": 13.3953,
+          "rmse": 17.4355,
+          "delta_mae": -0.5605,
+          "delta_rmse": -1.2781
         },
         {
           "delivery_day": "2024-10-29",
           "start_utc": "2024-10-28T23:00:00+00:00",
           "end_utc": "2024-10-29T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 25.0433,
-          "rmse": 35.8476,
-          "delta_mae": 1.9993,
-          "delta_rmse": 2.547
+          "mae": 24.9556,
+          "rmse": 35.7117,
+          "delta_mae": 1.9116,
+          "delta_rmse": 2.4111
         },
         {
           "delivery_day": "2024-11-04",
           "start_utc": "2024-11-03T23:00:00+00:00",
           "end_utc": "2024-11-04T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.0494,
-          "rmse": 32.0538,
-          "delta_mae": 0.0167,
-          "delta_rmse": 2.1738
+          "mae": 15.8126,
+          "rmse": 32.0153,
+          "delta_mae": -0.2201,
+          "delta_rmse": 2.1353
         },
         {
           "delivery_day": "2024-11-21",
           "start_utc": "2024-11-20T23:00:00+00:00",
           "end_utc": "2024-11-21T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.3671,
-          "rmse": 17.1444,
-          "delta_mae": 0.5551,
-          "delta_rmse": 0.4172
+          "mae": 12.8825,
+          "rmse": 16.5757,
+          "delta_mae": 0.0705,
+          "delta_rmse": -0.1515
         },
         {
           "delivery_day": "2024-11-24",
           "start_utc": "2024-11-23T23:00:00+00:00",
           "end_utc": "2024-11-24T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.0465,
-          "rmse": 11.5317,
-          "delta_mae": -0.1119,
-          "delta_rmse": -0.0475
+          "mae": 9.0878,
+          "rmse": 11.5483,
+          "delta_mae": -0.0706,
+          "delta_rmse": -0.0309
         },
         {
           "delivery_day": "2024-11-27",
           "start_utc": "2024-11-26T23:00:00+00:00",
           "end_utc": "2024-11-27T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 21.0075,
-          "rmse": 24.1288,
-          "delta_mae": -0.2061,
-          "delta_rmse": -1.3039
+          "mae": 20.6002,
+          "rmse": 23.4136,
+          "delta_mae": -0.6133,
+          "delta_rmse": -2.0191
         },
         {
           "delivery_day": "2024-12-08",
           "start_utc": "2024-12-07T23:00:00+00:00",
           "end_utc": "2024-12-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.9961,
-          "rmse": 10.7912,
-          "delta_mae": -0.065,
-          "delta_rmse": -0.1301
+          "mae": 9.9187,
+          "rmse": 10.7363,
+          "delta_mae": -0.1424,
+          "delta_rmse": -0.1851
         },
         {
           "delivery_day": "2024-12-12",
           "start_utc": "2024-12-11T23:00:00+00:00",
           "end_utc": "2024-12-12T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 219.0288,
-          "rmse": 299.3483,
-          "delta_mae": 13.9742,
-          "delta_rmse": 13.8082
+          "mae": 217.3278,
+          "rmse": 297.55,
+          "delta_mae": 12.2731,
+          "delta_rmse": 12.0099
         },
         {
           "delivery_day": "2024-12-20",
           "start_utc": "2024-12-19T23:00:00+00:00",
           "end_utc": "2024-12-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.9939,
-          "rmse": 13.3633,
-          "delta_mae": 0.0376,
-          "delta_rmse": -0.1945
+          "mae": 9.9616,
+          "rmse": 13.3383,
+          "delta_mae": 0.0053,
+          "delta_rmse": -0.2195
         },
         {
           "delivery_day": "2024-12-23",
           "start_utc": "2024-12-22T23:00:00+00:00",
           "end_utc": "2024-12-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.9473,
-          "rmse": 17.0999,
-          "delta_mae": 0.7117,
-          "delta_rmse": 0.2759
+          "mae": 13.93,
+          "rmse": 17.0893,
+          "delta_mae": 0.6944,
+          "delta_rmse": 0.2653
         },
         {
           "delivery_day": "2024-12-25",
           "start_utc": "2024-12-24T23:00:00+00:00",
           "end_utc": "2024-12-25T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.6999,
-          "rmse": 10.724,
-          "delta_mae": -0.5042,
-          "delta_rmse": -0.2906
+          "mae": 8.7988,
+          "rmse": 10.8746,
+          "delta_mae": -0.4053,
+          "delta_rmse": -0.1399
         },
         {
           "delivery_day": "2025-01-01",
           "start_utc": "2024-12-31T23:00:00+00:00",
           "end_utc": "2025-01-01T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.0392,
-          "rmse": 10.3492,
-          "delta_mae": -1.3237,
-          "delta_rmse": -1.3432
+          "mae": 8.0652,
+          "rmse": 10.3411,
+          "delta_mae": -1.2976,
+          "delta_rmse": -1.3513
         },
         {
           "delivery_day": "2025-01-11",
           "start_utc": "2025-01-10T23:00:00+00:00",
           "end_utc": "2025-01-11T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 3.7352,
-          "rmse": 4.6526,
-          "delta_mae": -0.9464,
-          "delta_rmse": -0.9527
+          "mae": 4.1077,
+          "rmse": 5.0543,
+          "delta_mae": -0.5739,
+          "delta_rmse": -0.5511
         },
         {
           "delivery_day": "2025-01-20",
           "start_utc": "2025-01-19T23:00:00+00:00",
           "end_utc": "2025-01-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 69.6367,
-          "rmse": 113.4518,
-          "delta_mae": 9.1989,
-          "delta_rmse": 6.8631
+          "mae": 68.1229,
+          "rmse": 112.9109,
+          "delta_mae": 7.685,
+          "delta_rmse": 6.3222
         },
         {
           "delivery_day": "2025-01-23",
           "start_utc": "2025-01-22T23:00:00+00:00",
           "end_utc": "2025-01-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.6566,
-          "rmse": 14.9839,
-          "delta_mae": 1.0915,
-          "delta_rmse": 1.4423
+          "mae": 12.9019,
+          "rmse": 15.1923,
+          "delta_mae": 1.3368,
+          "delta_rmse": 1.6508
         },
         {
           "delivery_day": "2025-01-28",
           "start_utc": "2025-01-27T23:00:00+00:00",
           "end_utc": "2025-01-28T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.0595,
-          "rmse": 13.8092,
-          "delta_mae": 0.2299,
-          "delta_rmse": 0.2889
+          "mae": 12.0992,
+          "rmse": 13.8397,
+          "delta_mae": 0.2697,
+          "delta_rmse": 0.3194
         },
         {
           "delivery_day": "2025-02-14",
           "start_utc": "2025-02-13T23:00:00+00:00",
           "end_utc": "2025-02-14T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.3682,
-          "rmse": 21.8658,
-          "delta_mae": -4.1473,
-          "delta_rmse": -6.9899
+          "mae": 16.4796,
+          "rmse": 20.542,
+          "delta_mae": -5.0359,
+          "delta_rmse": -8.3137
         },
         {
           "delivery_day": "2025-02-17",
           "start_utc": "2025-02-16T23:00:00+00:00",
           "end_utc": "2025-02-17T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.5167,
-          "rmse": 19.0114,
-          "delta_mae": 6.2297,
-          "delta_rmse": 8.628
+          "mae": 13.4706,
+          "rmse": 19.0457,
+          "delta_mae": 6.1836,
+          "delta_rmse": 8.6623
         },
         {
           "delivery_day": "2025-02-20",
           "start_utc": "2025-02-19T23:00:00+00:00",
           "end_utc": "2025-02-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 20.4829,
-          "rmse": 23.2562,
-          "delta_mae": -5.2783,
-          "delta_rmse": -4.3953
+          "mae": 20.497,
+          "rmse": 23.3705,
+          "delta_mae": -5.2642,
+          "delta_rmse": -4.281
         },
         {
           "delivery_day": "2025-02-21",
           "start_utc": "2025-02-20T23:00:00+00:00",
           "end_utc": "2025-02-21T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.0247,
-          "rmse": 10.7508,
-          "delta_mae": -1.2962,
-          "delta_rmse": -0.9208
+          "mae": 8.8841,
+          "rmse": 10.6994,
+          "delta_mae": -1.4368,
+          "delta_rmse": -0.9722
         },
         {
           "delivery_day": "2025-02-28",
           "start_utc": "2025-02-27T23:00:00+00:00",
           "end_utc": "2025-02-28T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.4483,
-          "rmse": 10.5943,
-          "delta_mae": 5.0584,
-          "delta_rmse": 4.8406
+          "mae": 9.5074,
+          "rmse": 10.6474,
+          "delta_mae": 5.1175,
+          "delta_rmse": 4.8938
         },
         {
           "delivery_day": "2025-03-03",
           "start_utc": "2025-03-02T23:00:00+00:00",
           "end_utc": "2025-03-03T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 26.7003,
-          "rmse": 29.1172,
-          "delta_mae": 5.4717,
-          "delta_rmse": 4.985
+          "mae": 26.6397,
+          "rmse": 29.0901,
+          "delta_mae": 5.4111,
+          "delta_rmse": 4.9579
         },
         {
           "delivery_day": "2025-03-08",
           "start_utc": "2025-03-07T23:00:00+00:00",
           "end_utc": "2025-03-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 21.1338,
-          "rmse": 24.3151,
-          "delta_mae": 1.8912,
-          "delta_rmse": 1.9567
+          "mae": 20.6049,
+          "rmse": 23.9317,
+          "delta_mae": 1.3623,
+          "delta_rmse": 1.5733
         },
         {
           "delivery_day": "2025-03-19",
           "start_utc": "2025-03-18T23:00:00+00:00",
           "end_utc": "2025-03-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.507,
-          "rmse": 20.0715,
-          "delta_mae": 7.8189,
-          "delta_rmse": 6.7271
+          "mae": 17.4977,
+          "rmse": 19.9369,
+          "delta_mae": 7.8097,
+          "delta_rmse": 6.5925
         },
         {
           "delivery_day": "2025-03-30",
           "start_utc": "2025-03-29T23:00:00+00:00",
           "end_utc": "2025-03-30T21:00:00+00:00",
           "test_rows": 23,
-          "mae": 15.489,
-          "rmse": 18.4019,
-          "delta_mae": -0.0422,
-          "delta_rmse": -0.0693
+          "mae": 15.5195,
+          "rmse": 18.4895,
+          "delta_mae": -0.0117,
+          "delta_rmse": 0.0183
         },
         {
           "delivery_day": "2025-04-06",
           "start_utc": "2025-04-05T22:00:00+00:00",
           "end_utc": "2025-04-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 25.6367,
-          "rmse": 32.1362,
-          "delta_mae": 1.4808,
-          "delta_rmse": 0.9894
+          "mae": 25.707,
+          "rmse": 32.265,
+          "delta_mae": 1.5511,
+          "delta_rmse": 1.1182
         },
         {
           "delivery_day": "2025-04-17",
           "start_utc": "2025-04-16T22:00:00+00:00",
           "end_utc": "2025-04-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.7848,
-          "rmse": 11.4428,
-          "delta_mae": 3.2516,
-          "delta_rmse": 3.7361
+          "mae": 9.1494,
+          "rmse": 10.7988,
+          "delta_mae": 2.6162,
+          "delta_rmse": 3.0921
         },
         {
           "delivery_day": "2025-04-23",
           "start_utc": "2025-04-22T22:00:00+00:00",
           "end_utc": "2025-04-23T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.8261,
-          "rmse": 12.6301,
-          "delta_mae": 1.0236,
-          "delta_rmse": 0.8746
+          "mae": 10.3008,
+          "rmse": 11.9316,
+          "delta_mae": 0.4983,
+          "delta_rmse": 0.1761
         },
         {
           "delivery_day": "2025-04-27",
           "start_utc": "2025-04-26T22:00:00+00:00",
           "end_utc": "2025-04-27T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.5176,
-          "rmse": 26.061,
-          "delta_mae": -0.6647,
-          "delta_rmse": -0.5157
+          "mae": 16.7343,
+          "rmse": 26.1408,
+          "delta_mae": -0.448,
+          "delta_rmse": -0.4359
         },
         {
           "delivery_day": "2025-05-10",
           "start_utc": "2025-05-09T22:00:00+00:00",
           "end_utc": "2025-05-10T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.2061,
-          "rmse": 24.8534,
-          "delta_mae": -0.0108,
-          "delta_rmse": -0.9195
+          "mae": 17.7243,
+          "rmse": 25.1606,
+          "delta_mae": 0.5075,
+          "delta_rmse": -0.6123
         },
         {
           "delivery_day": "2025-05-16",
           "start_utc": "2025-05-15T22:00:00+00:00",
           "end_utc": "2025-05-16T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.2699,
-          "rmse": 13.7008,
-          "delta_mae": -0.005,
-          "delta_rmse": 0.4083
+          "mae": 10.8912,
+          "rmse": 14.7373,
+          "delta_mae": 0.6163,
+          "delta_rmse": 1.4447
         },
         {
           "delivery_day": "2025-05-21",
           "start_utc": "2025-05-20T22:00:00+00:00",
           "end_utc": "2025-05-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.4802,
-          "rmse": 9.8361,
-          "delta_mae": 0.5651,
-          "delta_rmse": 0.0297
+          "mae": 8.832,
+          "rmse": 10.0872,
+          "delta_mae": 0.9169,
+          "delta_rmse": 0.2808
         },
         {
           "delivery_day": "2025-05-27",
           "start_utc": "2025-05-26T22:00:00+00:00",
           "end_utc": "2025-05-27T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.1317,
-          "rmse": 10.7965,
-          "delta_mae": -0.5435,
-          "delta_rmse": -0.3957
+          "mae": 8.5291,
+          "rmse": 10.7436,
+          "delta_mae": -0.1461,
+          "delta_rmse": -0.4486
         },
         {
           "delivery_day": "2025-06-14",
           "start_utc": "2025-06-13T22:00:00+00:00",
           "end_utc": "2025-06-14T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.4301,
-          "rmse": 16.4239,
-          "delta_mae": 2.0277,
-          "delta_rmse": 2.3669
+          "mae": 13.4289,
+          "rmse": 16.4586,
+          "delta_mae": 2.0265,
+          "delta_rmse": 2.4016
         },
         {
           "delivery_day": "2025-06-21",
           "start_utc": "2025-06-20T22:00:00+00:00",
           "end_utc": "2025-06-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.4111,
-          "rmse": 20.0079,
-          "delta_mae": 3.2692,
-          "delta_rmse": 2.0993
+          "mae": 17.063,
+          "rmse": 19.9969,
+          "delta_mae": 2.9211,
+          "delta_rmse": 2.0883
         },
         {
           "delivery_day": "2025-06-30",
           "start_utc": "2025-06-29T22:00:00+00:00",
           "end_utc": "2025-06-30T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 18.6704,
-          "rmse": 28.4973,
-          "delta_mae": -0.3693,
-          "delta_rmse": 0.1435
+          "mae": 18.5665,
+          "rmse": 28.3155,
+          "delta_mae": -0.4732,
+          "delta_rmse": -0.0383
         },
         {
           "delivery_day": "2025-07-17",
           "start_utc": "2025-07-16T22:00:00+00:00",
           "end_utc": "2025-07-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.0918,
-          "rmse": 10.4433,
-          "delta_mae": 1.391,
-          "delta_rmse": 2.3245
+          "mae": 7.7373,
+          "rmse": 9.9331,
+          "delta_mae": 1.0365,
+          "delta_rmse": 1.8143
         },
         {
           "delivery_day": "2025-07-19",
           "start_utc": "2025-07-18T22:00:00+00:00",
           "end_utc": "2025-07-19T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.0901,
-          "rmse": 9.1266,
-          "delta_mae": 0.9473,
-          "delta_rmse": 0.6969
+          "mae": 8.0597,
+          "rmse": 9.0619,
+          "delta_mae": 0.9168,
+          "delta_rmse": 0.6322
         },
         {
           "delivery_day": "2025-07-22",
           "start_utc": "2025-07-21T22:00:00+00:00",
           "end_utc": "2025-07-22T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.1953,
-          "rmse": 10.0373,
-          "delta_mae": 0.1766,
-          "delta_rmse": 1.0037
+          "mae": 8.9123,
+          "rmse": 12.0541,
+          "delta_mae": 1.8936,
+          "delta_rmse": 3.0205
         },
         {
           "delivery_day": "2025-08-01",
           "start_utc": "2025-07-31T22:00:00+00:00",
           "end_utc": "2025-08-01T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.0311,
-          "rmse": 9.0887,
-          "delta_mae": 1.3823,
-          "delta_rmse": 1.1589
+          "mae": 6.8668,
+          "rmse": 8.0452,
+          "delta_mae": 0.218,
+          "delta_rmse": 0.1155
         },
         {
           "delivery_day": "2025-08-03",
           "start_utc": "2025-08-02T22:00:00+00:00",
           "end_utc": "2025-08-03T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.8871,
-          "rmse": 19.2302,
-          "delta_mae": 1.1324,
-          "delta_rmse": 0.4312
+          "mae": 13.7233,
+          "rmse": 19.3468,
+          "delta_mae": 0.9685,
+          "delta_rmse": 0.5478
         },
         {
           "delivery_day": "2025-08-05",
           "start_utc": "2025-08-04T22:00:00+00:00",
           "end_utc": "2025-08-05T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.1981,
-          "rmse": 19.7671,
-          "delta_mae": -1.3227,
-          "delta_rmse": -1.3825
+          "mae": 14.7788,
+          "rmse": 20.3587,
+          "delta_mae": -0.7419,
+          "delta_rmse": -0.7909
         },
         {
           "delivery_day": "2025-08-17",
           "start_utc": "2025-08-16T22:00:00+00:00",
           "end_utc": "2025-08-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.4433,
-          "rmse": 13.5516,
-          "delta_mae": 0.4749,
-          "delta_rmse": 0.5328
+          "mae": 10.0851,
+          "rmse": 13.1473,
+          "delta_mae": 0.1167,
+          "delta_rmse": 0.1285
         },
         {
           "delivery_day": "2025-08-18",
           "start_utc": "2025-08-17T22:00:00+00:00",
           "end_utc": "2025-08-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.2746,
-          "rmse": 16.9777,
-          "delta_mae": -2.2818,
-          "delta_rmse": -3.0866
+          "mae": 11.9694,
+          "rmse": 16.6443,
+          "delta_mae": -2.587,
+          "delta_rmse": -3.4201
         },
         {
           "delivery_day": "2025-08-20",
           "start_utc": "2025-08-19T22:00:00+00:00",
           "end_utc": "2025-08-20T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.5393,
-          "rmse": 11.5925,
-          "delta_mae": 1.4336,
-          "delta_rmse": 1.8665
+          "mae": 8.2634,
+          "rmse": 11.308,
+          "delta_mae": 1.1577,
+          "delta_rmse": 1.5821
         },
         {
           "delivery_day": "2025-08-23",
           "start_utc": "2025-08-22T22:00:00+00:00",
           "end_utc": "2025-08-23T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.0491,
-          "rmse": 17.6779,
-          "delta_mae": 2.0256,
-          "delta_rmse": 1.6473
+          "mae": 14.9094,
+          "rmse": 17.4216,
+          "delta_mae": 1.886,
+          "delta_rmse": 1.391
         },
         {
           "delivery_day": "2025-08-24",
           "start_utc": "2025-08-23T22:00:00+00:00",
           "end_utc": "2025-08-24T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.5135,
-          "rmse": 9.4498,
-          "delta_mae": 1.503,
-          "delta_rmse": 0.6626
+          "mae": 8.6869,
+          "rmse": 9.7604,
+          "delta_mae": 1.6764,
+          "delta_rmse": 0.9731
         },
         {
           "delivery_day": "2025-08-29",
           "start_utc": "2025-08-28T22:00:00+00:00",
           "end_utc": "2025-08-29T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.3751,
-          "rmse": 9.1307,
-          "delta_mae": -2.186,
-          "delta_rmse": -1.8553
+          "mae": 7.0221,
+          "rmse": 8.42,
+          "delta_mae": -2.539,
+          "delta_rmse": -2.566
         },
         {
           "delivery_day": "2025-09-06",
           "start_utc": "2025-09-05T22:00:00+00:00",
           "end_utc": "2025-09-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.7806,
-          "rmse": 10.4222,
-          "delta_mae": 0.7821,
-          "delta_rmse": 1.1334
+          "mae": 7.8694,
+          "rmse": 10.8421,
+          "delta_mae": 0.8709,
+          "delta_rmse": 1.5532
         },
         {
           "delivery_day": "2025-09-18",
           "start_utc": "2025-09-17T22:00:00+00:00",
           "end_utc": "2025-09-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.513,
-          "rmse": 12.6295,
-          "delta_mae": 0.3437,
-          "delta_rmse": 0.6582
+          "mae": 10.5585,
+          "rmse": 12.7142,
+          "delta_mae": 0.3893,
+          "delta_rmse": 0.7429
         },
         {
           "delivery_day": "2025-09-23",
           "start_utc": "2025-09-22T22:00:00+00:00",
           "end_utc": "2025-09-23T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.5336,
-          "rmse": 10.5189,
-          "delta_mae": 0.6668,
-          "delta_rmse": 0.1238
+          "mae": 7.5592,
+          "rmse": 10.5092,
+          "delta_mae": 0.6924,
+          "delta_rmse": 0.1141
         },
         {
           "delivery_day": "2025-10-03",
           "start_utc": "2025-10-02T22:00:00+00:00",
           "end_utc": "2025-10-03T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 11.6466,
-          "rmse": 14.9652,
-          "delta_mae": 0.4832,
-          "delta_rmse": 0.282
+          "mae": 11.7369,
+          "rmse": 14.999,
+          "delta_mae": 0.5735,
+          "delta_rmse": 0.3157
         },
         {
           "delivery_day": "2025-10-10",
           "start_utc": "2025-10-09T22:00:00+00:00",
           "end_utc": "2025-10-10T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.6275,
-          "rmse": 10.5895,
-          "delta_mae": 2.3108,
-          "delta_rmse": 2.3274
+          "mae": 9.5671,
+          "rmse": 10.5563,
+          "delta_mae": 2.2504,
+          "delta_rmse": 2.2942
         },
         {
           "delivery_day": "2025-10-17",
           "start_utc": "2025-10-16T22:00:00+00:00",
           "end_utc": "2025-10-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.8454,
-          "rmse": 14.979,
-          "delta_mae": -0.4595,
-          "delta_rmse": -0.4982
+          "mae": 10.8248,
+          "rmse": 14.9877,
+          "delta_mae": -0.48,
+          "delta_rmse": -0.4896
         },
         {
           "delivery_day": "2025-10-22",
           "start_utc": "2025-10-21T22:00:00+00:00",
           "end_utc": "2025-10-22T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.6525,
-          "rmse": 18.516,
-          "delta_mae": 0.6206,
-          "delta_rmse": 1.5767
+          "mae": 13.8379,
+          "rmse": 18.8417,
+          "delta_mae": 0.8061,
+          "delta_rmse": 1.9024
         },
         {
           "delivery_day": "2025-10-24",
           "start_utc": "2025-10-23T22:00:00+00:00",
           "end_utc": "2025-10-24T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.9888,
-          "rmse": 18.6041,
-          "delta_mae": -2.3254,
-          "delta_rmse": -2.3307
+          "mae": 15.5998,
+          "rmse": 19.3917,
+          "delta_mae": -1.7145,
+          "delta_rmse": -1.5431
         },
         {
           "delivery_day": "2025-10-27",
           "start_utc": "2025-10-26T23:00:00+00:00",
           "end_utc": "2025-10-27T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.144,
-          "rmse": 15.1094,
-          "delta_mae": -0.2204,
-          "delta_rmse": -0.7356
+          "mae": 13.1594,
+          "rmse": 15.107,
+          "delta_mae": -0.2051,
+          "delta_rmse": -0.7381
         },
         {
           "delivery_day": "2025-11-08",
           "start_utc": "2025-11-07T23:00:00+00:00",
           "end_utc": "2025-11-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 5.799,
-          "rmse": 8.875,
-          "delta_mae": -1.9821,
-          "delta_rmse": -1.5335
+          "mae": 6.238,
+          "rmse": 9.3143,
+          "delta_mae": -1.5431,
+          "delta_rmse": -1.0942
         },
         {
           "delivery_day": "2025-11-11",
           "start_utc": "2025-11-10T23:00:00+00:00",
           "end_utc": "2025-11-11T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.0886,
-          "rmse": 8.4877,
-          "delta_mae": -0.7528,
-          "delta_rmse": -0.3498
+          "mae": 7.1392,
+          "rmse": 8.5316,
+          "delta_mae": -0.7022,
+          "delta_rmse": -0.3058
         },
         {
           "delivery_day": "2025-11-13",
           "start_utc": "2025-11-12T23:00:00+00:00",
           "end_utc": "2025-11-13T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.3883,
-          "rmse": 20.6813,
-          "delta_mae": 1.3063,
-          "delta_rmse": 0.469
+          "mae": 17.5314,
+          "rmse": 20.7912,
+          "delta_mae": 1.4494,
+          "delta_rmse": 0.5789
         },
         {
           "delivery_day": "2025-11-16",
           "start_utc": "2025-11-15T23:00:00+00:00",
           "end_utc": "2025-11-16T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 4.6988,
-          "rmse": 5.6706,
-          "delta_mae": -0.6823,
-          "delta_rmse": -2.129
+          "mae": 4.4891,
+          "rmse": 5.52,
+          "delta_mae": -0.8919,
+          "delta_rmse": -2.2795
         },
         {
           "delivery_day": "2025-11-19",
           "start_utc": "2025-11-18T23:00:00+00:00",
           "end_utc": "2025-11-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.8641,
-          "rmse": 8.2247,
-          "delta_mae": 0.0554,
-          "delta_rmse": 0.1258
+          "mae": 6.8728,
+          "rmse": 8.2142,
+          "delta_mae": 0.0641,
+          "delta_rmse": 0.1153
         },
         {
           "delivery_day": "2025-11-21",
           "start_utc": "2025-11-20T23:00:00+00:00",
           "end_utc": "2025-11-21T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 23.2577,
-          "rmse": 33.8215,
-          "delta_mae": -0.1041,
-          "delta_rmse": 4.9062
+          "mae": 22.8509,
+          "rmse": 33.518,
+          "delta_mae": -0.5109,
+          "delta_rmse": 4.6028
         },
         {
           "delivery_day": "2025-11-27",
           "start_utc": "2025-11-26T23:00:00+00:00",
           "end_utc": "2025-11-27T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.8812,
-          "rmse": 11.2689,
-          "delta_mae": -0.8015,
-          "delta_rmse": -0.4493
+          "mae": 8.8169,
+          "rmse": 11.1709,
+          "delta_mae": -0.8658,
+          "delta_rmse": -0.5472
         },
         {
           "delivery_day": "2025-11-30",
           "start_utc": "2025-11-29T23:00:00+00:00",
           "end_utc": "2025-11-30T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.9747,
-          "rmse": 14.4979,
-          "delta_mae": 2.2851,
-          "delta_rmse": 2.2956
+          "mae": 13.03,
+          "rmse": 14.5493,
+          "delta_mae": 2.3405,
+          "delta_rmse": 2.3469
         },
         {
           "delivery_day": "2025-12-14",
           "start_utc": "2025-12-13T23:00:00+00:00",
           "end_utc": "2025-12-14T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.1662,
-          "rmse": 10.2318,
-          "delta_mae": 1.8759,
-          "delta_rmse": 2.9284
+          "mae": 8.1572,
+          "rmse": 10.23,
+          "delta_mae": 1.8669,
+          "delta_rmse": 2.9265
         },
         {
           "delivery_day": "2025-12-17",
           "start_utc": "2025-12-16T23:00:00+00:00",
           "end_utc": "2025-12-17T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 11.0736,
-          "rmse": 14.6934,
-          "delta_mae": -3.158,
-          "delta_rmse": -3.4489
+          "mae": 11.124,
+          "rmse": 14.8042,
+          "delta_mae": -3.1076,
+          "delta_rmse": -3.338
         },
         {
           "delivery_day": "2025-12-25",
           "start_utc": "2025-12-24T23:00:00+00:00",
           "end_utc": "2025-12-25T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.51,
-          "rmse": 15.9718,
-          "delta_mae": -0.5776,
-          "delta_rmse": 0.2148
+          "mae": 12.3743,
+          "rmse": 15.8215,
+          "delta_mae": -0.7132,
+          "delta_rmse": 0.0645
         },
         {
           "delivery_day": "2026-01-20",
           "start_utc": "2026-01-19T23:00:00+00:00",
           "end_utc": "2026-01-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 26.5734,
-          "rmse": 38.4452,
-          "delta_mae": 1.3515,
-          "delta_rmse": 2.1787
+          "mae": 26.9485,
+          "rmse": 38.5605,
+          "delta_mae": 1.7265,
+          "delta_rmse": 2.294
         },
         {
           "delivery_day": "2026-01-23",
           "start_utc": "2026-01-22T23:00:00+00:00",
           "end_utc": "2026-01-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.9215,
-          "rmse": 10.5168,
-          "delta_mae": -0.0131,
-          "delta_rmse": 0.178
+          "mae": 6.982,
+          "rmse": 10.1702,
+          "delta_mae": 0.0473,
+          "delta_rmse": -0.1686
         },
         {
           "delivery_day": "2026-02-09",
           "start_utc": "2026-02-08T23:00:00+00:00",
           "end_utc": "2026-02-09T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.005,
-          "rmse": 13.4533,
-          "delta_mae": 0.7246,
-          "delta_rmse": 0.347
+          "mae": 8.82,
+          "rmse": 13.0188,
+          "delta_mae": -0.4604,
+          "delta_rmse": -0.0876
         },
         {
           "delivery_day": "2026-03-12",
           "start_utc": "2026-03-11T23:00:00+00:00",
           "end_utc": "2026-03-12T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 11.112,
-          "rmse": 14.7045,
-          "delta_mae": -0.2315,
-          "delta_rmse": 0.0467
+          "mae": 11.596,
+          "rmse": 15.1881,
+          "delta_mae": 0.2525,
+          "delta_rmse": 0.5303
         },
         {
           "delivery_day": "2026-03-15",
           "start_utc": "2026-03-14T23:00:00+00:00",
           "end_utc": "2026-03-15T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.8257,
-          "rmse": 18.3133,
-          "delta_mae": -0.0209,
-          "delta_rmse": -0.8164
+          "mae": 15.1455,
+          "rmse": 20.4425,
+          "delta_mae": 1.2989,
+          "delta_rmse": 1.3128
         },
         {
           "delivery_day": "2026-04-06",
           "start_utc": "2026-04-05T22:00:00+00:00",
           "end_utc": "2026-04-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 20.9425,
-          "rmse": 26.226,
-          "delta_mae": -0.4035,
-          "delta_rmse": -1.1148
+          "mae": 21.3136,
+          "rmse": 26.7047,
+          "delta_mae": -0.0324,
+          "delta_rmse": -0.6361
         },
         {
           "delivery_day": "2026-05-08",
           "start_utc": "2026-05-07T22:00:00+00:00",
           "end_utc": "2026-05-08T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.625,
-          "rmse": 19.7968,
-          "delta_mae": 3.4678,
-          "delta_rmse": 4.0205
+          "mae": 15.4451,
+          "rmse": 16.96,
+          "delta_mae": 1.2879,
+          "delta_rmse": 1.1836
         },
         {
           "delivery_day": "2026-05-11",
           "start_utc": "2026-05-10T22:00:00+00:00",
           "end_utc": "2026-05-11T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 22.0118,
-          "rmse": 26.4903,
-          "delta_mae": 3.2356,
-          "delta_rmse": 5.3168
+          "mae": 19.4587,
+          "rmse": 22.387,
+          "delta_mae": 0.6824,
+          "delta_rmse": 1.2135
         },
         {
           "delivery_day": "2026-05-12",
           "start_utc": "2026-05-11T22:00:00+00:00",
           "end_utc": "2026-05-12T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.2251,
-          "rmse": 19.629,
-          "delta_mae": 1.788,
-          "delta_rmse": 3.2642
+          "mae": 13.5969,
+          "rmse": 18.8419,
+          "delta_mae": 1.1597,
+          "delta_rmse": 2.4771
         },
         {
           "delivery_day": "2026-05-14",
           "start_utc": "2026-05-13T22:00:00+00:00",
           "end_utc": "2026-05-14T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.0827,
-          "rmse": 22.8961,
-          "delta_mae": 7.1115,
-          "delta_rmse": 9.5561
+          "mae": 16.6221,
+          "rmse": 18.5949,
+          "delta_mae": 4.6509,
+          "delta_rmse": 5.255
         },
         {
           "delivery_day": "2026-05-19",
           "start_utc": "2026-05-18T22:00:00+00:00",
           "end_utc": "2026-05-19T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 26.6198,
-          "rmse": 28.6039,
-          "delta_mae": 7.9805,
-          "delta_rmse": 8.7206
+          "mae": 21.4307,
+          "rmse": 23.3652,
+          "delta_mae": 2.7914,
+          "delta_rmse": 3.4819
         },
         {
           "delivery_day": "2026-05-21",
           "start_utc": "2026-05-20T22:00:00+00:00",
           "end_utc": "2026-05-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.6626,
-          "rmse": 18.3225,
-          "delta_mae": -2.7046,
-          "delta_rmse": -2.5577
+          "mae": 16.662,
+          "rmse": 19.1311,
+          "delta_mae": -0.7053,
+          "delta_rmse": -1.7491
         },
         {
           "delivery_day": "2026-06-12",
           "start_utc": "2026-06-11T22:00:00+00:00",
           "end_utc": "2026-06-12T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 4.1943,
-          "rmse": 5.1508,
-          "delta_mae": 0.1188,
-          "delta_rmse": 0.2109
+          "mae": 3.7841,
+          "rmse": 4.6123,
+          "delta_mae": -0.2914,
+          "delta_rmse": -0.3277
         },
         {
           "delivery_day": "2026-06-17",
           "start_utc": "2026-06-16T22:00:00+00:00",
           "end_utc": "2026-06-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.8046,
-          "rmse": 26.2763,
-          "delta_mae": 2.3908,
-          "delta_rmse": 3.9092
+          "mae": 15.3171,
+          "rmse": 20.4356,
+          "delta_mae": -2.0967,
+          "delta_rmse": -1.9315
         },
         {
           "delivery_day": "2026-06-20",
           "start_utc": "2026-06-19T22:00:00+00:00",
           "end_utc": "2026-06-20T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.9935,
-          "rmse": 18.3122,
-          "delta_mae": 0.0554,
-          "delta_rmse": 0.2168
+          "mae": 14.9715,
+          "rmse": 17.491,
+          "delta_mae": 0.0334,
+          "delta_rmse": -0.6044
         },
         {
           "delivery_day": "2026-06-29",
           "start_utc": "2026-06-28T22:00:00+00:00",
           "end_utc": "2026-06-29T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.8728,
-          "rmse": 22.5806,
-          "delta_mae": 0.8014,
-          "delta_rmse": 1.3143
+          "mae": 14.2629,
+          "rmse": 20.6953,
+          "delta_mae": -0.8085,
+          "delta_rmse": -0.5709
         },
         {
           "delivery_day": "2026-07-02",
           "start_utc": "2026-07-01T22:00:00+00:00",
           "end_utc": "2026-07-02T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.1947,
-          "rmse": 16.1738,
-          "delta_mae": -1.8242,
-          "delta_rmse": -1.9237
+          "mae": 16.1346,
+          "rmse": 18.2296,
+          "delta_mae": 0.1157,
+          "delta_rmse": 0.1321
         },
         {
           "delivery_day": "2026-07-07",
           "start_utc": "2026-07-06T22:00:00+00:00",
           "end_utc": "2026-07-07T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 11.5887,
-          "rmse": 13.5402,
-          "delta_mae": -1.181,
-          "delta_rmse": -1.0
+          "mae": 12.0723,
+          "rmse": 13.6004,
+          "delta_mae": -0.6974,
+          "delta_rmse": -0.9398
         },
         {
           "delivery_day": "2026-07-09",
           "start_utc": "2026-07-08T22:00:00+00:00",
           "end_utc": "2026-07-09T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.2711,
-          "rmse": 21.278,
-          "delta_mae": 2.2322,
-          "delta_rmse": 2.1085
+          "mae": 17.107,
+          "rmse": 19.0096,
+          "delta_mae": 0.0681,
+          "delta_rmse": -0.1599
         },
         {
           "delivery_day": "2026-07-21",
           "start_utc": "2026-07-20T22:00:00+00:00",
           "end_utc": "2026-07-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.8019,
-          "rmse": 17.2406,
-          "delta_mae": -0.1111,
-          "delta_rmse": -0.4333
+          "mae": 13.9403,
+          "rmse": 16.9902,
+          "delta_mae": -0.9727,
+          "delta_rmse": -0.6836
         },
         {
           "delivery_day": "2026-08-04",
           "start_utc": "2026-08-03T22:00:00+00:00",
           "end_utc": "2026-08-04T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 20.3824,
-          "rmse": 25.7985,
-          "delta_mae": 0.6014,
-          "delta_rmse": 1.243
+          "mae": 19.2278,
+          "rmse": 23.9345,
+          "delta_mae": -0.5532,
+          "delta_rmse": -0.621
         },
         {
           "delivery_day": "2026-09-15",
           "start_utc": "2026-09-14T22:00:00+00:00",
           "end_utc": "2026-09-15T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.4914,
-          "rmse": 19.0481,
-          "delta_mae": 0.56,
-          "delta_rmse": 0.1774
+          "mae": 15.7841,
+          "rmse": 21.2763,
+          "delta_mae": 1.8527,
+          "delta_rmse": 2.4056
         }
       ]
     },
@@ -3911,10 +3911,10 @@
       ],
       "actual_fundamentals": [],
       "unit": "EUR/MWh",
-      "mean_mae": 16.2384,
+      "mean_mae": 16.0474,
       "std_mae": 0.0,
-      "mean_rmse": 21.2867,
-      "mean_delta_mae": 0.9673,
+      "mean_rmse": 21.0644,
+      "mean_delta_mae": 0.7764,
       "std_delta_mae": 0.0,
       "n_cutoffs": 92,
       "folds": [
@@ -3923,920 +3923,920 @@
           "start_utc": "2024-09-30T22:00:00+00:00",
           "end_utc": "2024-10-01T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.134,
-          "rmse": 15.4908,
-          "delta_mae": 0.5156,
-          "delta_rmse": 0.6999
+          "mae": 12.2047,
+          "rmse": 15.5373,
+          "delta_mae": 0.5862,
+          "delta_rmse": 0.7464
         },
         {
           "delivery_day": "2024-10-11",
           "start_utc": "2024-10-10T22:00:00+00:00",
           "end_utc": "2024-10-11T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.5268,
-          "rmse": 11.2024,
-          "delta_mae": 0.1696,
-          "delta_rmse": 0.1685
+          "mae": 7.7227,
+          "rmse": 11.2037,
+          "delta_mae": 0.3655,
+          "delta_rmse": 0.1698
         },
         {
           "delivery_day": "2024-10-18",
           "start_utc": "2024-10-17T22:00:00+00:00",
           "end_utc": "2024-10-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.6085,
-          "rmse": 22.0123,
-          "delta_mae": 2.6527,
-          "delta_rmse": 3.2987
+          "mae": 16.5152,
+          "rmse": 21.9952,
+          "delta_mae": 2.5594,
+          "delta_rmse": 3.2817
         },
         {
           "delivery_day": "2024-10-29",
           "start_utc": "2024-10-28T23:00:00+00:00",
           "end_utc": "2024-10-29T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 23.6249,
-          "rmse": 35.698,
-          "delta_mae": 0.5809,
-          "delta_rmse": 2.3974
+          "mae": 23.5395,
+          "rmse": 35.5585,
+          "delta_mae": 0.4956,
+          "delta_rmse": 2.2579
         },
         {
           "delivery_day": "2024-11-04",
           "start_utc": "2024-11-03T23:00:00+00:00",
           "end_utc": "2024-11-04T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.0732,
-          "rmse": 32.9325,
-          "delta_mae": 1.0405,
-          "delta_rmse": 3.0525
+          "mae": 16.8569,
+          "rmse": 32.8906,
+          "delta_mae": 0.8243,
+          "delta_rmse": 3.0107
         },
         {
           "delivery_day": "2024-11-21",
           "start_utc": "2024-11-20T23:00:00+00:00",
           "end_utc": "2024-11-21T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.3573,
-          "rmse": 18.9309,
-          "delta_mae": 2.5453,
-          "delta_rmse": 2.2037
+          "mae": 14.9024,
+          "rmse": 18.4303,
+          "delta_mae": 2.0904,
+          "delta_rmse": 1.7031
         },
         {
           "delivery_day": "2024-11-24",
           "start_utc": "2024-11-23T23:00:00+00:00",
           "end_utc": "2024-11-24T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.9234,
-          "rmse": 12.06,
-          "delta_mae": 0.7649,
-          "delta_rmse": 0.4808
+          "mae": 9.9171,
+          "rmse": 12.0565,
+          "delta_mae": 0.7586,
+          "delta_rmse": 0.4773
         },
         {
           "delivery_day": "2024-11-27",
           "start_utc": "2024-11-26T23:00:00+00:00",
           "end_utc": "2024-11-27T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 21.2012,
-          "rmse": 24.1745,
-          "delta_mae": -0.0123,
-          "delta_rmse": -1.2581
+          "mae": 20.794,
+          "rmse": 23.4734,
+          "delta_mae": -0.4196,
+          "delta_rmse": -1.9592
         },
         {
           "delivery_day": "2024-12-08",
           "start_utc": "2024-12-07T23:00:00+00:00",
           "end_utc": "2024-12-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.3593,
-          "rmse": 20.452,
-          "delta_mae": 9.2982,
-          "delta_rmse": 9.5306
+          "mae": 19.2674,
+          "rmse": 20.3698,
+          "delta_mae": 9.2062,
+          "delta_rmse": 9.4484
         },
         {
           "delivery_day": "2024-12-12",
           "start_utc": "2024-12-11T23:00:00+00:00",
           "end_utc": "2024-12-12T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 209.7573,
-          "rmse": 289.6708,
-          "delta_mae": 4.7027,
-          "delta_rmse": 4.1307
+          "mae": 208.066,
+          "rmse": 287.8891,
+          "delta_mae": 3.0114,
+          "delta_rmse": 2.3491
         },
         {
           "delivery_day": "2024-12-20",
           "start_utc": "2024-12-19T23:00:00+00:00",
           "end_utc": "2024-12-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.104,
-          "rmse": 12.4539,
-          "delta_mae": -0.8523,
-          "delta_rmse": -1.1039
+          "mae": 9.1221,
+          "rmse": 12.4581,
+          "delta_mae": -0.8342,
+          "delta_rmse": -1.0996
         },
         {
           "delivery_day": "2024-12-23",
           "start_utc": "2024-12-22T23:00:00+00:00",
           "end_utc": "2024-12-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.198,
-          "rmse": 21.6626,
-          "delta_mae": 5.9624,
-          "delta_rmse": 4.8386
+          "mae": 19.2213,
+          "rmse": 21.6813,
+          "delta_mae": 5.9856,
+          "delta_rmse": 4.8574
         },
         {
           "delivery_day": "2024-12-25",
           "start_utc": "2024-12-24T23:00:00+00:00",
           "end_utc": "2024-12-25T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.7204,
-          "rmse": 12.3607,
-          "delta_mae": 0.5163,
-          "delta_rmse": 1.3461
+          "mae": 9.7965,
+          "rmse": 12.5342,
+          "delta_mae": 0.5923,
+          "delta_rmse": 1.5197
         },
         {
           "delivery_day": "2025-01-01",
           "start_utc": "2024-12-31T23:00:00+00:00",
           "end_utc": "2025-01-01T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.3399,
-          "rmse": 8.1199,
-          "delta_mae": -3.023,
-          "delta_rmse": -3.5725
+          "mae": 6.3137,
+          "rmse": 8.1116,
+          "delta_mae": -3.0491,
+          "delta_rmse": -3.5808
         },
         {
           "delivery_day": "2025-01-11",
           "start_utc": "2025-01-10T23:00:00+00:00",
           "end_utc": "2025-01-11T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 5.1285,
-          "rmse": 6.4439,
-          "delta_mae": 0.4469,
-          "delta_rmse": 0.8386
+          "mae": 5.474,
+          "rmse": 6.841,
+          "delta_mae": 0.7924,
+          "delta_rmse": 1.2357
         },
         {
           "delivery_day": "2025-01-20",
           "start_utc": "2025-01-19T23:00:00+00:00",
           "end_utc": "2025-01-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 72.7567,
-          "rmse": 116.1618,
-          "delta_mae": 12.3189,
-          "delta_rmse": 9.5731
+          "mae": 71.6787,
+          "rmse": 115.6937,
+          "delta_mae": 11.2408,
+          "delta_rmse": 9.1051
         },
         {
           "delivery_day": "2025-01-23",
           "start_utc": "2025-01-22T23:00:00+00:00",
           "end_utc": "2025-01-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.351,
-          "rmse": 12.4892,
-          "delta_mae": -2.2141,
-          "delta_rmse": -1.0523
+          "mae": 9.2838,
+          "rmse": 12.5009,
+          "delta_mae": -2.2813,
+          "delta_rmse": -1.0407
         },
         {
           "delivery_day": "2025-01-28",
           "start_utc": "2025-01-27T23:00:00+00:00",
           "end_utc": "2025-01-28T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.9938,
-          "rmse": 17.6171,
-          "delta_mae": 4.1643,
-          "delta_rmse": 4.0968
+          "mae": 16.0187,
+          "rmse": 17.6271,
+          "delta_mae": 4.1891,
+          "delta_rmse": 4.1068
         },
         {
           "delivery_day": "2025-02-14",
           "start_utc": "2025-02-13T23:00:00+00:00",
           "end_utc": "2025-02-14T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 24.1688,
-          "rmse": 29.9571,
-          "delta_mae": 2.6532,
-          "delta_rmse": 1.1014
+          "mae": 23.9904,
+          "rmse": 29.2694,
+          "delta_mae": 2.4749,
+          "delta_rmse": 0.4137
         },
         {
           "delivery_day": "2025-02-17",
           "start_utc": "2025-02-16T23:00:00+00:00",
           "end_utc": "2025-02-17T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.8407,
-          "rmse": 19.6992,
-          "delta_mae": 7.5537,
-          "delta_rmse": 9.3158
+          "mae": 14.7776,
+          "rmse": 19.7228,
+          "delta_mae": 7.4906,
+          "delta_rmse": 9.3394
         },
         {
           "delivery_day": "2025-02-20",
           "start_utc": "2025-02-19T23:00:00+00:00",
           "end_utc": "2025-02-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.0715,
-          "rmse": 17.1101,
-          "delta_mae": -11.6897,
-          "delta_rmse": -10.5413
+          "mae": 14.0551,
+          "rmse": 17.2108,
+          "delta_mae": -11.7062,
+          "delta_rmse": -10.4407
         },
         {
           "delivery_day": "2025-02-21",
           "start_utc": "2025-02-20T23:00:00+00:00",
           "end_utc": "2025-02-21T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.5329,
-          "rmse": 8.5496,
-          "delta_mae": -2.788,
-          "delta_rmse": -3.122
+          "mae": 7.3779,
+          "rmse": 8.4249,
+          "delta_mae": -2.943,
+          "delta_rmse": -3.2467
         },
         {
           "delivery_day": "2025-02-28",
           "start_utc": "2025-02-27T23:00:00+00:00",
           "end_utc": "2025-02-28T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.3762,
-          "rmse": 12.5196,
-          "delta_mae": 5.9863,
-          "delta_rmse": 6.766
+          "mae": 10.4804,
+          "rmse": 12.6665,
+          "delta_mae": 6.0905,
+          "delta_rmse": 6.9129
         },
         {
           "delivery_day": "2025-03-03",
           "start_utc": "2025-03-02T23:00:00+00:00",
           "end_utc": "2025-03-03T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 27.7255,
-          "rmse": 30.4352,
-          "delta_mae": 6.4969,
-          "delta_rmse": 6.303
+          "mae": 27.6925,
+          "rmse": 30.4264,
+          "delta_mae": 6.4638,
+          "delta_rmse": 6.2942
         },
         {
           "delivery_day": "2025-03-08",
           "start_utc": "2025-03-07T23:00:00+00:00",
           "end_utc": "2025-03-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.7222,
-          "rmse": 22.6406,
-          "delta_mae": 0.4795,
-          "delta_rmse": 0.2822
+          "mae": 19.1433,
+          "rmse": 22.1992,
+          "delta_mae": -0.0993,
+          "delta_rmse": -0.1593
         },
         {
           "delivery_day": "2025-03-19",
           "start_utc": "2025-03-18T23:00:00+00:00",
           "end_utc": "2025-03-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 18.5856,
-          "rmse": 21.7142,
-          "delta_mae": 8.8976,
-          "delta_rmse": 8.3698
+          "mae": 18.518,
+          "rmse": 21.5094,
+          "delta_mae": 8.83,
+          "delta_rmse": 8.1651
         },
         {
           "delivery_day": "2025-03-30",
           "start_utc": "2025-03-29T23:00:00+00:00",
           "end_utc": "2025-03-30T21:00:00+00:00",
           "test_rows": 23,
-          "mae": 17.8128,
-          "rmse": 20.5248,
-          "delta_mae": 2.2816,
-          "delta_rmse": 2.0536
+          "mae": 17.8697,
+          "rmse": 20.6146,
+          "delta_mae": 2.3385,
+          "delta_rmse": 2.1434
         },
         {
           "delivery_day": "2025-04-06",
           "start_utc": "2025-04-05T22:00:00+00:00",
           "end_utc": "2025-04-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 25.7366,
-          "rmse": 34.1244,
-          "delta_mae": 1.5807,
-          "delta_rmse": 2.9776
+          "mae": 25.8059,
+          "rmse": 34.2043,
+          "delta_mae": 1.65,
+          "delta_rmse": 3.0574
         },
         {
           "delivery_day": "2025-04-17",
           "start_utc": "2025-04-16T22:00:00+00:00",
           "end_utc": "2025-04-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.2906,
-          "rmse": 11.1526,
-          "delta_mae": 2.7574,
-          "delta_rmse": 3.4459
+          "mae": 8.6552,
+          "rmse": 10.4788,
+          "delta_mae": 2.122,
+          "delta_rmse": 2.7722
         },
         {
           "delivery_day": "2025-04-23",
           "start_utc": "2025-04-22T22:00:00+00:00",
           "end_utc": "2025-04-23T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.6911,
-          "rmse": 11.2591,
-          "delta_mae": -0.1113,
-          "delta_rmse": -0.4964
+          "mae": 9.3432,
+          "rmse": 10.7653,
+          "delta_mae": -0.4593,
+          "delta_rmse": -0.9902
         },
         {
           "delivery_day": "2025-04-27",
           "start_utc": "2025-04-26T22:00:00+00:00",
           "end_utc": "2025-04-27T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.8087,
-          "rmse": 29.741,
-          "delta_mae": -0.3736,
-          "delta_rmse": 3.1643
+          "mae": 16.9764,
+          "rmse": 29.7684,
+          "delta_mae": -0.2059,
+          "delta_rmse": 3.1917
         },
         {
           "delivery_day": "2025-05-10",
           "start_utc": "2025-05-09T22:00:00+00:00",
           "end_utc": "2025-05-10T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.0732,
-          "rmse": 27.1226,
-          "delta_mae": 1.8563,
-          "delta_rmse": 1.3497
+          "mae": 19.3105,
+          "rmse": 27.2512,
+          "delta_mae": 2.0937,
+          "delta_rmse": 1.4784
         },
         {
           "delivery_day": "2025-05-16",
           "start_utc": "2025-05-15T22:00:00+00:00",
           "end_utc": "2025-05-16T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.1506,
-          "rmse": 14.0922,
-          "delta_mae": -0.1243,
-          "delta_rmse": 0.7996
+          "mae": 10.5634,
+          "rmse": 14.6205,
+          "delta_mae": 0.2885,
+          "delta_rmse": 1.328
         },
         {
           "delivery_day": "2025-05-21",
           "start_utc": "2025-05-20T22:00:00+00:00",
           "end_utc": "2025-05-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.0969,
-          "rmse": 10.3576,
-          "delta_mae": 1.1817,
-          "delta_rmse": 0.5512
+          "mae": 9.3581,
+          "rmse": 10.5719,
+          "delta_mae": 1.443,
+          "delta_rmse": 0.7655
         },
         {
           "delivery_day": "2025-05-27",
           "start_utc": "2025-05-26T22:00:00+00:00",
           "end_utc": "2025-05-27T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.6041,
-          "rmse": 9.3894,
-          "delta_mae": -1.0711,
-          "delta_rmse": -1.8028
+          "mae": 7.9391,
+          "rmse": 9.457,
+          "delta_mae": -0.7361,
+          "delta_rmse": -1.7353
         },
         {
           "delivery_day": "2025-06-14",
           "start_utc": "2025-06-13T22:00:00+00:00",
           "end_utc": "2025-06-14T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.1119,
-          "rmse": 19.5598,
-          "delta_mae": 3.7095,
-          "delta_rmse": 5.5028
+          "mae": 15.1165,
+          "rmse": 19.5827,
+          "delta_mae": 3.714,
+          "delta_rmse": 5.5257
         },
         {
           "delivery_day": "2025-06-21",
           "start_utc": "2025-06-20T22:00:00+00:00",
           "end_utc": "2025-06-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.9851,
-          "rmse": 20.9739,
-          "delta_mae": 3.8432,
-          "delta_rmse": 3.0653
+          "mae": 17.6246,
+          "rmse": 20.8482,
+          "delta_mae": 3.4827,
+          "delta_rmse": 2.9396
         },
         {
           "delivery_day": "2025-06-30",
           "start_utc": "2025-06-29T22:00:00+00:00",
           "end_utc": "2025-06-30T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.9114,
-          "rmse": 25.4875,
-          "delta_mae": -2.1283,
-          "delta_rmse": -2.8664
+          "mae": 16.8459,
+          "rmse": 25.2515,
+          "delta_mae": -2.1938,
+          "delta_rmse": -3.1023
         },
         {
           "delivery_day": "2025-07-17",
           "start_utc": "2025-07-16T22:00:00+00:00",
           "end_utc": "2025-07-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.9444,
-          "rmse": 11.0428,
-          "delta_mae": 2.2437,
-          "delta_rmse": 2.9239
+          "mae": 8.4393,
+          "rmse": 10.5756,
+          "delta_mae": 1.7385,
+          "delta_rmse": 2.4568
         },
         {
           "delivery_day": "2025-07-19",
           "start_utc": "2025-07-18T22:00:00+00:00",
           "end_utc": "2025-07-19T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.7087,
-          "rmse": 9.8057,
-          "delta_mae": 1.5659,
-          "delta_rmse": 1.3759
+          "mae": 8.6948,
+          "rmse": 9.7526,
+          "delta_mae": 1.552,
+          "delta_rmse": 1.3229
         },
         {
           "delivery_day": "2025-07-22",
           "start_utc": "2025-07-21T22:00:00+00:00",
           "end_utc": "2025-07-22T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.312,
-          "rmse": 9.2421,
-          "delta_mae": 0.2933,
-          "delta_rmse": 0.2085
+          "mae": 8.7922,
+          "rmse": 11.5024,
+          "delta_mae": 1.7735,
+          "delta_rmse": 2.4689
         },
         {
           "delivery_day": "2025-08-01",
           "start_utc": "2025-07-31T22:00:00+00:00",
           "end_utc": "2025-08-01T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.7722,
-          "rmse": 8.1357,
-          "delta_mae": 0.1233,
-          "delta_rmse": 0.206
+          "mae": 7.0649,
+          "rmse": 8.2194,
+          "delta_mae": 0.4161,
+          "delta_rmse": 0.2897
         },
         {
           "delivery_day": "2025-08-03",
           "start_utc": "2025-08-02T22:00:00+00:00",
           "end_utc": "2025-08-03T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.5352,
-          "rmse": 21.9842,
-          "delta_mae": 2.7805,
-          "delta_rmse": 3.1852
+          "mae": 15.4214,
+          "rmse": 22.0747,
+          "delta_mae": 2.6666,
+          "delta_rmse": 3.2757
         },
         {
           "delivery_day": "2025-08-05",
           "start_utc": "2025-08-04T22:00:00+00:00",
           "end_utc": "2025-08-05T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.1702,
-          "rmse": 21.5218,
-          "delta_mae": 0.6495,
-          "delta_rmse": 0.3723
+          "mae": 16.8381,
+          "rmse": 22.0991,
+          "delta_mae": 1.3173,
+          "delta_rmse": 0.9495
         },
         {
           "delivery_day": "2025-08-17",
           "start_utc": "2025-08-16T22:00:00+00:00",
           "end_utc": "2025-08-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.5927,
-          "rmse": 10.2552,
-          "delta_mae": -2.3757,
-          "delta_rmse": -2.7636
+          "mae": 7.6227,
+          "rmse": 10.2825,
+          "delta_mae": -2.3458,
+          "delta_rmse": -2.7362
         },
         {
           "delivery_day": "2025-08-18",
           "start_utc": "2025-08-17T22:00:00+00:00",
           "end_utc": "2025-08-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.7079,
-          "rmse": 14.8225,
-          "delta_mae": -3.8484,
-          "delta_rmse": -5.2418
+          "mae": 10.3613,
+          "rmse": 14.3652,
+          "delta_mae": -4.1951,
+          "delta_rmse": -5.6992
         },
         {
           "delivery_day": "2025-08-20",
           "start_utc": "2025-08-19T22:00:00+00:00",
           "end_utc": "2025-08-20T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.0082,
-          "rmse": 11.2595,
-          "delta_mae": 0.9025,
-          "delta_rmse": 1.5336
+          "mae": 7.8137,
+          "rmse": 11.1079,
+          "delta_mae": 0.708,
+          "delta_rmse": 1.382
         },
         {
           "delivery_day": "2025-08-23",
           "start_utc": "2025-08-22T22:00:00+00:00",
           "end_utc": "2025-08-23T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.5066,
-          "rmse": 16.4786,
-          "delta_mae": 0.4832,
-          "delta_rmse": 0.448
+          "mae": 13.3417,
+          "rmse": 16.2632,
+          "delta_mae": 0.3182,
+          "delta_rmse": 0.2326
         },
         {
           "delivery_day": "2025-08-24",
           "start_utc": "2025-08-23T22:00:00+00:00",
           "end_utc": "2025-08-24T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.4276,
-          "rmse": 8.6697,
-          "delta_mae": 0.4171,
-          "delta_rmse": -0.1175
+          "mae": 7.6411,
+          "rmse": 9.026,
+          "delta_mae": 0.6306,
+          "delta_rmse": 0.2387
         },
         {
           "delivery_day": "2025-08-29",
           "start_utc": "2025-08-28T22:00:00+00:00",
           "end_utc": "2025-08-29T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.6268,
-          "rmse": 8.7082,
-          "delta_mae": -2.9343,
-          "delta_rmse": -2.2778
+          "mae": 6.2838,
+          "rmse": 7.7296,
+          "delta_mae": -3.2772,
+          "delta_rmse": -3.2564
         },
         {
           "delivery_day": "2025-09-06",
           "start_utc": "2025-09-05T22:00:00+00:00",
           "end_utc": "2025-09-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.5349,
-          "rmse": 11.5417,
-          "delta_mae": 1.5364,
-          "delta_rmse": 2.2528
+          "mae": 9.2673,
+          "rmse": 12.1824,
+          "delta_mae": 2.2688,
+          "delta_rmse": 2.8936
         },
         {
           "delivery_day": "2025-09-18",
           "start_utc": "2025-09-17T22:00:00+00:00",
           "end_utc": "2025-09-18T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.9431,
-          "rmse": 12.1355,
-          "delta_mae": -0.2261,
-          "delta_rmse": 0.1642
+          "mae": 10.024,
+          "rmse": 12.2538,
+          "delta_mae": -0.1453,
+          "delta_rmse": 0.2825
         },
         {
           "delivery_day": "2025-09-23",
           "start_utc": "2025-09-22T22:00:00+00:00",
           "end_utc": "2025-09-23T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.1414,
-          "rmse": 9.6005,
-          "delta_mae": 0.2746,
-          "delta_rmse": -0.7946
+          "mae": 7.0446,
+          "rmse": 9.4815,
+          "delta_mae": 0.1779,
+          "delta_rmse": -0.9136
         },
         {
           "delivery_day": "2025-10-03",
           "start_utc": "2025-10-02T22:00:00+00:00",
           "end_utc": "2025-10-03T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.893,
-          "rmse": 11.5279,
-          "delta_mae": -2.2704,
-          "delta_rmse": -3.1554
+          "mae": 8.976,
+          "rmse": 11.6516,
+          "delta_mae": -2.1874,
+          "delta_rmse": -3.0317
         },
         {
           "delivery_day": "2025-10-10",
           "start_utc": "2025-10-09T22:00:00+00:00",
           "end_utc": "2025-10-10T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 11.2128,
-          "rmse": 12.0293,
-          "delta_mae": 3.8961,
-          "delta_rmse": 3.7671
+          "mae": 11.1524,
+          "rmse": 12.0063,
+          "delta_mae": 3.8357,
+          "delta_rmse": 3.7442
         },
         {
           "delivery_day": "2025-10-17",
           "start_utc": "2025-10-16T22:00:00+00:00",
           "end_utc": "2025-10-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.1987,
-          "rmse": 12.6331,
-          "delta_mae": -2.1061,
-          "delta_rmse": -2.8441
+          "mae": 9.0137,
+          "rmse": 12.6226,
+          "delta_mae": -2.2912,
+          "delta_rmse": -2.8547
         },
         {
           "delivery_day": "2025-10-22",
           "start_utc": "2025-10-21T22:00:00+00:00",
           "end_utc": "2025-10-22T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.5329,
-          "rmse": 22.3781,
-          "delta_mae": 2.501,
-          "delta_rmse": 5.4387
+          "mae": 15.7246,
+          "rmse": 22.6926,
+          "delta_mae": 2.6928,
+          "delta_rmse": 5.7532
         },
         {
           "delivery_day": "2025-10-24",
           "start_utc": "2025-10-23T22:00:00+00:00",
           "end_utc": "2025-10-24T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.6271,
-          "rmse": 16.5123,
-          "delta_mae": -3.6871,
-          "delta_rmse": -4.4224
+          "mae": 14.2336,
+          "rmse": 17.368,
+          "delta_mae": -3.0807,
+          "delta_rmse": -3.5668
         },
         {
           "delivery_day": "2025-10-27",
           "start_utc": "2025-10-26T23:00:00+00:00",
           "end_utc": "2025-10-27T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.1929,
-          "rmse": 15.6968,
-          "delta_mae": -0.1716,
-          "delta_rmse": -0.1483
+          "mae": 13.1921,
+          "rmse": 15.6947,
+          "delta_mae": -0.1724,
+          "delta_rmse": -0.1503
         },
         {
           "delivery_day": "2025-11-08",
           "start_utc": "2025-11-07T23:00:00+00:00",
           "end_utc": "2025-11-08T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.6548,
-          "rmse": 10.6745,
-          "delta_mae": -1.1263,
-          "delta_rmse": 0.2661
+          "mae": 7.4603,
+          "rmse": 12.0196,
+          "delta_mae": -0.3208,
+          "delta_rmse": 1.6111
         },
         {
           "delivery_day": "2025-11-11",
           "start_utc": "2025-11-10T23:00:00+00:00",
           "end_utc": "2025-11-11T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.9391,
-          "rmse": 8.4143,
-          "delta_mae": -0.9023,
-          "delta_rmse": -0.4232
+          "mae": 6.9799,
+          "rmse": 8.4228,
+          "delta_mae": -0.8615,
+          "delta_rmse": -0.4146
         },
         {
           "delivery_day": "2025-11-13",
           "start_utc": "2025-11-12T23:00:00+00:00",
           "end_utc": "2025-11-13T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.9329,
-          "rmse": 19.9635,
-          "delta_mae": 0.8509,
-          "delta_rmse": -0.2488
+          "mae": 17.0731,
+          "rmse": 20.0849,
+          "delta_mae": 0.9911,
+          "delta_rmse": -0.1273
         },
         {
           "delivery_day": "2025-11-16",
           "start_utc": "2025-11-15T23:00:00+00:00",
           "end_utc": "2025-11-16T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 5.2318,
-          "rmse": 6.9281,
-          "delta_mae": -0.1492,
-          "delta_rmse": -0.8714
+          "mae": 5.1992,
+          "rmse": 6.6336,
+          "delta_mae": -0.1819,
+          "delta_rmse": -1.1659
         },
         {
           "delivery_day": "2025-11-19",
           "start_utc": "2025-11-18T23:00:00+00:00",
           "end_utc": "2025-11-19T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.3781,
-          "rmse": 7.7219,
-          "delta_mae": -0.4306,
-          "delta_rmse": -0.3771
+          "mae": 6.3913,
+          "rmse": 7.7235,
+          "delta_mae": -0.4174,
+          "delta_rmse": -0.3755
         },
         {
           "delivery_day": "2025-11-21",
           "start_utc": "2025-11-20T23:00:00+00:00",
           "end_utc": "2025-11-21T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 22.1937,
-          "rmse": 32.4813,
-          "delta_mae": -1.1681,
-          "delta_rmse": 3.5661
+          "mae": 21.7469,
+          "rmse": 32.0993,
+          "delta_mae": -1.6149,
+          "delta_rmse": 3.184
         },
         {
           "delivery_day": "2025-11-27",
           "start_utc": "2025-11-26T23:00:00+00:00",
           "end_utc": "2025-11-27T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.9764,
-          "rmse": 10.6775,
-          "delta_mae": -0.7063,
-          "delta_rmse": -1.0406
+          "mae": 8.9369,
+          "rmse": 10.6163,
+          "delta_mae": -0.7458,
+          "delta_rmse": -1.1018
         },
         {
           "delivery_day": "2025-11-30",
           "start_utc": "2025-11-29T23:00:00+00:00",
           "end_utc": "2025-11-30T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.6783,
-          "rmse": 12.4352,
-          "delta_mae": -0.0113,
-          "delta_rmse": 0.2328
+          "mae": 10.7375,
+          "rmse": 12.4657,
+          "delta_mae": 0.0479,
+          "delta_rmse": 0.2633
         },
         {
           "delivery_day": "2025-12-14",
           "start_utc": "2025-12-13T23:00:00+00:00",
           "end_utc": "2025-12-14T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.2996,
-          "rmse": 11.5811,
-          "delta_mae": 4.0093,
-          "delta_rmse": 4.2776
+          "mae": 10.3048,
+          "rmse": 11.5899,
+          "delta_mae": 4.0146,
+          "delta_rmse": 4.2864
         },
         {
           "delivery_day": "2025-12-17",
           "start_utc": "2025-12-16T23:00:00+00:00",
           "end_utc": "2025-12-17T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.7007,
-          "rmse": 21.3164,
-          "delta_mae": 0.4691,
-          "delta_rmse": 3.1741
+          "mae": 14.7314,
+          "rmse": 21.3852,
+          "delta_mae": 0.4999,
+          "delta_rmse": 3.2429
         },
         {
           "delivery_day": "2025-12-25",
           "start_utc": "2025-12-24T23:00:00+00:00",
           "end_utc": "2025-12-25T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 9.2683,
-          "rmse": 11.6177,
-          "delta_mae": -3.8192,
-          "delta_rmse": -4.1393
+          "mae": 9.1701,
+          "rmse": 11.5881,
+          "delta_mae": -3.9175,
+          "delta_rmse": -4.1689
         },
         {
           "delivery_day": "2026-01-20",
           "start_utc": "2026-01-19T23:00:00+00:00",
           "end_utc": "2026-01-20T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 26.5086,
-          "rmse": 39.9836,
-          "delta_mae": 1.2866,
-          "delta_rmse": 3.7171
+          "mae": 26.9602,
+          "rmse": 40.0854,
+          "delta_mae": 1.7382,
+          "delta_rmse": 3.8188
         },
         {
           "delivery_day": "2026-01-23",
           "start_utc": "2026-01-22T23:00:00+00:00",
           "end_utc": "2026-01-23T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 6.9254,
-          "rmse": 10.4297,
-          "delta_mae": -0.0092,
-          "delta_rmse": 0.0909
+          "mae": 6.7719,
+          "rmse": 10.0077,
+          "delta_mae": -0.1628,
+          "delta_rmse": -0.3311
         },
         {
           "delivery_day": "2026-02-09",
           "start_utc": "2026-02-08T23:00:00+00:00",
           "end_utc": "2026-02-09T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 8.8829,
-          "rmse": 12.4008,
-          "delta_mae": -0.3974,
-          "delta_rmse": -0.7056
+          "mae": 8.1398,
+          "rmse": 12.137,
+          "delta_mae": -1.1406,
+          "delta_rmse": -0.9693
         },
         {
           "delivery_day": "2026-03-12",
           "start_utc": "2026-03-11T23:00:00+00:00",
           "end_utc": "2026-03-12T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.4667,
-          "rmse": 15.7467,
-          "delta_mae": 1.1232,
-          "delta_rmse": 1.0889
+          "mae": 12.9372,
+          "rmse": 16.1758,
+          "delta_mae": 1.5937,
+          "delta_rmse": 1.5181
         },
         {
           "delivery_day": "2026-03-15",
           "start_utc": "2026-03-14T23:00:00+00:00",
           "end_utc": "2026-03-15T22:00:00+00:00",
           "test_rows": 24,
-          "mae": 14.6886,
-          "rmse": 19.6568,
-          "delta_mae": 0.842,
-          "delta_rmse": 0.5271
+          "mae": 15.7768,
+          "rmse": 21.5122,
+          "delta_mae": 1.9302,
+          "delta_rmse": 2.3826
         },
         {
           "delivery_day": "2026-04-06",
           "start_utc": "2026-04-05T22:00:00+00:00",
           "end_utc": "2026-04-06T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 19.5352,
-          "rmse": 26.5984,
-          "delta_mae": -1.8109,
-          "delta_rmse": -0.7424
+          "mae": 20.2095,
+          "rmse": 27.1324,
+          "delta_mae": -1.1366,
+          "delta_rmse": -0.2084
         },
         {
           "delivery_day": "2026-05-08",
           "start_utc": "2026-05-07T22:00:00+00:00",
           "end_utc": "2026-05-08T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.4962,
-          "rmse": 18.8435,
-          "delta_mae": 3.339,
-          "delta_rmse": 3.0672
+          "mae": 15.2951,
+          "rmse": 16.5148,
+          "delta_mae": 1.1379,
+          "delta_rmse": 0.7384
         },
         {
           "delivery_day": "2026-05-11",
           "start_utc": "2026-05-10T22:00:00+00:00",
           "end_utc": "2026-05-11T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 20.2695,
-          "rmse": 24.6357,
-          "delta_mae": 1.4933,
-          "delta_rmse": 3.4622
+          "mae": 17.3895,
+          "rmse": 20.4545,
+          "delta_mae": -1.3867,
+          "delta_rmse": -0.719
         },
         {
           "delivery_day": "2026-05-12",
           "start_utc": "2026-05-11T22:00:00+00:00",
           "end_utc": "2026-05-12T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 10.7658,
-          "rmse": 14.977,
-          "delta_mae": -1.6714,
-          "delta_rmse": -1.3879
+          "mae": 9.9955,
+          "rmse": 13.4289,
+          "delta_mae": -2.4417,
+          "delta_rmse": -2.9359
         },
         {
           "delivery_day": "2026-05-14",
           "start_utc": "2026-05-13T22:00:00+00:00",
           "end_utc": "2026-05-14T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 18.5661,
-          "rmse": 22.0688,
-          "delta_mae": 6.5949,
-          "delta_rmse": 8.7289
+          "mae": 16.2892,
+          "rmse": 17.9397,
+          "delta_mae": 4.3179,
+          "delta_rmse": 4.5998
         },
         {
           "delivery_day": "2026-05-19",
           "start_utc": "2026-05-18T22:00:00+00:00",
           "end_utc": "2026-05-19T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 23.3086,
-          "rmse": 24.449,
-          "delta_mae": 4.6693,
-          "delta_rmse": 4.5657
+          "mae": 18.6597,
+          "rmse": 20.585,
+          "delta_mae": 0.0204,
+          "delta_rmse": 0.7017
         },
         {
           "delivery_day": "2026-05-21",
           "start_utc": "2026-05-20T22:00:00+00:00",
           "end_utc": "2026-05-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 18.9246,
-          "rmse": 22.6272,
-          "delta_mae": 1.5574,
-          "delta_rmse": 1.747
+          "mae": 21.0928,
+          "rmse": 23.8968,
+          "delta_mae": 3.7256,
+          "delta_rmse": 3.0167
         },
         {
           "delivery_day": "2026-06-12",
           "start_utc": "2026-06-11T22:00:00+00:00",
           "end_utc": "2026-06-12T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 5.2685,
-          "rmse": 6.5092,
-          "delta_mae": 1.193,
-          "delta_rmse": 1.5692
+          "mae": 5.0286,
+          "rmse": 6.2591,
+          "delta_mae": 0.9531,
+          "delta_rmse": 1.3191
         },
         {
           "delivery_day": "2026-06-17",
           "start_utc": "2026-06-16T22:00:00+00:00",
           "end_utc": "2026-06-17T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 18.2082,
-          "rmse": 23.4491,
-          "delta_mae": 0.7944,
-          "delta_rmse": 1.082
+          "mae": 14.0209,
+          "rmse": 17.7962,
+          "delta_mae": -3.3929,
+          "delta_rmse": -4.5708
         },
         {
           "delivery_day": "2026-06-20",
           "start_utc": "2026-06-19T22:00:00+00:00",
           "end_utc": "2026-06-20T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 16.2984,
-          "rmse": 19.8346,
-          "delta_mae": 1.3603,
-          "delta_rmse": 1.7391
+          "mae": 16.1378,
+          "rmse": 18.6278,
+          "delta_mae": 1.1997,
+          "delta_rmse": 0.5324
         },
         {
           "delivery_day": "2026-06-29",
           "start_utc": "2026-06-28T22:00:00+00:00",
           "end_utc": "2026-06-29T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 15.009,
-          "rmse": 21.569,
-          "delta_mae": -0.0624,
-          "delta_rmse": 0.3027
+          "mae": 12.6612,
+          "rmse": 19.6496,
+          "delta_mae": -2.4102,
+          "delta_rmse": -1.6167
         },
         {
           "delivery_day": "2026-07-02",
           "start_utc": "2026-07-01T22:00:00+00:00",
           "end_utc": "2026-07-02T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 12.2247,
-          "rmse": 14.1919,
-          "delta_mae": -3.7942,
-          "delta_rmse": -3.9057
+          "mae": 14.2003,
+          "rmse": 16.6885,
+          "delta_mae": -1.8187,
+          "delta_rmse": -1.4091
         },
         {
           "delivery_day": "2026-07-07",
           "start_utc": "2026-07-06T22:00:00+00:00",
           "end_utc": "2026-07-07T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 7.634,
-          "rmse": 10.0793,
-          "delta_mae": -5.1356,
-          "delta_rmse": -4.461
+          "mae": 8.1288,
+          "rmse": 10.4313,
+          "delta_mae": -4.6409,
+          "delta_rmse": -4.1089
         },
         {
           "delivery_day": "2026-07-09",
           "start_utc": "2026-07-08T22:00:00+00:00",
           "end_utc": "2026-07-09T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 21.6636,
-          "rmse": 24.4239,
-          "delta_mae": 4.6247,
-          "delta_rmse": 5.2544
+          "mae": 18.8816,
+          "rmse": 22.3111,
+          "delta_mae": 1.8427,
+          "delta_rmse": 3.1416
         },
         {
           "delivery_day": "2026-07-21",
           "start_utc": "2026-07-20T22:00:00+00:00",
           "end_utc": "2026-07-21T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 17.2271,
-          "rmse": 22.2612,
-          "delta_mae": 2.3141,
-          "delta_rmse": 4.5874
+          "mae": 17.8473,
+          "rmse": 23.8471,
+          "delta_mae": 2.9342,
+          "delta_rmse": 6.1733
         },
         {
           "delivery_day": "2026-08-04",
           "start_utc": "2026-08-03T22:00:00+00:00",
           "end_utc": "2026-08-04T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 23.551,
-          "rmse": 29.2062,
-          "delta_mae": 3.7701,
-          "delta_rmse": 4.6508
+          "mae": 21.5765,
+          "rmse": 26.7112,
+          "delta_mae": 1.7956,
+          "delta_rmse": 2.1557
         },
         {
           "delivery_day": "2026-09-15",
           "start_utc": "2026-09-14T22:00:00+00:00",
           "end_utc": "2026-09-15T21:00:00+00:00",
           "test_rows": 24,
-          "mae": 13.2094,
-          "rmse": 18.299,
-          "delta_mae": -0.7221,
-          "delta_rmse": -0.5717
+          "mae": 14.551,
+          "rmse": 20.4565,
+          "delta_mae": 0.6195,
+          "delta_rmse": 1.5858
         }
       ]
     }

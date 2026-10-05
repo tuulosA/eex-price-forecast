@@ -8,7 +8,7 @@ It complements the user-facing [README](../README.md), the reproducible commands
 [Experimentation and evaluation](experimentation.md), and the implementation rules in
 [AGENTS.md](../AGENTS.md). Generated JSON/CSV reports remain the source of truth for exact results.
 
-Last updated: **2026-08-04**
+Last updated: **2026-10-05**
 
 ## Contents
 
@@ -39,8 +39,10 @@ Last updated: **2026-08-04**
    improve load thermal-memory and exceptional-day features.
 4. Eventually separate onshore/offshore wind generation if the remaining wind error justifies the added
    model-chain complexity.
-5. Solar seasonal/capacity-drift work is parked on its own branch: it improved solar objectively but
-   changed downstream price MAE by only about 0.1 EUR/MWh, too little to justify the current complexity.
+5. **Installed capacity is adopted as a solar feature (2026-10-05).** It lets the capacity-factor model
+   tell fleet eras apart and removed the 2026 over-forecast: solar MAE fell from **781 to 645 MW** and
+   end-to-end price MAE from **16.238 to 16.047 EUR/MWh**; on the holdout, solar fell from 1,386 to
+   766 MW and price from 26.753 to 26.150. It supersedes the earlier capacity-drift branch.
 6. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
    objectives after the feature work.
 
@@ -101,33 +103,37 @@ Committed reports:
 
 ### Current end-to-end baseline
 
-**The reference for model changes is the 92-day development set (updated 2026-10-04 for the solar
-azimuth adoption, the direct-radiation removal, and the `load_d1` TSO load companion).** The adopted configuration, with all models at their
-configured tree counts, one seed:
+**The reference for model changes is the 92-day development set (updated 2026-10-05 for installed
+capacity as a solar feature, after the 2026-10-04 solar azimuth adoption, direct-radiation removal, and
+`load_d1` TSO load companion).** The adopted configuration, with all models at their configured tree
+counts, one seed:
 
 | Model | MAE (92 days) | RMSE (92 days) | Original 22 | 30 systematic | 40 random |
 |---|---:|---:|---:|---:|---:|
 | Wind | 1,426.052 MW | 1,803.784 MW | 1,504.538 MW | 1,228.647 MW | 1,530.938 MW |
-| Solar | 781.455 MW | 1,305.612 MW | 864.566 MW | 592.608 MW | 877.381 MW |
+| Solar | 644.601 MW | 1,146.531 MW | 706.437 MW | 583.448 MW | 656.455 MW |
 | Load | 1,576.739 MW | 1,821.171 MW | 1,538.042 MW | 1,572.274 MW | 1,601.372 MW |
-| Price | 16.238 EUR/MWh | 21.287 EUR/MWh | 11.341 EUR/MWh | 15.144 EUR/MWh | 19.753 EUR/MWh |
+| Price | 16.047 EUR/MWh | 21.064 EUR/MWh | 11.414 EUR/MWh | 14.961 EUR/MWh | 19.411 EUR/MWh |
 
-The 2026-10-02 report, before those two solar changes, had solar 787.849 MW (RMSE 1,313.190; groups
-847.183 / 596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242). All reports, plots, SHAP
-figures, and the live forecast were regenerated on 2026-10-04 for the current configuration. Before
+Before the capacity feature, solar was 781.455 MW (RMSE 1,305.612; groups 864.566 / 592.608 /
+877.381) and price 16.238 EUR/MWh (RMSE 21.287; groups 11.341 / 15.144 / 19.753). The 2026-10-02
+report, before the 2026-10-04 solar changes, had solar 787.849 MW (RMSE 1,313.190; groups 847.183 /
+596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242). Before
 `load_d1`, load was 1,741.388 MW (RMSE 2,014.971; groups 1,488.821 / 1,692.891 / 1,916.672) and price
-16.473 EUR/MWh (RMSE 21.380; groups 11.315 / 15.229 / 20.242).
+16.473 EUR/MWh (RMSE 21.380; groups 11.315 / 15.229 / 20.242). All reports, plots, SHAP figures, and
+the live forecast were regenerated on 2026-10-05 for the current configuration.
 
 The original-22 column reproduces the pre-expansion report exactly, so neither expansion changed an
-earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.3),
-the systematic grid in between (15.3), and the randomly drawn days the hardest (20.2) - close to the
-holdout's 26.8 once its three extreme days are set aside (19.3). Which days are sampled moves price
+earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.4),
+the systematic grid in between (15.0), and the randomly drawn days the hardest (19.4) - close to the
+holdout's 26.2 once its three extreme days are set aside (18.0). Which days are sampled moves price
 MAE far more than most model changes do, which is why comparisons need the larger set and a
 day-level bootstrap. The 92-day oracle: `all_actual` 15.271 EUR/MWh; forecasting wind alone +0.090,
-solar +0.856, load -0.012, and all three +0.967 (16.238, matching eval). On the untouched holdout
-the same configuration scores 26.753 EUR/MWh price MAE (26.858 before `load_d1`, 26.814 before the
-2026-10-04 solar changes; see the 2026-10-01 decision). The holdout oracle: `all_actual` 23.893; wind
-+0.720, solar +1.434, load +1.018, all three +2.860.
+solar +0.627, load -0.012, and all three +0.776 (16.047, matching eval). On the untouched holdout
+the same configuration scores 26.150 EUR/MWh price MAE (26.753 before the capacity feature, 26.858
+before `load_d1`, 26.814 before the 2026-10-04 solar changes; see the 2026-10-01 decision) and solar
+765.733 MW (1,386.124 before). The holdout oracle: `all_actual` 23.893; wind +0.720, solar +0.666,
+load +1.018, all three +2.258.
 
 The earlier 22-day baseline, kept for comparison with reports made before the expansion, was:
 
@@ -597,7 +603,9 @@ prices (curtailment, about -12% below -100 EUR/MWh in 2026). See the 2026-10-01 
 figures. This strengthens the parked seasonal/capacity-drift work, and suggests two candidates to
 test on the development days: a recency-aware capacity-factor correction, and a known-ahead
 negative-price signal - which only the price model can supply, so it would need an iteration
-between price and solar rather than a plain feature.
+between price and solar rather than a plain feature. Tested 2026-10-05: the drift is now handled by
+the installed-capacity feature (adopted), and price-free curtailment proxies did not improve price
+(see the two sections at the end of this track).
 
 #### Align irradiance to the delivery interval
 
@@ -685,16 +693,94 @@ all 280 configured weather columns, produced 336 complete out-of-sample hours, a
 solar curve with 113 zero-output night hours. The 31-point set is therefore the adopted production
 configuration; the 25-point alternative remains only a documented fallback.
 
-#### Check calibration and capacity drift
+#### Installed capacity as a solar feature
 
-Germany's PV fleet changes quickly, while ENTSO-E installed capacity is an annual step series. Compare:
+**Status: completed and adopted 2026-10-05.** It came out of testing the curtailment proxies below and
+supersedes the capacity-drift comparisons once listed here (a raw-MW target and a trailing training
+window were measured on the parked `experiment/solar-training-window` branch).
 
-- the current capacity-factor target;
-- a raw-MW target;
-- capacity-factor training with recency weighting;
-- more frequent installed capacity, if a reliable source becomes available.
+The solar model learns a capacity factor, so it cannot tell fleet eras apart. Output per unit of
+irradiance has fallen about 9-10% a year while the reported capacity step rose 19.6% into 2026, so the
+model averaged the eras and over-forecast the newest: production D+1 error on the development days was
+297 MW in 2024, 649 MW in 2025 and 1,407 MW in 2026, with a daylight bias of +417 MW. Adding the
+forward-filled installed capacity (`solar_capacity_mw`) as a feature lets it learn the latest era's
+level. Screen on the 92 development days, five seeds, tuned parameters held fixed:
 
-Report residual bias by month/year and actual capacity-factor bin, separately from shape error.
+| Variant | Solar MAE (MW) | Delta | Daylight bias | MAE 2024 / 2025 / 2026 |
+|---|---:|---:|---:|---|
+| Production | 780.4 | - | +417 | 297 / 649 / 1,407 |
+| Installed capacity as a feature | 688.1 | -92.3 | -1 | 309 / 651 / 1,010 |
+| Recency-weighted training (half-life 365 d) plus capacity | 698.7 | -81.7 | -66 | 318 / 655 / 1,036 |
+| Years since 2023 as a feature | 702.1 | -78.3 | - | - |
+| Recency-weighted training (half-life 365 d) | 711.5 | -68.9 | +230 | 304 / 638 / 1,142 |
+| Capacity extrapolated through the year (target scaling) | 900.4 | +120.0 | +644 | 416 / 685 / 1,746 |
+
+All gains were better on 5 of 5 seeds (paired spread 1.6-3.4 MW). Growing the scaling capacity through
+the year from the previous year's growth (the only time-honest way to smooth it, since next year's figure
+is unknown) made things much worse: the reported capacity already overstates output. The capacity
+feature removed the bias without losing the older years.
+
+End-to-end over three seeds (42, 1,055, 2,068), tuned parameters, with load forecast before solar in
+every variant (the surplus variants need it; production is unchanged by the order):
+
+| Variant | Solar MAE (MW) | Price MAE (EUR/MWh) | Price delta, 90% day interval |
+|---|---:|---:|---|
+| Production | 781.1 | 16.169 | - |
+| Capacity | 687.4 | 15.996 | **-0.173 [-0.351, -0.005]** |
+| Capacity + surplus ratio | 670.6 | 16.029 | -0.140 [-0.315, +0.021] |
+| PV potential + surplus ratio | 665.3 | 16.067 | -0.102 [-0.235, +0.034] |
+
+Capacity alone was the only variant whose price interval excluded zero, and it gained on every seed
+(-0.158, -0.195, -0.166). The surplus ratio (below) lowered solar MAE further but not price (+0.033 on
+top of capacity, [-0.029, +0.091]), and it would need load forecast before solar, so it was not adopted.
+
+**Adoption.** `features.installed_capacity_feature` adds the forward-filled `solar_capacity_mw` to the
+production solar builder (37 features; the aggregation `stats` variant includes it too). A matched
+20-trial retune with the incumbent protected moved to deeper trees (500 trees, depth 8, learning rate
+0.018, min child weight 1.9): seed-42 solar 688.0 -> 644.6 MW. Five seeds confirmed it (647.4 +/- 3.4
+against 688.1 +/- 2.8 with the old parameters); without the capacity feature the same parameters
+scored 842.4 MW, worse than production, so the gain needs the feature.
+
+- **End-to-end eval** (92 development days, one seed): solar 781.455 -> 644.601 MW (RMSE 1,305.612 ->
+  1,146.531; better on 62 of 92 days, 90% day interval [-203, -75]); price 16.238 -> 16.047 EUR/MWh
+  (-0.191, [-0.367, -0.026], better on 50 days, worse on 42; RMSE 21.287 -> 21.064). Wind and load are
+  unchanged.
+- **Oracle.** Forecasting solar now costs price +0.627 EUR/MWh against actual solar (was +0.856); all
+  three forecast +0.776 (was +0.967).
+- **Holdout** (reported after adoption): solar 1,386.124 -> 765.733 MW (better on 14 of 18 days), price
+  26.753 -> 26.150 EUR/MWh (-0.602, [-0.973, -0.252], better on 13 of 18); the holdout oracle's solar
+  penalty fell from +1.434 to +0.666.
+
+Trees do not extrapolate: each January's new capacity figure lies above the training range, and the
+model treats it as the most recent era. The development days include both January steps (2025, 2026),
+and the 2026 holdout days carry the 2026 step, so this behaviour is part of the measured gain. If a year
+brings a very different output level per unit of capacity, the model only learns it as that year's
+days accumulate.
+
+#### Curtailment proxies without a price
+
+**Status: tested 2026-10-05; not adopted.** Negative prices happen when solar outruns demand, and output
+is then curtailed. Production's D+1 solar error on daylight hours with a negative price was +2,439 MW
+(bias), 12% of daylight rows but 20% of absolute error. The test asked whether a proxy known at serve
+time, without the price model, catches it. Five seeds, 92 development days, tuned parameters fixed:
+
+| Variant | Solar MAE (MW) | Delta | Negative-price bias |
+|---|---:|---:|---:|
+| Production | 780.4 | - | +2,198 |
+| Weekend/holiday sunny-midday flag | 780.3 | -0.1 | +2,184 |
+| Clear-sky index on non-working days | 779.6 | -0.8 | +2,192 |
+| PV potential (national GHI x capacity) | 690.4 | -90.0 | +1,145 |
+| Potential / forecast load | 716.0 | -64.5 | +1,426 |
+| Potential / TSO load forecast | 704.4 | -76.0 | +1,343 |
+| Surplus ratio, (potential + wind - load) / load | 691.9 | -88.5 | +868 |
+| Potential + surplus ratio | 668.5 | -111.9 | +578 |
+
+Forecast wind and load were the walk-forward forecasts of the same cutoff on the scored day and actuals
+on training rows. The calendar flags add nothing (the model already has weekend and holiday features).
+Most of the potential and ratio gains turned out to be fleet size (the capacity feature above); the
+surplus ratio adds about 20 MW on top, mostly on negative-price hours, but it did not improve price
+end-to-end. Revisit it if load forecasting improves for days 2-14 or the chain is reordered for
+another reason.
 
 ### 2. Load thermal memory and exceptional days
 
@@ -1235,7 +1321,8 @@ fits.
 
 Deferred:
 
-- solar seasonal/capacity-drift and further solar-geography work (preserved on a separate branch);
+- solar seasonal calibration and further solar-geography work (preserved on a separate branch; the
+  capacity drift itself is now handled by the installed-capacity feature);
 - fixed-run historical weather;
 - cached forecast fundamentals for end-to-end price tuning/analysis.
 
@@ -1270,6 +1357,22 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-10-05
+
+- Adopted installed capacity (`solar_capacity_mw`, forward-filled) as a solar feature, with a matched
+  retune (incumbent 688.0 -> 644.6 MW; five seeds 688.1 -> 647.4). Five-seed screen: 780.4 -> 688.1 MW,
+  nearly all of it on 2026 days (1,407 -> 1,010 MW). Three-seed end-to-end price 16.169 -> 15.996 EUR/MWh
+  (every seed better). After the retune: end-to-end solar 781.455 -> 644.601 MW, price 16.238 -> 16.047,
+  the oracle's solar penalty +0.856 -> +0.627. Holdout, reported afterwards: solar 1,386.1 -> 765.7 MW,
+  price 26.753 -> 26.150. Smoothing the scaling capacity through the year was much worse (+120 MW) and
+  recency weighting weaker (-69 MW). See
+  [Installed capacity as a solar feature](#installed-capacity-as-a-solar-feature).
+- Tested curtailment proxies without a price (feature ideas solar 1a). A weekend/holiday sunny-midday
+  flag did nothing (-0.1 MW). A surplus ratio, (PV potential + forecast wind - forecast load) / load,
+  improved solar a further ~20 MW over fleet size alone but not end-to-end price (+0.033 on top of the
+  capacity feature) and would need load before solar in the chain; not adopted. See
+  [Curtailment proxies without a price](#curtailment-proxies-without-a-price).
 
 ### 2026-10-04
 
@@ -1430,7 +1533,7 @@ Before changing a production feature/model:
   load +1.199, and all three +2.916 (26.814, matching eval). Solar is again the largest isolated
   penalty, consistent with the recent-days solar finding below; even perfect fundamentals leave 23.9,
   so most holdout error is in the price model itself.
-- Holdout day plots (`eex analyze eval --holdout --plot`, `data/evaluation/eval_days*_holdout.png`)
+- Holdout day plots (`eex analyze eval --holdout --plot`, `data/evaluation/*_eval_days_holdout.png`)
   show systematic errors that a mean MAE hides:
   - **Solar is over-forecast at the midday peak on most holdout days**, worst on the two
     deep-negative-price days (26 April, 1 May), where the actual curve is visibly flattened. Two

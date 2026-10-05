@@ -13,6 +13,7 @@ from eex_forecast.features import (
     _neighbour_wind_columns,
     calendar_features,
     fundamentals,
+    installed_capacity_feature,
     load_features,
     neighbour_wind_block,
     ntc_features,
@@ -127,6 +128,27 @@ def test_solar_azimuth_follows_the_sun_and_enters_only_production_solar(
     assert set(solar_geometry_features(times).columns).isdisjoint(azimuth.columns)
     assert {"solar_azimuth_sin", "solar_azimuth_cos"} <= set(solar_features(timeseries_frame))
     assert "solar_azimuth_sin" not in price_features(timeseries_frame)
+
+
+def test_solar_capacity_feature_carries_the_yearly_step_into_the_horizon(
+    timeseries_frame: pd.DataFrame,
+) -> None:
+    # The yearly figure arrives on 1 January and later rows (the forecast horizon) have none stored:
+    # the feature forward-fills like capacity scaling does, so serve rows see the latest step.
+    capacity = np.full(len(timeseries_frame), np.nan)
+    capacity[0], capacity[10] = 86_951.6, 104_029.5
+    frame = timeseries_frame.assign(solar_capacity_mw=capacity)
+
+    feature = installed_capacity_feature(frame, "solar_capacity_mw")["solar_capacity_mw"]
+
+    assert feature.iloc[:10].tolist() == [86_951.6] * 10
+    assert (feature.iloc[10:] == 104_029.5).all()
+    pd.testing.assert_series_equal(solar_features(frame)["solar_capacity_mw"], feature)
+    assert "solar_capacity_mw" not in price_features(frame)
+    missing = installed_capacity_feature(
+        frame.drop(columns="solar_capacity_mw"), "solar_capacity_mw"
+    )
+    assert missing["solar_capacity_mw"].isna().all()
 
 
 def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataFrame) -> None:
@@ -254,10 +276,10 @@ def test_solar_physics_variants_add_geometry_and_stable_clear_sky_index(
     clear_sky = solar_features_with_clear_sky(timeseries_frame)
     baseline = solar_features_baseline(timeseries_frame)
 
-    # Without fetched auxiliary roles, production is the geometry variant plus azimuth.
+    # Without fetched auxiliary roles, production is the geometry variant plus azimuth and capacity.
     production = solar_features(timeseries_frame)
-    azimuth = ["solar_azimuth_sin", "solar_azimuth_cos"]
-    pd.testing.assert_frame_equal(production.drop(columns=azimuth), geometry)
+    extra = ["solar_azimuth_sin", "solar_azimuth_cos", "solar_capacity_mw"]
+    pd.testing.assert_frame_equal(production.drop(columns=extra), geometry)
     assert set(elevation.columns) - set(baseline.columns) == {"solar_elevation_deg"}
     assert set(clear_sky_ghi.columns) - set(baseline.columns) == {"clear_sky_ghi"}
     assert set(geometry.columns) - set(baseline.columns) == {

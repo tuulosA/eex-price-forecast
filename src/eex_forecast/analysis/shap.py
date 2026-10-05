@@ -36,6 +36,7 @@ from eex_forecast.analysis.evaluation import EVAL_UNITS
 from eex_forecast.config import NTC_EXPORT_PREFIX, NTC_IMPORT_PREFIX, NUCLEAR_COLUMN
 from eex_forecast.features import (
     PRICE_LAGS_HOURS,
+    SOLAR_CAPACITY_COLUMN,
     TIMESTAMP,
     WEATHER_AGGREGATES,
     calendar_features,
@@ -90,6 +91,8 @@ def feature_family(feature: str) -> str:
         return "calendar"
     if feature in _GEOMETRY:
         return "solar geometry"
+    if feature == SOLAR_CAPACITY_COLUMN:
+        return "installed capacity"
     if feature.startswith("price_lag_"):
         return "price one week earlier"
     if feature == NUCLEAR_COLUMN:

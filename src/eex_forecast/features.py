@@ -325,6 +325,26 @@ def solar_azimuth_features(
     )
 
 
+SOLAR_CAPACITY_COLUMN = "solar_capacity_mw"
+
+
+def installed_capacity_feature(frame: pd.DataFrame, column: str) -> pd.DataFrame:
+    """Installed capacity (MW) as a feature, forward-filled like the capacity used for scaling.
+
+    A capacity-factor model cannot tell fleet eras apart, yet German PV output per unit of irradiance
+    has fallen while reported capacity jumped (+19.6% into 2026), so the model averaged the eras and
+    over-forecast the newest one. Seeing the yearly step lets it learn the latest era's level. Trees do
+    not extrapolate: a new January figure above the training range is treated as the most recent era.
+    Adopted 2026-10-05 (see docs/model-development.md, "Installed capacity as a solar feature").
+    """
+    capacity = (
+        pd.to_numeric(frame[column], errors="coerce").ffill()
+        if column in frame.columns
+        else pd.Series(np.nan, index=frame.index)
+    )
+    return pd.DataFrame({column: capacity.to_numpy()}, index=frame.index)
+
+
 def _weather_role_points(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     """Numeric point columns for one weather role, aligned to the target delivery interval.
 
@@ -599,13 +619,15 @@ def solar_features_with_clear_sky(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def solar_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Adopted solar drivers: geometry, azimuth, diffuse and direct-normal irradiance, and cloud cover.
+    """Adopted solar drivers: geometry, azimuth, diffuse and direct-normal irradiance, cloud cover, and
+    installed capacity.
 
     Geometry reduced the five-seed frozen-cutoff MAE by about 31 MW versus the irradiance/calendar
     baseline. Direct, diffuse, and direct-normal irradiance plus cloud-cover spatial statistics then
     reduced it by another 104 MW. Direct radiation was later removed as an exact duplicate (GHI is
     direct + diffuse). GTI added five redundant features and slightly worsened MAE. Both remain
-    fetched and available to the experiment commands but are not part of production.
+    fetched and available to the experiment commands but are not part of production. Installed
+    capacity then cut it by about 92 MW, almost all on 2026 days.
     """
     return solar_features_with_aggregation(frame, strategy="stats")
 
@@ -646,6 +668,7 @@ def solar_features_with_aggregation(
             solar_geometry_features(frame[TIMESTAMP]),
             solar_azimuth_features(frame[TIMESTAMP]),
             *_solar_auxiliary_blocks(frame, SOLAR_PRODUCTION_WEATHER_ROLES),
+            installed_capacity_feature(frame, SOLAR_CAPACITY_COLUMN),
         ],
         axis=1,
     )

@@ -34,9 +34,9 @@ the *shapes* between charts, not the heights.
 
 ### Price
 
-![Actual vs forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
+![Actual vs forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **26.75 EUR/MWh** in a typical hour.
+Over the 18 days the price forecast is off by **26.15 EUR/MWh** in a typical hour.
 
 - **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
   when people use more power, and lower around midday, when solar panels produce most. The forecast
@@ -47,14 +47,14 @@ Over the 18 days the price forecast is off by **26.75 EUR/MWh** in a typical hou
   solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
   training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
   hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 42% of the total error.** Without them the MAE would be 18.67
+- **Those three extreme days carry 42% of the total error.** Without them the MAE would be 18.03
   EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
 - **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
   forecast stayed 30-60 EUR/MWh higher.
 
 ### Wind generation
 
-![Wind: actual vs forecast on each holdout day](data/evaluation/eval_days_wind_holdout.png)
+![Wind: actual vs forecast on each holdout day](data/evaluation/wind_eval_days_holdout.png)
 
 Typical miss: **1,804 MW**.
 
@@ -67,22 +67,26 @@ Typical miss: **1,804 MW**.
 
 ### Solar generation
 
-![Solar: actual vs forecast on each holdout day](data/evaluation/eval_days_solar_holdout.png)
+![Solar: actual vs forecast on each holdout day](data/evaluation/solar_eval_days_holdout.png)
 
-Typical miss: **1,386 MW**.
+Typical miss: **766 MW**.
 
 - **The shape of the solar day is always right** - zero at night, a smooth arc peaking around noon.
-- **The midday peak is forecast too high on most days.** This is the clearest systematic error of
-  the four models. Two causes fit the data. First, the amount of solar power produced per unit of
-  sunlight has been falling year on year relative to the official installed capacity, so a model
-  that learned from earlier years expects too much. Second, on days with negative prices, some solar
-  parks switch off because producing would cost them money. That is why the gap is largest on the
-  1 May holiday and large on Sunday 26 April, where the real curve is visibly flattened.
-- On clear days without negative prices, such as 15 April and 11 August, the forecast is very close.
+- **The midday peak is now about right on most days, missing in both directions.** Until October
+  2026 it was forecast too high on most days, because the solar power produced per unit of sunlight
+  has been falling year on year relative to the official installed capacity. The model now also sees
+  the installed capacity, so it can tell the years apart and learn the current level; that halved
+  the typical miss on these days (from 1,386 MW).
+- **Days with negative prices are still too high.** On Sunday 26 April and the 1 May holiday the
+  forecast peak is 3-5 GW above the real one: when prices fall below zero, some solar parks switch
+  off because producing would cost them money, and the real curve is visibly flattened.
+- **The other larger misses are about clouds,** such as the afternoon of 27 March, when the forecast
+  expected cloud that did not arrive. Clear days such as 13 January, 24 June, and 21 September are
+  very close.
 
 ### Electricity use (load)
 
-![Actual vs forecast load on each holdout day](data/evaluation/eval_days_load_holdout.png)
+![Actual vs forecast load on each holdout day](data/evaluation/load_eval_days_holdout.png)
 
 Typical miss: **1,590 MW**.
 
@@ -106,9 +110,9 @@ so on - and turns them into one number. **SHAP** is a method that answers: *for 
 hour, how much did each input push the forecast up or down?*
 
 Think of it like splitting a restaurant bill. The model starts from an **average** forecast, the
-*base value* (for the price model, 91.84 EUR/MWh). Each input then adds or subtracts its own share.
-For one hour it might read: base 91.84, plus 30 because demand is high, minus 25 because it is
-sunny, minus 10 because it is windy - giving a forecast of 86.84. The shares always add up exactly
+*base value* (for the price model, 92.01 EUR/MWh). Each input then adds or subtracts its own share.
+For one hour it might read: base 92.01, plus 30 because demand is high, minus 25 because it is
+sunny, minus 10 because it is windy - giving a forecast of 87.01. The shares always add up exactly
 to the forecast. Each share is that input's **SHAP value** for that hour, measured in the forecast's
 own unit (EUR/MWh for price, MW for the others).
 
@@ -155,8 +159,8 @@ input's effect depends a lot on circumstances, not that the model is unsure.
   EUR/MWh in a typical hour. High demand (red, "load" row) pushes the price up; strong sunshine
   (red, "irr_solar") pushes it down, by up to about 90 EUR/MWh on the sunniest hours.
 - **Interestingly, the model reads sunshine directly** from the weather forecast more than from the
-  solar model's output ("solar"). This is one reason the solar over-forecast in Part 1 does
-  relatively little damage to the price forecast.
+  solar model's output ("solar"). This is one reason errors in the solar forecast do relatively
+  little damage to the price forecast.
 - **Wind behaves as expected:** more wind in Germany ("wind_speed", "wind") and in neighbouring
   countries ("nbr_wind_nl", "nbr_wind_fr", "nbr_wind_dk") lowers the price. More French nuclear
   power available ("nuclear_available_mw") lowers it too.
@@ -185,15 +189,20 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 
 ![SHAP summary of the solar model](data/analysis/shap_solar.png)
 
-- **Sunlight reaching the ground (GHI) dominates**, at about 10,800 MW of push in a typical hour.
-  The "irr_solar" row shows it clearly: bright hours (red) add up to about 27,000 MW; dark hours
-  (blue) subtract about 6,000 MW from the average.
-- **The sun's position** comes second, at about 600 MW. It now includes the compass direction of
-  the sun ("solar_azimuth_cos"): most panels face south, so the same sun height gives more power
-  around midday than in the morning or evening.
-- **Direct normal irradiance** (sunshine measured facing the sun) adds about 500 MW. The calendar,
-  cloud cover, and scattered (diffuse) light add only small refinements. Direct sunlight on flat
-  ground is no longer an input: it is exactly GHI minus the scattered part, so it added nothing.
+- **Sunlight reaching the ground (GHI) dominates**, at about 11,000 MW of push in a typical hour.
+  The "irr_solar" row shows it clearly: bright hours (red) add up to about 35,000 MW; dark hours
+  (blue) subtract about 7,500 MW from the average.
+- **Installed capacity comes second**, at about 800 MW ("solar_capacity_mw"). It is the official
+  solar capacity, which steps up once a year. A high value (red, the 2026 fleet) pushes the forecast
+  *down* by up to about 4,000 MW: the model has learned that this year's panels produce less per
+  unit of official capacity than earlier years', which is what removed the old midday over-forecast.
+- **Direct normal irradiance** (sunshine measured facing the sun) adds about 700 MW, and **the sun's
+  position** about 300 MW. The position includes the compass direction of the sun
+  ("solar_azimuth_cos"): most panels face south, so the same sun height gives more power around
+  midday than in the morning or evening.
+- **The calendar, cloud cover, and scattered (diffuse) light add only small refinements.** Direct
+  sunlight on flat ground is no longer an input: it is exactly GHI minus the scattered part, so it
+  added nothing.
 
 ### Load model
 
@@ -212,9 +221,9 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 ## What to take away
 
 - **For the next day, the forecast captures the daily shape of prices well**, typically within about
-  27 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
-- **Of the three supporting models, solar has the clearest systematic error** (too high at midday),
-  linked to falling output per unit of sunlight and to solar parks switching off at negative prices.
+  26 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
+- **Solar's old systematic error is gone** (too high at midday, from falling output per unit of
+  sunlight); what remains is mostly days with negative prices, when solar parks switch off.
   Load is now close on working days; weekends and holidays tend to come out somewhat high.
 - **The models rely on sensible inputs in sensible directions:** demand and sunshine drive the
   price, wind speed drives wind output, sunlight drives solar, and routines drive demand.
