@@ -42,8 +42,8 @@ src/eex_forecast/
   sources/nuclear.py   # cross-border nuclear availability = capacity - A80/B14 outages (known-ahead)
   sources/ntc.py       # per-border transfer capacity (NTC), week-ahead carried forward, import/export (known-ahead)
   weather/
-    geometry.py        # download land + EEZ GeoJSON (GISCO / Marine Regions)
-    candidates.py      # candidate points (pure-Python point-in-ring; no shapely)
+    geometry.py        # download land, land+EEZ outline, and bidding-zone polygons (GISCO / Marine Regions / TSOs)
+    grid.py            # bidding-zone candidate grids, land/sea labelled (pure-Python point-in-ring; no shapely)
     openmeteo.py       # Open-Meteo client (archive history + forecast)
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # offline `eex analyze ...` implementations; depends on core, never vice versa

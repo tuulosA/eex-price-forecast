@@ -1,12 +1,11 @@
-"""Download the GeoJSON geometry inputs for weather-point candidate generation.
+"""Download the GeoJSON inputs of the bidding-zone candidate grids (``weather.grid``).
 
-Two files are needed:
+- **Land** - Eurostat GISCO country boundaries: the precise coastline that labels points land or sea.
+- **Outline (land + sea)** - a Marine-Regions-derived land + EEZ dataset: the footprint each grid is
+  laid over, so offshore wind areas are covered.
+- **Zone polygons** - for the countries split into bidding zones (DK, SE, NO).
 
-- **Land** - Eurostat GISCO country boundaries; used for land-only candidates (temperature, solar).
-- **Zones (land + sea)** - a Marine-Regions-derived land+EEZ dataset; used for wind candidates, which
-  must include the offshore North Sea / Baltic where much of Germany's wind sits.
-
-Both are public, code-only downloads (no GIS toolchain required).
+All are public, code-only downloads (no GIS toolchain required).
 """
 
 from __future__ import annotations
@@ -16,18 +15,9 @@ from pathlib import Path
 
 import requests
 
-from eex_forecast.config import GEO_DIR
+from eex_forecast.weather.grid import LAND_PATH, LAND_URL, OUTLINE_PATH, OUTLINE_URL, SPLITS
 
 logger = logging.getLogger(__name__)
-
-LAND_URL = (
-    "https://gisco-services.ec.europa.eu/distribution/v2/countries/geojson/"
-    "CNTR_RG_01M_2024_4326.geojson"
-)
-ZONES_URL = "https://zenodo.org/records/15012370/files/countries.json?download=1"
-
-LAND_PATH = GEO_DIR / "gisco_countries.geojson"
-ZONES_PATH = GEO_DIR / "eez_countries.geojson"
 
 _DOWNLOAD_TIMEOUT_S = 120
 _CHUNK_BYTES = 1 << 20
@@ -51,8 +41,12 @@ def download_file(url: str, path: Path, *, overwrite: bool = False) -> Path:
     return path
 
 
-def download_geometries(*, overwrite: bool = False) -> tuple[Path, Path]:
-    """Download both the land and the land+sea (zones) GeoJSON files. Returns ``(land_path, zones_path)``."""
-    land = download_file(LAND_URL, LAND_PATH, overwrite=overwrite)
-    zones = download_file(ZONES_URL, ZONES_PATH, overwrite=overwrite)
-    return land, zones
+def download_geometries(*, overwrite: bool = False) -> list[Path]:
+    """Download the land, outline, and zone-polygon files. Returns every local path."""
+    paths = [
+        download_file(LAND_URL, LAND_PATH, overwrite=overwrite),
+        download_file(OUTLINE_URL, OUTLINE_PATH, overwrite=overwrite),
+    ]
+    for split in SPLITS.values():
+        paths.extend(download_file(url, path, overwrite=overwrite) for url, path in split.sources)
+    return paths

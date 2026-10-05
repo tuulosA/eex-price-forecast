@@ -35,7 +35,7 @@ from eex_forecast.config import ANALYSIS_DIR, RANK_DIR, WEATHER_CACHE_DIR
 from eex_forecast.features import TIMESTAMP, set_active_weather_columns
 from eex_forecast.model import REGISTRY, load_params
 from eex_forecast.tuning import seed_list, walk_forward_metrics_seeded
-from eex_forecast.weather.candidates import haversine_km
+from eex_forecast.weather.grid import haversine_km
 from eex_forecast.weather.openmeteo import (
     CLOUD_COVER,
     DIFFUSE_RADIATION,

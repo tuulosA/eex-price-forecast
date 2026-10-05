@@ -29,9 +29,9 @@ Command groups:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -72,11 +72,9 @@ from eex_forecast.analysis import (
 from eex_forecast.backtest_cutoffs import DEVELOPMENT, HOLDOUT, holdout_days_within
 from eex_forecast.config import (
     ANALYSIS_DIR,
-    CANDIDATES_DIR,
-    COUNTRY_IDENTIFIERS,
     DEFAULT_REFRESH_DAYS,
-    EUROPE_BBOX,
     HORIZON_DAYS,
+    NEIGHBOUR_GRID_ZONES,
     NEIGHBOUR_POINTS_PER_COUNTRY,
     RANK_DIR,
     WIND_NEIGHBOURS,
@@ -86,8 +84,8 @@ from eex_forecast.db import connect, init_db, read_frame, read_target_series
 from eex_forecast.features import NEIGHBOUR_STRATEGIES, WEATHER_AGG
 from eex_forecast.logging_setup import configure_logging
 from eex_forecast.model import ALL_MODELS, REGISTRY, TRAINED_MODELS, spec_by_name
-from eex_forecast.weather import candidates as candidate_ops
 from eex_forecast.weather import geometry
+from eex_forecast.weather import grid as grid_ops
 from eex_forecast.weather.point_search import (
     NEIGHBOUR_WIND_ROLE,
     PRICE_TARGET_COLUMN,
@@ -135,11 +133,6 @@ app.add_typer(analyze_app, name="analyze")
 app.add_typer(model_app, name="model")
 
 
-class Mode(StrEnum):
-    zones = "zones"
-    land = "land"
-
-
 class Target(StrEnum):
     wind = "wind"
     temp = "temp"
@@ -184,31 +177,31 @@ def db_init() -> None:
 def geo_download(
     overwrite: Annotated[bool, typer.Option(help="Re-download even if files exist.")] = False,
 ) -> None:
-    """Download the land and land+sea (EEZ) geometry GeoJSON files."""
-    land, zones = geometry.download_geometries(overwrite=overwrite)
-    typer.echo(f"Land:  {land}\nZones: {zones}")
+    """Download the land, land+sea (EEZ) outline, and bidding-zone polygon GeoJSON files."""
+    paths = geometry.download_geometries(overwrite=overwrite)
+    typer.echo("\n".join(str(path) for path in paths))
 
 
 # -- points ---------------------------------------------------------------------
-@points_app.command("build")
-def points_build(
-    mode: Annotated[
-        Mode, typer.Option(help="Geometry: 'zones' (wind, incl. sea) or 'land' (temp/solar).")
-    ],
-    spacing_km: Annotated[
-        float,
-        typer.Option(help="Candidate grid resolution in km (count scales with country area)."),
-    ] = 50.0,
-) -> None:
-    """Generate candidate weather points inside Germany and write them to a CSV."""
-    geojson = geometry.ZONES_PATH if mode is Mode.zones else geometry.LAND_PATH
-    if not geojson.exists():
-        raise typer.BadParameter(f"Missing geometry {geojson}. Run `eex geo` first.")
-    built = candidate_ops.build_candidates(geojson, mode=mode.value, spacing_km=spacing_km)
-    out_path = candidate_ops.write_candidates(
-        CANDIDATES_DIR / f"candidates_{mode.value}.csv", built
-    )
-    typer.echo(f"Wrote {len(built)} {mode.value} candidates -> {out_path}")
+@points_app.command("grid")
+def points_grid() -> None:
+    """Build every bidding zone's candidate grid (~50 km, land/sea labelled) and write the CSVs.
+
+    Writes ``data/candidates/grid_<zone>.csv`` and ``grid_all.csv``. refine-power ships a copy of these
+    files; copy them across after regenerating.
+    """
+    needed = [grid_ops.LAND_PATH, grid_ops.OUTLINE_PATH] + [
+        path for split in grid_ops.SPLITS.values() for _, path in split.sources
+    ]
+    missing = [str(path) for path in needed if not path.exists()]
+    if missing:
+        raise typer.BadParameter(
+            f"Missing geometry {', '.join(missing)}. Run `eex geo download` first."
+        )
+    grids = grid_ops.build_grids()
+    paths = grid_ops.write_grids(grids)
+    total = sum(len(points) for points in grids.values())
+    typer.echo(f"Wrote {total} grid points in {len(grids)} zones -> {paths[-1].parent}")
 
 
 def _rank_window(year: int | None, start: str | None, end: str | None) -> tuple[str, str]:
@@ -258,12 +251,10 @@ def points_rank(
 ) -> None:
     """Rank candidates against the matching actual and write the chosen points to config."""
     role = ROLES[target.value]
-    candidate_csv = CANDIDATES_DIR / f"candidates_{role.geometry}.csv"
-    if not candidate_csv.exists():
-        raise typer.BadParameter(
-            f"Missing {candidate_csv}. Run `eex points build --mode {role.geometry}`."
-        )
-    candidates = candidate_ops.read_candidates(candidate_csv)
+    try:
+        candidates = grid_ops.zone_candidates("DE", role.surfaces)
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     start, end = _rank_window(year, start, end)
     with connect(get_settings().db_path) as conn:
@@ -290,54 +281,39 @@ def points_rank(
 @points_app.command("map")
 def points_map() -> None:
     """Plot candidate and selected weather points on a map of Germany (writes a PNG)."""
-    candidates = [
-        candidate
-        for name in ("candidates_zones.csv", "candidates_land.csv")
-        if (CANDIDATES_DIR / name).exists()
-        for candidate in candidate_ops.read_candidates(CANDIDATES_DIR / name)
-    ]
-    if not candidates:
-        raise typer.BadParameter("No candidate CSVs found. Run `eex points build` first.")
-    land_rings = (
-        candidate_ops.germany_rings(geometry.LAND_PATH) if geometry.LAND_PATH.exists() else []
-    )
-    zones_rings = (
-        candidate_ops.germany_rings(geometry.ZONES_PATH) if geometry.ZONES_PATH.exists() else []
-    )
+    try:
+        candidates = grid_ops.zone_candidates("DE")
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    land_rings, outline_rings = _country_outlines(["DE"])
     selected = load_points_config()
     out_path = plot_points_map(
-        land_rings, zones_rings, candidates, selected, ANALYSIS_DIR / "candidate_map.png"
+        land_rings, outline_rings, candidates, selected, ANALYSIS_DIR / "candidate_map.png"
     )
     chosen = sum(len(points) for points in selected.values())
     typer.echo(f"Mapped {len(candidates)} candidates and {chosen} selected points -> {out_path}")
 
 
+def _country_outlines(countries: Sequence[str]) -> tuple[list[grid_ops.Ring], list[grid_ops.Ring]]:
+    """Land and land+sea outline rings of ``countries`` for maps (empty when not downloaded)."""
+    identifier_sets = [grid_ops.COUNTRIES[country].identifiers for country in countries]
+    land = (
+        grid_ops.country_rings(grid_ops.read_geojson(grid_ops.LAND_PATH), identifier_sets)
+        if grid_ops.LAND_PATH.exists()
+        else []
+    )
+    outline = (
+        grid_ops.country_rings(grid_ops.read_geojson(grid_ops.OUTLINE_PATH), identifier_sets)
+        if grid_ops.OUTLINE_PATH.exists()
+        else []
+    )
+    return land, outline
+
+
 # -- points neighbours ----------------------------------------------------------
-def _neighbour_candidate_csv(country: str) -> Path:
-    return CANDIDATES_DIR / f"candidates_neighbour_{country.lower()}.csv"
-
-
-@neighbours_app.command("build")
-def neighbours_build(
-    spacing_km: Annotated[
-        float, typer.Option(help="Candidate grid resolution in km per neighbour.")
-    ] = 50.0,
-) -> None:
-    """Generate land+sea wind candidates inside each DE neighbour and write a CSV per country."""
-    if not geometry.ZONES_PATH.exists():
-        raise typer.BadParameter("Missing zones geometry. Run `eex geo download` first.")
-    for country in WIND_NEIGHBOURS:
-        built = candidate_ops.build_candidates(
-            geometry.ZONES_PATH,
-            mode="zones",
-            spacing_km=spacing_km,
-            bbox=EUROPE_BBOX,
-            country=country,
-            identifiers=COUNTRY_IDENTIFIERS[country],
-        )
-        out_path = _neighbour_candidate_csv(country)
-        candidate_ops.write_candidates(out_path, built)
-        typer.echo(f"{country}: built {len(built)} candidates -> {out_path.name}")
+def _neighbour_zone(country: str) -> str:
+    """The bidding-zone grid a neighbour's wind candidates come from (e.g. DK -> DK1)."""
+    return NEIGHBOUR_GRID_ZONES.get(country, country)
 
 
 @neighbours_app.command("rank")
@@ -366,10 +342,10 @@ def neighbours_rank(
 
     selected_all: list[SelectedPoint] = []
     for country in WIND_NEIGHBOURS:
-        candidate_csv = _neighbour_candidate_csv(country)
-        if not candidate_csv.exists():
-            raise typer.BadParameter(f"Missing {candidate_csv}. Run `eex points neighbours build`.")
-        candidates = candidate_ops.read_candidates(candidate_csv)
+        try:
+            candidates = grid_ops.zone_candidates(_neighbour_zone(country))
+        except FileNotFoundError as exc:
+            raise typer.BadParameter(str(exc)) from exc
         scores = rank_neighbour_candidates(candidates, price, country, start=start, end=end)
         write_neighbour_rank_csv(scores, RANK_DIR / f"neighbour_{country.lower()}_rank.csv")
         chosen = select_neighbour_points(scores, count=count)
@@ -384,27 +360,15 @@ def neighbours_rank(
 @neighbours_app.command("map")
 def neighbours_map() -> None:
     """Plot neighbour wind candidates and the ranked selection on a map (writes a PNG)."""
-    candidates = [
-        candidate
-        for country in WIND_NEIGHBOURS
-        if _neighbour_candidate_csv(country).exists()
-        for candidate in candidate_ops.read_candidates(_neighbour_candidate_csv(country))
-    ]
-    if not candidates:
-        raise typer.BadParameter(
-            "No neighbour candidate CSVs found. Run `eex points neighbours build` first."
-        )
-    identifier_sets = [COUNTRY_IDENTIFIERS[country] for country in WIND_NEIGHBOURS]
-    land_rings = (
-        candidate_ops.country_rings_multi(geometry.LAND_PATH, identifier_sets)
-        if geometry.LAND_PATH.exists()
-        else []
-    )
-    zones_rings = (
-        candidate_ops.country_rings_multi(geometry.ZONES_PATH, identifier_sets)
-        if geometry.ZONES_PATH.exists()
-        else []
-    )
+    try:
+        candidates = [
+            candidate
+            for country in WIND_NEIGHBOURS
+            for candidate in grid_ops.zone_candidates(_neighbour_zone(country))
+        ]
+    except FileNotFoundError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    land_rings, outline_rings = _country_outlines(WIND_NEIGHBOURS)
     chosen = {NEIGHBOUR_WIND_ROLE: load_points_config().get(NEIGHBOUR_WIND_ROLE, [])}
     lats = [c.lat for c in candidates]
     lons = [c.lon for c in candidates]
@@ -412,7 +376,7 @@ def neighbours_map() -> None:
     bounds = (min(lats) - pad, max(lats) + pad, min(lons) - pad, max(lons) + pad)
     out_path = plot_points_map(
         land_rings,
-        zones_rings,
+        outline_rings,
         candidates,
         chosen,
         ANALYSIS_DIR / "candidate_map_neighbours.png",

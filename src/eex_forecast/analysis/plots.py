@@ -24,7 +24,7 @@ from eex_forecast.backtest_cutoffs import cutoff_utc
 from eex_forecast.config import ANALYSIS_DIR, EVALUATION_DIR
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import ALL_MODELS, REGISTRY
-from eex_forecast.weather.candidates import Candidate, Ring
+from eex_forecast.weather.grid import Candidate, Ring
 from eex_forecast.weather.point_search import SelectedPoint
 
 logger = logging.getLogger(__name__)

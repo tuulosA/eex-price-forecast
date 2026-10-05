@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from eex_forecast.weather.candidates import Candidate
+from eex_forecast.weather.grid import Candidate
 from eex_forecast.weather.openmeteo import SHORTWAVE_RADIATION
 from eex_forecast.weather.point_search import (
     NEIGHBOUR_WIND_ROLE,
@@ -50,8 +50,8 @@ def test_rank_and_select(tmp_path: Path) -> None:
     rng = np.random.default_rng(1)
     feature = _hourly(50 + 30 * np.sin(np.arange(2000) * 0.1) + rng.normal(0, 1, 2000))
     target = feature.shift(2) + rng.normal(0, 1, 2000)
-    good = Candidate("de_zones_001", 54.0, 8.0, "zones")
-    noise = Candidate("de_zones_002", 52.0, 12.0, "zones")
+    good = Candidate("de_001", 54.0, 8.0, "sea")
+    noise = Candidate("de_002", 52.0, 12.0, "sea")
 
     def fake_fetch(
         lat: float, lon: float, *, start: object, end: object, variables: Sequence[str]
@@ -67,7 +67,7 @@ def test_rank_and_select(tmp_path: Path) -> None:
         end="2025-03-25",
         history_fetcher=fake_fetch,
     )
-    assert scores[0].candidate.point_id == "de_zones_001"  # the correlated one ranks first
+    assert scores[0].candidate.point_id == "de_001"  # the correlated one ranks first
     assert scores[0].abs_pearson > scores[1].abs_pearson
 
     selected = select_points(scores, role=ROLES["wind"], count=2)
@@ -81,7 +81,7 @@ def test_rank_and_select(tmp_path: Path) -> None:
 def test_rank_candidates_aligns_preceding_hour_solar_radiation() -> None:
     delivery = _hourly(np.sin(np.arange(500) * 0.1) * 300 + 400)
     target = delivery.copy()
-    candidate = Candidate("de_land_001", 52.0, 10.0, "land")
+    candidate = Candidate("de_001", 52.0, 10.0, "land")
 
     def fake_fetch(
         lat: float, lon: float, *, start: object, end: object, variables: Sequence[str]
@@ -111,7 +111,7 @@ def test_load_points_config_missing_returns_empty(tmp_path: Path) -> None:
 
 
 def test_point_columns_adds_temperature_at_wind_points() -> None:
-    wind = SelectedPoint("ws_de01", 54.0, 8.0, "wind_speed_100m", "de_zones_001", 0.88, 0)
+    wind = SelectedPoint("ws_de01", 54.0, 8.0, "wind_speed_100m", "de_001", 0.88, 0)
     # A wind point also fetches temperature (air-density proxy) at the same coordinate.
     assert point_columns("wind", wind) == {
         "wind_speed_100m": "ws_de01",
@@ -142,7 +142,7 @@ def test_point_columns_adds_solar_irradiance_and_cloud_auxiliaries() -> None:
 
 def test_neighbour_point_columns_wind_only() -> None:
     # A neighbour-wind point is a bare price proxy: only wind speed, no auxiliary temperature.
-    point = SelectedPoint("ws_dk01", 56.0, 8.0, "wind_speed_100m", "dk_zones_001", -0.4, 1)
+    point = SelectedPoint("ws_dk01", 56.0, 8.0, "wind_speed_100m", "dk1_001", -0.4, 1)
     assert point_columns(NEIGHBOUR_WIND_ROLE, point) == {"wind_speed_100m": "ws_dk01"}
 
 
@@ -159,9 +159,9 @@ def test_best_wind_price_correlation_prefers_cube_and_finds_lag() -> None:
 
 def test_select_neighbour_points_enforces_diversity() -> None:
     # Two top candidates a few km apart, a third far away. Diversity must skip the near-duplicate.
-    near_a = Candidate("dk_zones_001", 56.00, 8.00, "zones")
-    near_b = Candidate("dk_zones_002", 56.02, 8.02, "zones")  # ~2.6 km from near_a
-    far = Candidate("dk_zones_003", 55.00, 11.00, "zones")  # ~200+ km away
+    near_a = Candidate("dk1_001", 56.00, 8.00, "sea")
+    near_b = Candidate("dk1_002", 56.02, 8.02, "sea")  # ~2.6 km from near_a
+    far = Candidate("dk1_003", 55.00, 11.00, "sea")  # ~200+ km away
     scores = [
         NeighbourScore(near_a, "DK", 0, "ws3", -0.50, 8000),
         NeighbourScore(near_b, "DK", 0, "ws3", -0.49, 8000),
@@ -169,4 +169,4 @@ def test_select_neighbour_points_enforces_diversity() -> None:
     ]
     selected = select_neighbour_points(scores, count=2, min_distance_km=50.0)
     assert [p.column for p in selected] == ["ws_dk01", "ws_dk02"]
-    assert [p.candidate_id for p in selected] == ["dk_zones_001", "dk_zones_003"]
+    assert [p.candidate_id for p in selected] == ["dk1_001", "dk1_003"]

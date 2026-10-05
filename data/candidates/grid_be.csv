@@ -1,0 +1,16 @@
+zone,country,point_id,lat,lon,surface
+BE,BE,be_001,51.4001,2.5856,sea
+BE,BE,be_002,51.4001,3.2802,sea
+BE,BE,be_003,51.4001,4.6694,land
+BE,BE,be_004,50.9241,2.9329,land
+BE,BE,be_005,50.9241,3.6275,land
+BE,BE,be_006,50.9241,4.3221,land
+BE,BE,be_007,50.9241,5.0167,land
+BE,BE,be_008,50.9241,5.7113,land
+BE,BE,be_009,50.4481,3.9748,land
+BE,BE,be_010,50.4481,4.6694,land
+BE,BE,be_011,50.4481,5.364,land
+BE,BE,be_012,50.4481,6.0586,land
+BE,BE,be_013,49.9721,4.3221,land
+BE,BE,be_014,49.9721,5.0167,land
+BE,BE,be_015,49.9721,5.7113,land
