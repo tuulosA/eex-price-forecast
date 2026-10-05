@@ -292,6 +292,10 @@ Its price error is concentrated in three extreme days (26 April, 1 May, and 24 J
 prices from -499 to 666 EUR/MWh): they carry 44% of it, and the MAE without them is 16.834 EUR/MWh.
 See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
 
+Both tables score D+1 with the TSOs' next-day load forecast available on every day, as for a run made
+after its publication (around 10:00 Berlin) and before the auction. A run before publication uses the
+base load model for D+1 (development load MAE 1,741 MW, price about 0.2 EUR/MWh worse at adoption).
+
 The development result over the 92 development days - the reference for comparing model changes -
 is:
 

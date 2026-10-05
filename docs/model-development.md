@@ -113,7 +113,9 @@ Committed reports:
 capacity as a solar feature, per-border transfer capacity imports, and refine-power's default weather
 points, after the 2026-10-04 solar azimuth adoption, direct-radiation removal, and `load_d1` TSO load
 companion).** The adopted configuration, with all models at their configured tree
-counts, one seed:
+counts, one seed. Every scored day has the TSO day-ahead load forecast, so load and price describe a
+late-morning run (after its ~10:00 Berlin publication, before the auction); an earlier run uses the
+base load model for D+1 (1,741.388 MW load, 16.473 EUR/MWh price at the `load_d1` adoption):
 
 | Model | MAE (92 days) | RMSE (92 days) | Original 22 | 30 systematic | 40 random |
 |---|---:|---:|---:|---:|---:|
