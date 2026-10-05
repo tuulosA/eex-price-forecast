@@ -30,6 +30,7 @@ import pandas as pd
 from eex_forecast.backtest_cutoffs import DAY_AHEAD_DAYS, DEV_CUTOFFS
 from eex_forecast.config import ANALYSIS_DIR, MARKET_TIMEZONE
 from eex_forecast.features import (
+    STATS_FEATURES_PER_ROLE,
     TIMESTAMP,
     solar_features_baseline,
     solar_features_with_auxiliary_weather,
@@ -403,7 +404,9 @@ def _run_solar_builder_experiment(
         spec = _solar_variant_spec(variant, builders)
         feature_names = list(spec.build_features(frame).columns)
         if expected_extra_roles is not None:
-            expected = len(baseline_features) + 5 * len(expected_extra_roles[variant])
+            expected = len(baseline_features) + STATS_FEATURES_PER_ROLE * len(
+                expected_extra_roles[variant]
+            )
             if len(feature_names) != expected:
                 raise ValueError(
                     f"Solar irradiance variant '{variant}' expected {expected} features but found "

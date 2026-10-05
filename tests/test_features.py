@@ -246,7 +246,6 @@ def test_default_fundamental_builders_use_adopted_strategies(
     solar = solar_features(timeseries_frame)
     assert {
         "irr_solar",
-        "irr_solar_sum",
         "irr_solar_std",
         "irr_solar_min",
         "irr_solar_max",
@@ -372,10 +371,9 @@ def test_weather_strategy_spread_and_raw(timeseries_frame: pd.DataFrame) -> None
 
 def test_weather_strategy_stats_emits_summary_statistics(timeseries_frame: pd.DataFrame) -> None:
     block = weather_strategy_block(timeseries_frame, WEATHER_AGG["wind"], "stats")
-    # mean + the four cross-point summaries, plus the auxiliary temp mean.
+    # mean + the three cross-point summaries, plus the auxiliary temp mean.
     assert list(block.columns) == [
         "wind_speed",
-        "wind_speed_sum",
         "wind_speed_std",
         "wind_speed_min",
         "wind_speed_max",
@@ -383,7 +381,7 @@ def test_weather_strategy_stats_emits_summary_statistics(timeseries_frame: pd.Da
     ]
     points = timeseries_frame[["ws_de01", "ws_de02"]]
     pd.testing.assert_series_equal(block["wind_speed_max"], points.max(axis=1), check_names=False)
-    pd.testing.assert_series_equal(block["wind_speed_sum"], points.sum(axis=1), check_names=False)
+    assert not any(column.endswith("_sum") for column in block.columns)
 
 
 def test_weather_strategy_regional_bands_by_latitude(timeseries_frame: pd.DataFrame) -> None:

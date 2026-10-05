@@ -13,7 +13,7 @@ Strategies (see :func:`eex_forecast.features.weather_strategy_block`):
 - ``mean``     - national mean of the primary role (the current production feature).
 - ``cube``     - the mean plus ``mean(v^3)`` (wind only - a proxy for the convex power curve).
 - ``spread``   - the mean plus the cross-point standard deviation (spatial dispersion).
-- ``stats``    - cross-point summary statistics: mean + sum, std, min, max.
+- ``stats``    - cross-point summary statistics: mean, std, min, max.
 - ``regional`` - one mean per latitude band (south->north), capturing spatial structure.
 - ``raw``      - every per-point column fed in directly (maximum information, highest variance).
 

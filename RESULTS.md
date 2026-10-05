@@ -36,7 +36,7 @@ the *shapes* between charts, not the heights.
 
 ![Actual vs forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **24.73 EUR/MWh** in a typical hour.
+Over the 18 days the price forecast is off by **25.04 EUR/MWh** in a typical hour.
 
 - **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
   when people use more power, and lower around midday, when solar panels produce most. The forecast
@@ -47,7 +47,7 @@ Over the 18 days the price forecast is off by **24.73 EUR/MWh** in a typical hou
   solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
   training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
   hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 44% of the total error.** Without them the MAE would be 16.52
+- **Those three extreme days carry 44% of the total error.** Without them the MAE would be 16.83
   EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
 - **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
   forecast stayed 30-60 EUR/MWh higher.
@@ -69,14 +69,15 @@ Typical miss: **1,804 MW**.
 
 ![Solar: actual vs forecast on each holdout day](data/evaluation/solar_eval_days_holdout.png)
 
-Typical miss: **766 MW**.
+Typical miss: **809 MW**.
 
 - **The shape of the solar day is always right** - zero at night, a smooth arc peaking around noon.
-- **The midday peak is now about right on most days, missing in both directions.** Until October
-  2026 it was forecast too high on most days, because the solar power produced per unit of sunlight
-  has been falling year on year relative to the official installed capacity. The model now also sees
-  the installed capacity, so it can tell the years apart and learn the current level; that halved
-  the typical miss on these days (from 1,386 MW).
+- **The midday peak is now about right in summer, missing in both directions.** Until October 2026
+  it was forecast too high on most days, because the solar power produced per unit of sunlight has
+  been falling year on year relative to the official installed capacity. The model now also sees the
+  installed capacity, so it can tell the years apart and learn the current level; that nearly
+  halved the typical miss on these days (from 1,386 MW). The winter and early-spring peaks (1
+  January, 21 February, 4 March) still come out 1-4 GW too high.
 - **Days with negative prices are still too high.** On Sunday 26 April and the 1 May holiday the
   forecast peak is 3-5 GW above the real one: when prices fall below zero, some solar parks switch
   off because producing would cost them money, and the real curve is visibly flattened.
@@ -88,15 +89,14 @@ Typical miss: **766 MW**.
 
 ![Actual vs forecast load on each holdout day](data/evaluation/load_eval_days_holdout.png)
 
-Typical miss: **1,590 MW**.
+Typical miss: **1,693 MW**.
 
 - **The daily pattern is captured well:** low at night, a steep rise in the morning, a working-day
   plateau, and an evening bump.
 - **For the next day, the model also reads the grid operators' own load forecast**, published each
   morning. That forecast knows things the weather cannot show, such as industrial schedules. It
-  closed most of the old gap on cold working days, when the model alone was 3-4.5 GW too low:
-  13 January and 21 February now track closely, while 3 February is still 2-4 GW too low around
-  midday.
+  narrowed the old gap on cold working days, when the model alone was 3-4.5 GW too low, but those
+  days are still too low: about 2-3 GW on 13 January and 21 February, and 3-5 GW on 3 February.
 - **Weekends and holidays are now the weaker side**: on Sunday 26 April and the 1 May holiday the
   forecast is 2-4 GW too high, and on New Year's Day it was too high all morning. The grid
   operators' forecast is least reliable on such days.
@@ -110,9 +110,9 @@ so on - and turns them into one number. **SHAP** is a method that answers: *for 
 hour, how much did each input push the forecast up or down?*
 
 Think of it like splitting a restaurant bill. The model starts from an **average** forecast, the
-*base value* (for the price model, 92.02 EUR/MWh). Each input then adds or subtracts its own share.
-For one hour it might read: base 92.02, plus 30 because demand is high, minus 25 because it is
-sunny, minus 10 because it is windy - giving a forecast of 87.02. The shares always add up exactly
+*base value* (for the price model, 92.10 EUR/MWh). Each input then adds or subtracts its own share.
+For one hour it might read: base 92.10, plus 30 because demand is high, minus 25 because it is
+sunny, minus 10 because it is windy - giving a forecast of 87.10. The shares always add up exactly
 to the forecast. Each share is that input's **SHAP value** for that hour, measured in the forecast's
 own unit (EUR/MWh for price, MW for the others).
 
@@ -155,8 +155,8 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 
 ![SHAP summary of the price model](data/analysis/shap_price.png)
 
-- **Electricity use (load) and sunshine matter most** - each moves the forecast by about 16-17
-  EUR/MWh in a typical hour, followed by the transfer capacity into Germany (about 13). High demand (red, "load" row) pushes the price up; strong sunshine
+- **Electricity use (load) and sunshine matter most** - each moves the forecast by about 15-17
+  EUR/MWh in a typical hour, followed by the transfer capacity into Germany (about 14). High demand (red, "load" row) pushes the price up; strong sunshine
   (red, "irr_solar") pushes it down, by up to about 90 EUR/MWh on the sunniest hours.
 - **Interestingly, the model reads sunshine directly** from the weather forecast more than from the
   solar model's output ("solar"). This is one reason errors in the solar forecast do relatively
@@ -192,10 +192,10 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 
 ![SHAP summary of the solar model](data/analysis/shap_solar.png)
 
-- **Sunlight reaching the ground (GHI) dominates**, at about 11,000 MW of push in a typical hour.
+- **Sunlight reaching the ground (GHI) dominates**, at about 11,200 MW of push in a typical hour.
   The "irr_solar" row shows it clearly: bright hours (red) add up to about 35,000 MW; dark hours
   (blue) subtract about 7,500 MW from the average.
-- **Installed capacity comes second**, at about 800 MW ("solar_capacity_mw"). It is the official
+- **Installed capacity comes second**, at about 850 MW ("solar_capacity_mw"). It is the official
   solar capacity, which steps up once a year. A high value (red, the 2026 fleet) pushes the forecast
   *down* by up to about 4,000 MW: the model has learned that this year's panels produce less per
   unit of official capacity than earlier years', which is what removed the old midday over-forecast.
@@ -211,12 +211,12 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 
 ![SHAP summary of the load model](data/analysis/shap_load.png)
 
-- **The calendar dominates** (about 7,400 MW of push): people's routines drive electricity use more
+- **The calendar dominates** (about 7,200 MW of push): people's routines drive electricity use more
   than the weather does.
 - **"day_of_week"**: weekends (red, high values = Saturday and Sunday) lower use by 3,000-11,000 MW.
   **"is_holiday"**: public holidays lower it by 6,000-14,000 MW - the single largest effect.
 - **"hour"**: night hours (blue) lower use by up to about 9,000 MW.
-- **Temperature** adds about 1,700 MW. In the "t_de..." rows (temperatures at individual weather
+- **Temperature** adds about 1,600 MW. In the "t_de..." rows (temperatures at individual weather
   points), cold hours (blue) push use up - more heating.
 - **"month_cos"** is a way of telling the model the season; its high values (red) mean winter, which
   raises use.
