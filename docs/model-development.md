@@ -46,9 +46,9 @@ Last updated: **2026-10-05**
 6. **Per-border transfer capacity imports replaced the import/export totals (2026-10-05).** End-to-end
    price MAE fell from **16.047 to 14.560 EUR/MWh** (holdout 26.150 to 24.728). The far horizon now
    carries the last week-ahead NTC instead of month-ahead, whose levels the model never trained on.
-7. **eex now uses refine-power's default weather points (2026-10-05)**, so both projects read the
-   same weather. The parity cost is small and mixed: development price 14.560 -> 14.438, holdout
-   24.728 -> 25.044 EUR/MWh. A re-ranking round on the bidding-zone grid comes next.
+7. **The weather points are snapped to the bidding-zone grid (2026-10-05).** The cost is small and
+   mixed: development price 14.560 -> 14.438, holdout 24.728 -> 25.044 EUR/MWh. A re-ranking round on
+   the grid comes next.
 8. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
    objectives after the feature work.
 
@@ -110,7 +110,7 @@ Committed reports:
 ### Current end-to-end baseline
 
 **The reference for model changes is the 92-day development set (updated 2026-10-05 for installed
-capacity as a solar feature, per-border transfer capacity imports, and refine-power's default weather
+capacity as a solar feature, per-border transfer capacity imports, and the grid-snapped weather
 points, after the 2026-10-04 solar azimuth adoption, direct-radiation removal, and `load_d1` TSO load
 companion).** The adopted configuration, with all models at their configured tree
 counts, one seed. Every scored day has the TSO day-ahead load forecast, so load and price describe a
@@ -124,7 +124,7 @@ base load model for D+1 (1,741.388 MW load, 16.473 EUR/MWh price at the `load_d1
 | Load | 1,557.884 MW | 1,791.075 MW | 1,488.399 MW | 1,518.591 MW | 1,625.572 MW |
 | Price | 14.438 EUR/MWh | 19.428 EUR/MWh | 10.525 EUR/MWh | 13.161 EUR/MWh | 17.547 EUR/MWh |
 
-Before refine-power's default points, solar was 644.601 MW (RMSE 1,146.531; groups 706.437 / 583.448 /
+Before the grid-snapped points, solar was 644.601 MW (RMSE 1,146.531; groups 706.437 / 583.448 /
 656.455), load 1,576.739 MW (RMSE 1,821.171; groups 1,538.042 / 1,572.274 / 1,601.372) and price
 14.560 EUR/MWh (RMSE 19.621; groups 10.484 / 13.510 / 17.589). Before per-border transfer capacity, price was 16.047 EUR/MWh (RMSE 21.064; groups 11.414 / 14.961 /
 19.411). Before the capacity feature, solar was 781.455 MW (RMSE 1,305.612; groups 864.566 / 592.608 /
@@ -142,11 +142,11 @@ holdout's 25.0 once its three extreme days are set aside (16.8). Which days are 
 MAE far more than most model changes do, which is why comparisons need the larger set and a
 day-level bootstrap. The 92-day oracle: `all_actual` 14.081 EUR/MWh; forecasting wind alone +0.080,
 solar +0.208, load +0.076, and all three +0.357 (14.438, matching eval). On the untouched holdout
-the same configuration scores 25.044 EUR/MWh price MAE (24.728 before refine-power's default points,
+the same configuration scores 25.044 EUR/MWh price MAE (24.728 before the grid-snapped points,
 26.150 before per-border transfer capacity, 26.753 before the capacity feature, 26.858 before
 `load_d1`, 26.814 before the 2026-10-04 solar changes; see the 2026-10-01 decision), solar 808.642 MW
-(765.733 before the default points, 1,386.124 before the capacity feature) and load 1,692.594 MW
-(1,590.191 before the default points). The holdout oracle: `all_actual` 22.658; wind +0.946, solar
+(765.733 before the grid-snapped points, 1,386.124 before the capacity feature) and load 1,692.594 MW
+(1,590.191 before the grid-snapped points). The holdout oracle: `all_actual` 22.658; wind +0.946, solar
 +0.362, load +1.121, all three +2.386.
 
 The earlier 22-day baseline, kept for comparison with reports made before the expansion, was:
@@ -419,8 +419,7 @@ On the primary seed's per-day results, azimuth beat production on 45 of 92 days;
 in spring, +1.1 MW in autumn, and +5.3 MW in winter. Summer is where the morning/afternoon asymmetry of
 south-facing panels is largest, so the pattern is physically plausible.
 
-Azimuth beats hour angle and was carried forward. Refine Power, the desktop successor, includes
-azimuth as a default-on solar feature with its own toggle.
+Azimuth beats hour angle and was carried forward.
 
 **Adoption (2026-10-04).** `features.solar_azimuth_features` adds `solar_azimuth_sin` and
 `solar_azimuth_cos` to production solar (34 -> 36 features, after the direct-radiation removal). It
@@ -1198,19 +1197,18 @@ forecast level step on the day the published DK1 value changes. The D+1 backtest
 since every scored day has a week-ahead value and its DK1 level rarely changes between neighbouring
 days. If it proves unstable, drop `ntc_imp_dk1` or mask it, and rerun the screen and the gate.
 
-### 6. Parity with refine-power
+### 6. Grid-snapped default weather points
 
-#### Adopt refine-power's default weather points
+#### Adopt the grid-snapped weather points
 
-**Status: completed and adopted 2026-10-05**, for parity rather than accuracy. refine-power's DE_LU
-defaults came from eex's points, snapped to the bidding-zone grid (no two points sharing a grid point),
-with Belgium added as a neighbour and the offshore FR point moved onto land. eex now uses exactly those
-points, so both projects read the same weather. Temperature (20) and solar (31) take the snapped
-coordinates by index (`temp01` -> `t_de01`, `solar01` -> `ghi_de01`; mean shift 23 km and 16 km, at
-most 74 km and 59 km); neighbour wind follows refine-power's areas and order (DK1, NL, PL, FR, BE, CH,
-CZ, AT), adding `ws_be01`/`ws_be02` and moving `ws_fr01`. Wind is unchanged. Each moved point's
+**Status: completed and adopted 2026-10-05**, for consistency of the default point set rather than
+accuracy. The ranked points were snapped to the bidding-zone grid (no two points sharing a grid
+point), Belgium was added as a neighbour and the offshore FR point moved onto land. Temperature (20)
+and solar (31) keep their columns in order (`t_de01`, `ghi_de01`, ...; mean shift 23 km and 16 km, at
+most 74 km and 59 km); neighbour wind is keyed by bidding zone in the order DK1, NL, PL, FR, BE, CH,
+CZ, AT, adding `ws_be01`/`ws_be02` and moving `ws_fr01`. Wind is unchanged. Each moved point's
 correlation and lag in `config/weather_points.json` were recomputed at its new coordinate over 2025.
-The solar statistics also dropped their redundant `sum` (mean x point count), matching refine-power's
+The solar statistics also dropped their redundant `sum` (mean x point count), leaving
 mean/std/min/max. The moved columns were cleared and backfilled from 2023 (`data/eex_before_parity.db`
 holds the previous database).
 
@@ -1240,10 +1238,10 @@ incumbent (14.081).
   25.044 EUR/MWh (+0.316, [-0.059, +0.693], 7 of 18).
 
 The development days improve slightly and the holdout worsens slightly; every interval includes zero,
-the holdout price one only narrowly. The goal was parity, so the change stands. A re-ranking round on
-the grid (`eex points rank`, then the anchor experiments) is the way to recover accuracy, and any
-improvement should then be ported to refine-power's defaults so the two stay identical. Ensemble
-member weather archived before 2026-10-05 holds the old temperature and solar coordinates.
+the holdout price one only narrowly. The goal was a consistent default point set, so the change
+stands. A re-ranking round on the grid (`eex points rank`, then the anchor experiments) is the way to
+recover accuracy. Ensemble member weather archived before 2026-10-05 holds the old temperature and
+solar coordinates.
 
 ## Weather-ensemble forecasting
 
@@ -1471,15 +1469,15 @@ Before changing a production feature/model:
 
 ### 2026-10-05
 
-- Adopted refine-power's DE_LU default weather points for parity: grid-snapped temperature and solar
+- Adopted the grid-snapped default weather points: grid-snapped temperature and solar
   points, BE neighbour wind, FR01 on land, neighbours keyed by bidding zone (DK1); dropped the solar
   `sum` statistic (-0.5 MW, noise). Pre-retune screens: solar +8.1 MW, load +24.1 MW, `load_d1` -2.2,
   price -0.041, all within noise. After retuning load, `load_d1` and solar: development price 14.560 ->
   14.438 EUR/MWh; holdout, reported afterwards, 24.728 -> 25.044 (solar +43 MW, load +102 MW). Kept for
-  parity; recover accuracy with a re-ranking round on the grid, ported to both projects. See
-  [Adopt refine-power's default weather points](#adopt-refine-powers-default-weather-points).
+  consistency; recover accuracy with a re-ranking round on the grid. See
+  [Adopt the grid-snapped weather points](#adopt-the-grid-snapped-weather-points).
 - Replaced eex's candidate builders with the bidding-zone grid module (`weather/grid.py`, `eex points
-  grid`), byte-identical to the former bz_grid_builder notebook and to refine-power's copied grids.
+  grid`), byte-identical to the former bz_grid_builder notebook.
 
 - Replaced the price model's transfer-capacity totals with the nine per-border imports, with a matched
   retune (14.146 -> 14.077). Five-seed screen on actual fundamentals: 15.278 -> 14.194 EUR/MWh; adding

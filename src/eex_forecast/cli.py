@@ -187,8 +187,7 @@ def geo_download(
 def points_grid() -> None:
     """Build every bidding zone's candidate grid (~50 km, land/sea labelled) and write the CSVs.
 
-    Writes ``data/candidates/grid_<zone>.csv`` and ``grid_all.csv``. refine-power ships a copy of these
-    files; copy them across after regenerating.
+    Writes ``data/candidates/grid_<zone>.csv`` and ``grid_all.csv``.
     """
     needed = [grid_ops.LAND_PATH, grid_ops.OUTLINE_PATH] + [
         path for split in grid_ops.SPLITS.values() for _, path in split.sources

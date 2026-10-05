@@ -111,7 +111,7 @@ hex-offset grid laid over the zone's land and EEZ outline, with every point labe
 by the GISCO coastline. Each location appears once. Wind ranks every German point, so North Sea and
 Baltic conditions are represented; temperature/load and solar rank the `land` points. Countries with
 several bidding zones (DK, SE, NO) get one country-wide grid partitioned into their zones. The grids
-in `data/candidates/grid_<zone>.csv` are the source refine-power copies its candidate grids from.
+are committed as `data/candidates/grid_<zone>.csv`.
 
 The committed selections live in `config/weather_points.json`. Current production uses the adopted
 135 km-spaced, 20-point German wind set.
@@ -174,7 +174,7 @@ are unchanged.
 For DK (its DK1 zone), NL, PL, FR, BE, CH, CZ, and AT, land/sea wind candidates from each zone's grid
 are ranked against German price rather than German generation. The two most spatially distinct points
 per country (at least 50 km apart) are retained as a low-cost price proxy. The configured set
-(`config/weather_points.json`) is refine-power's DE_LU default, two points per neighbour.
+(`config/weather_points.json`) has two grid points per neighbour.
 
 ```bash
 eex points neighbours rank --year 2025
