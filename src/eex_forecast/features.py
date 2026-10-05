@@ -497,7 +497,7 @@ def _primary_block(
             return mean_block
         return mean_block.assign(**{f"{name}_std": primary.std(axis=1)})
     if strategy == "stats":
-        # Cross-point summary statistics: mean, std, min, max over the role's points, as refine-power.
+        # Cross-point summary statistics: mean, std, min, max over the role's points.
         # A sum was dropped on 2026-10-05: it is mean x point count, so redundant for trees (solar MAE
         # 647.4 -> 647.0 MW without it, five seeds).
         return mean_block.assign(

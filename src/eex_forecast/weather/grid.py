@@ -10,9 +10,8 @@ Countries with several bidding zones (Denmark, Sweden, Norway) get one country-w
 partitioned: a point inside a zone polygon belongs to that zone, and a sea or coastal point outside every
 zone polygon goes to the nearest one. The zones therefore tile the country without gaps or overlaps.
 
-These grids are the shared source of truth with refine-power, which ships a copy of the CSVs; regenerate
-them here (``eex points grid``) and copy them across rather than editing either copy. Pure Python, no GIS
-library: polygons are read from GeoJSON and points are tested by ray casting.
+Regenerate them with ``eex points grid`` rather than editing the CSVs. Pure Python, no GIS library:
+polygons are read from GeoJSON and points are tested by ray casting.
 """
 
 from __future__ import annotations

@@ -118,7 +118,7 @@ NTC_EXPORT_PREFIX = "ntc_exp_"  # capacity OUT of DE to the neighbour
 # DE's price is coupled to its neighbours through the interconnectors: abundant wind in a neighbouring
 # bidding zone depresses that zone's price and, via imports, DE's. We rank each neighbour's own wind
 # candidate points against DE price and keep the two best - a cross-border wind proxy for the price model.
-# The set matches refine-power's DE_LU defaults: DE's interconnected, wind-relevant neighbours. Keys are
+# The set is DE's interconnected, wind-relevant neighbours. Keys are
 # the two-letter codes of the ``ws_<cc>NN`` columns; NEIGHBOUR_GRID_ZONES names the bidding-zone grid
 # each one is drawn from where it differs (Denmark uses DK1, the zone bordering Germany on land).
 WIND_NEIGHBOURS: tuple[str, ...] = ("DK", "NL", "PL", "FR", "BE", "CH", "CZ", "AT")

@@ -32,7 +32,7 @@ data/**
 !data/aggregation/*.json
 !data/ablation/*.json
 !data/rank/*.csv
-# the bidding-zone candidate grids (`eex points grid`), the source refine-power copies its grids from
+# the bidding-zone candidate grids (`eex points grid`)
 !data/candidates/grid_*.csv
 !data/analysis/correlation_*.csv
 !data/analysis/solar_error_slices.json
