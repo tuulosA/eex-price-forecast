@@ -265,8 +265,7 @@ eex analyze eval --breakdown                # ...and break the error down (see b
 Each fold forecasts wind, solar, and load before price. The reports at
 `data/evaluation/model_eval.json` (development) and `model_eval_holdout.json` (holdout) contain
 per-cutoff details and headline MAE/RMSE, and record which set they scored. `--plot` adds one figure
-per model - `eval_days[_holdout].png` for price and `eval_days_<wind|solar|load>[_holdout].png` for
-the fundamentals: one panel per scored day, actual against the D+1 forecast, each on its own
+per model - `<price|wind|solar|load>_eval_days[_holdout].png`: one panel per scored day, actual against the D+1 forecast, each on its own
 y-scale, so a reader can see whether the daily profile is caught and which days are missed
 outright. The fundamentals' forecasts are the fold's fresh sub-model forecasts, the same ones the
 price model was given. Fundamental metrics are in MW and price metrics are in EUR/MWh; only compare
@@ -287,12 +286,12 @@ The adopted configuration on the 18 holdout days, the out-of-sample headline, is
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,803.702 MW | 2,203.244 MW |
-| Solar | 1,386.124 MW | 2,198.653 MW |
+| Solar | 765.733 MW | 1,353.902 MW |
 | Load | 1,590.191 MW | 1,845.072 MW |
-| Price | 26.753 EUR/MWh | 40.323 EUR/MWh |
+| Price | 26.150 EUR/MWh | 39.513 EUR/MWh |
 
 Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
-prices from -499 to 666 EUR/MWh): they carry 42% of it, and the MAE without them is 18.665 EUR/MWh.
+prices from -499 to 666 EUR/MWh): they carry 42% of it, and the MAE without them is 18.032 EUR/MWh.
 See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
 
 The development result over the 92 development days - the reference for comparing model changes -
@@ -301,9 +300,9 @@ is:
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,426.052 MW | 1,803.784 MW |
-| Solar | 781.455 MW | 1,305.612 MW |
+| Solar | 644.601 MW | 1,146.531 MW |
 | Load | 1,576.739 MW | 1,821.171 MW |
-| Price | 16.238 EUR/MWh | 21.287 EUR/MWh |
+| Price | 16.047 EUR/MWh | 21.064 EUR/MWh |
 
 Reports made before the 2026-10-01 expansion used only the original 22 days (price 11.327 EUR/MWh);
 compare a new run with them on `DEV_CORE_CUTOFFS`, not on the full 52.

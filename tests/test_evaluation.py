@@ -137,14 +137,14 @@ def test_evaluation_keeps_hourly_rows_and_plots_each_day(tmp_path: Path) -> None
     assert "hourly" not in result.report  # the JSON report schema is unchanged
 
     path = plot_evaluation_days(result, reports_dir=tmp_path)
-    assert path.name == "eval_days_holdout.png" and path.stat().st_size > 0
-    # Every model gets its own figure; price keeps the bare name the README links to.
+    assert path.name == "price_eval_days_holdout.png" and path.stat().st_size > 0
+    # Every model gets its own figure, named after the model so each model's figures sort together.
     names = [p.name for p in plot_all_evaluation_days(result, reports_dir=tmp_path)]
     assert names == [
-        "eval_days_holdout.png",
-        "eval_days_wind_holdout.png",
-        "eval_days_solar_holdout.png",
-        "eval_days_load_holdout.png",
+        "price_eval_days_holdout.png",
+        "wind_eval_days_holdout.png",
+        "solar_eval_days_holdout.png",
+        "load_eval_days_holdout.png",
     ]
     assert all((tmp_path / name).stat().st_size > 0 for name in names)
 

@@ -1236,7 +1236,7 @@ def analyze_eval(
     plot: Annotated[
         bool,
         typer.Option(
-            help="Also draw each scored day's actual vs forecast, per model (eval_days*.png)."
+            help="Also draw each scored day's actual vs forecast, per model (<model>_eval_days*.png)."
         ),
     ] = False,
     breakdown: Annotated[

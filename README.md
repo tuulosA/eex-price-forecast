@@ -42,7 +42,8 @@ ECMWF weather
 
 Wind and solar learn capacity factors and are converted back to MW using ENTSO-E installed capacity.
 The adopted German wind anchors are 20 geographically diverse points at roughly 135 km minimum spacing.
-Solar combines irradiance components, cloud cover, deterministic solar geometry, and a physical
+Solar combines irradiance components, cloud cover, deterministic solar geometry, the installed
+capacity (so the model can tell fleet eras apart as output per unit of capacity drifts), and a physical
 zero-generation constraint in darkness.
 
 The price model uses the sub-model forecasts where future actuals are unavailable. It also sees:
@@ -210,18 +211,18 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 | Model | MAE | RMSE |
 |---|---:|---:|
 | Wind | 1,803.70 MW | 2,203.24 MW |
-| Solar | 1,386.12 MW | 2,198.65 MW |
+| Solar | 765.73 MW | 1,353.90 MW |
 | Load | 1,590.19 MW | 1,845.07 MW |
-| Price | 26.75 EUR/MWh | 40.32 EUR/MWh |
+| Price | 26.15 EUR/MWh | 39.51 EUR/MWh |
 
-![Actual vs D+1 forecast price on each holdout day](data/evaluation/eval_days_holdout.png)
+![Actual vs D+1 forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
 > Each panel is one holdout day: the actual price in black, the D+1 forecast in blue, each on its
 > own y-scale. Written by `eex analyze eval --holdout --plot`.
 
 Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
-666 EUR/MWh peak on 24 June. Those three account for 40% of the price error; without them the MAE is
-19.26 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+666 EUR/MWh peak on 24 June. Those three account for 42% of the price error; without them the MAE is
+18.03 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
 
 A few things are worth keeping in mind when reading these figures:
 

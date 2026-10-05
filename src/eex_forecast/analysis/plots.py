@@ -221,9 +221,8 @@ _EVAL_DAY_ZERO_LINE = frozenset({"price", "solar"})
 
 
 def eval_days_filename(model: str, cutoff_set: str) -> str:
-    """``eval_days[_<model>][_holdout].png``: price keeps the bare name the README links to."""
-    stem = EVAL_DAYS_PLOT if model == "price" else f"{EVAL_DAYS_PLOT}_{model}"
-    return report_filename(stem, cutoff_set, ".png")
+    """``<model>_eval_days[_holdout].png``: the model name leads so each model's figures sort together."""
+    return report_filename(f"{model}_{EVAL_DAYS_PLOT}", cutoff_set, ".png")
 
 
 def _format_error(value: float, unit: str) -> str:
