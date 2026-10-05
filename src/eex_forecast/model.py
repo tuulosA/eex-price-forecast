@@ -31,7 +31,7 @@ import pandas as pd
 from xgboost import XGBRegressor
 
 from eex_forecast import features
-from eex_forecast.config import HYPERPARAMS_PATH, LOAD_TSO_FORECAST_COLUMN, MODELS_DIR
+from eex_forecast.config import HYPERPARAMS_PATH, MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -124,70 +124,6 @@ SUBMODELS: tuple[str, ...] = ("wind", "solar", "load")
 ALL_MODELS: tuple[str, ...] = (*SUBMODELS, "price")
 
 
-@dataclass(frozen=True, slots=True)
-class DayAheadCompanion:
-    """A sub-model variant used instead of its base wherever ``input_column`` is present.
-
-    Some inputs exist only for the first forecast day (published the day before), and a model trained
-    with them cannot serve the other 13 days: masking them on most training rows taught the model to
-    ignore them (load 1,737 vs 1,758 MW). So the companion is trained with the input on every row and
-    applied only to the rows that have it; the base model keeps the rest of the horizon.
-    """
-
-    base: str
-    spec: ModelSpec
-    input_column: str
-
-
-DAY_AHEAD_COMPANIONS: dict[str, DayAheadCompanion] = {
-    "load": DayAheadCompanion(
-        "load",
-        ModelSpec(
-            "load_d1",
-            "load_actual_mw",
-            "load_forecast_mw",
-            features.load_day_ahead_features,
-            non_negative=True,
-        ),
-        LOAD_TSO_FORECAST_COLUMN,
-    ),
-}
-COMPANION_NAMES: tuple[str, ...] = tuple(c.spec.name for c in DAY_AHEAD_COMPANIONS.values())
-# Every model with its own hyperparameters and persisted artefact.
-TRAINED_MODELS: tuple[str, ...] = (*ALL_MODELS, *COMPANION_NAMES)
-
-
-def spec_by_name(name: str) -> ModelSpec:
-    """The spec of a registered model or of a day-ahead companion."""
-    if name in REGISTRY:
-        return REGISTRY[name]
-    for companion in DAY_AHEAD_COMPANIONS.values():
-        if companion.spec.name == name:
-            return companion.spec
-    raise KeyError(f"Unknown model '{name}'.")
-
-
-def companion_base(name: str) -> str | None:
-    """The base model a companion stands in for, or ``None`` for a registered model."""
-    for companion in DAY_AHEAD_COMPANIONS.values():
-        if companion.spec.name == name:
-            return companion.base
-    return None
-
-
-def combine_day_ahead(
-    companion: DayAheadCompanion,
-    frame: pd.DataFrame,
-    base_prediction: pd.Series,
-    companion_prediction: pd.Series | None,
-) -> pd.Series:
-    """Base prediction, replaced by the companion's on the rows that carry its input."""
-    if companion_prediction is None or companion.input_column not in frame.columns:
-        return base_prediction
-    available = pd.to_numeric(frame[companion.input_column], errors="coerce").notna()
-    return base_prediction.where(~available.to_numpy(), companion_prediction)
-
-
 def postprocess_predictions(
     spec: ModelSpec,
     prediction: np.ndarray[Any, Any],
@@ -265,53 +201,11 @@ class TrainedModel:
         return cls(spec, booster, list(meta["feature_names"]))
 
 
-@dataclass(slots=True)
-class ChainPredictor:
-    """What the live forecast runs for one chain model: its base model plus any day-ahead companion."""
-
-    base: TrainedModel
-    companion: TrainedModel | None = None
-
-    def predict(self, frame: pd.DataFrame) -> pd.Series:
-        prediction = self.base.predict(frame)
-        link = DAY_AHEAD_COMPANIONS.get(self.base.spec.name)
-        if link is None or self.companion is None:
-            return prediction
-        return combine_day_ahead(link, frame, prediction, self.companion.predict(frame))
-
-
-def load_for_forecast(name: str, models_dir: Path = MODELS_DIR) -> ChainPredictor:
-    """Load a chain model with its day-ahead companion, if one was trained.
-
-    A missing companion is not fatal: the base model then serves every row, exactly as before the
-    companion existed, and the gap is logged so it can be fixed with `eex model train`.
-    """
-    base = TrainedModel.load(REGISTRY[name], models_dir)
-    link = DAY_AHEAD_COMPANIONS.get(name)
-    companion = None
-    if link is not None:
-        try:
-            companion = TrainedModel.load(link.spec, models_dir)
-        except FileNotFoundError:
-            logger.warning(
-                "No trained '%s' model: '%s' uses its base model on every row. Run `eex model train`.",
-                link.spec.name,
-                name,
-            )
-    return ChainPredictor(base, companion)
-
-
 def load_params(name: str) -> dict[str, Any]:
-    """Tuned hyperparameters for ``name`` merged over the defaults, or the defaults alone.
-
-    A day-ahead companion without its own entry inherits its base model's tuned parameters, which is
-    what it was screened with, rather than the untuned defaults.
-    """
+    """Tuned hyperparameters for ``name`` merged over the defaults, or the defaults alone."""
     params = dict(DEFAULT_PARAMS)
     if HYPERPARAMS_PATH.exists():
-        payload = json.loads(HYPERPARAMS_PATH.read_text())
-        base = companion_base(name)
-        stored = payload.get(name) or (payload.get(base) if base else None)
+        stored = json.loads(HYPERPARAMS_PATH.read_text()).get(name)
         if stored:
             params.update(stored)
     return params

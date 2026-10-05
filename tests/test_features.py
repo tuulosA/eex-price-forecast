@@ -548,15 +548,3 @@ def test_model_weather_roles_are_every_role_except_the_unadopted_gti_and_direct(
 
     assert set(WEATHER_AGGREGATES) - MODEL_WEATHER_ROLES == {"gti_solar", "direct_solar"}
     assert set(WEATHER_AGGREGATES) >= MODEL_WEATHER_ROLES
-
-
-def test_load_day_ahead_features_add_the_tso_forecast_or_a_missing_column(
-    timeseries_frame: pd.DataFrame,
-) -> None:
-    from eex_forecast.features import load_day_ahead_features
-
-    without = load_day_ahead_features(timeseries_frame)
-    assert list(without.columns[:-1]) == list(load_features(timeseries_frame).columns)
-    assert without.columns[-1] == "load_tso_forecast_mw" and without.iloc[:, -1].isna().all()
-    frame = timeseries_frame.assign(load_tso_forecast_mw=60_000.0)
-    assert (load_day_ahead_features(frame)["load_tso_forecast_mw"] == 60_000.0).all()

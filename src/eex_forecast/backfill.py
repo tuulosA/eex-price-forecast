@@ -54,7 +54,7 @@ def _window_start(days: int) -> str:
 def backfill_entsoe(
     db_path: str | Path, *, start: DateLike, end: DateLike | None = None
 ) -> dict[str, int]:
-    """Backfill DE day-ahead prices, wind/solar/load actuals and the TSO day-ahead load forecast.
+    """Backfill DE day-ahead prices and wind/solar/load actuals over ``[start, end]``.
 
     Returns the number of rows written per series.
     """
@@ -63,8 +63,6 @@ def backfill_entsoe(
         "prices": entsoe.fetch_prices(start, end),
         "generation": entsoe.fetch_generation(start, end),
         "load": entsoe.fetch_load(start, end),
-        # Reaches tomorrow too once the TSOs publish it (~10:00 Berlin), like tomorrow's prices.
-        "load_tso_forecast": entsoe.fetch_load_tso_forecast(start, end),
         "capacity": entsoe.fetch_capacity(start, end),
     }
     counts: dict[str, int] = {}

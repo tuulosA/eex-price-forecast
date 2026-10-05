@@ -83,7 +83,7 @@ from eex_forecast.config import (
 from eex_forecast.db import connect, init_db, read_frame, read_target_series
 from eex_forecast.features import NEIGHBOUR_STRATEGIES, WEATHER_AGG
 from eex_forecast.logging_setup import configure_logging
-from eex_forecast.model import ALL_MODELS, REGISTRY, TRAINED_MODELS, spec_by_name
+from eex_forecast.model import ALL_MODELS, REGISTRY
 from eex_forecast.weather import geometry
 from eex_forecast.weather import grid as grid_ops
 from eex_forecast.weather.point_search import (
@@ -144,17 +144,6 @@ class ModelName(StrEnum):
     wind = "wind"
     solar = "solar"
     load = "load"
-    price = "price"
-
-
-class TrainableModel(StrEnum):
-    """Models with their own artefact and parameters: the chain plus its day-ahead companions."""
-
-    all = "all"
-    wind = "wind"
-    solar = "solar"
-    load = "load"
-    load_d1 = "load_d1"
     price = "price"
 
 
@@ -1302,24 +1291,24 @@ def analyze_oracle(
 @model_app.command("train")
 def model_train(
     target: Annotated[
-        TrainableModel, typer.Option(help="Which model to train ('all' for every model).")
-    ] = TrainableModel.all,
+        ModelName, typer.Option(help="Which model to train ('all' for every model).")
+    ] = ModelName.all,
 ) -> None:
-    """Train the generation sub-models, their day-ahead companions and the price model."""
-    names = list(TRAINED_MODELS) if target is TrainableModel.all else [target.value]
+    """Train the generation sub-models and/or the price model on the full backfilled history."""
+    names = list(ALL_MODELS) if target is ModelName.all else [target.value]
     with connect(get_settings().db_path) as conn:
         frame = read_frame(conn)
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
     for name in names:
-        trained = model_ops.train(spec_by_name(name), frame)
+        trained = model_ops.train(REGISTRY[name], frame)
         path = trained.save()
         typer.echo(f"Trained '{name}' ({len(trained.feature_names)} features) -> {path}")
 
 
 @model_app.command("tune")
 def model_tune(
-    target: Annotated[TrainableModel, typer.Option(help="Model to tune (not 'all').")],
+    target: Annotated[ModelName, typer.Option(help="Model to tune (not 'all').")],
     trials: Annotated[int, typer.Option(help="Optuna trials.")] = 20,
 ) -> None:
     """Optuna walk-forward tuning for one model; writes the best params to config/hyperparams.json.
@@ -1328,16 +1317,16 @@ def model_tune(
     the settled, most-valuable part of the forecast. No cutoff or horizon options: edit the YAML to change
     the day set.
     """
-    if target is TrainableModel.all:
+    if target is ModelName.all:
         raise typer.BadParameter(
-            "Tune one model at a time (wind / solar / load / load_d1 / price), not 'all'."
+            "Tune one model at a time (wind / solar / load / price), not 'all'."
         )
     with connect(get_settings().db_path) as conn:
         frame = read_frame(conn)
     if frame.empty:
         raise typer.BadParameter("No data in the database. Run the backfills first.")
     result = tuning.tune(
-        spec_by_name(target.value),
+        REGISTRY[target.value],
         frame,
         n_trials=trials,
         incumbent_params=model_ops.load_params(target.value),
@@ -1439,8 +1428,8 @@ def run_cmd(
             frame = read_frame(conn)
         if frame.empty:
             raise typer.BadParameter("No data in the database to train on.")
-        for name in TRAINED_MODELS:
-            trained = model_ops.train(spec_by_name(name), frame)
+        for name in ALL_MODELS:
+            trained = model_ops.train(REGISTRY[name], frame)
             trained.save()
             typer.echo(f"[train] {name}: {len(trained.feature_names)} features")
 

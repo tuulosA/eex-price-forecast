@@ -36,7 +36,7 @@ the *shapes* between charts, not the heights.
 
 ![Actual vs forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **25.04 EUR/MWh** in a typical hour.
+Over the 18 days the price forecast is off by **25.25 EUR/MWh** in a typical hour.
 
 - **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
   when people use more power, and lower around midday, when solar panels produce most. The forecast
@@ -47,7 +47,7 @@ Over the 18 days the price forecast is off by **25.04 EUR/MWh** in a typical hou
   solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
   training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
   hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 44% of the total error.** Without them the MAE would be 16.83
+- **Those three extreme days carry 43% of the total error.** Without them the MAE would be 17.33
   EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
 - **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
   forecast stayed 30-60 EUR/MWh higher.
@@ -89,19 +89,20 @@ Typical miss: **809 MW**.
 
 ![Actual vs forecast load on each holdout day](data/evaluation/load_eval_days_holdout.png)
 
-Typical miss: **1,693 MW**.
+Typical miss: **2,013 MW**.
 
 - **The daily pattern is captured well:** low at night, a steep rise in the morning, a working-day
-  plateau, and an evening bump.
-- **For the next day, the model also reads the grid operators' own load forecast**, published each
-  morning around 10:00. These charts assume it was already out, as for a forecast made late in the
-  morning; a forecast made earlier would be roughly 1,850 MW off in a typical hour instead. That
-  forecast knows things the weather cannot show, such as industrial schedules. It
-  narrowed the old gap on cold working days, when the model alone was 3-4.5 GW too low, but those
-  days are still too low: about 2-3 GW on 13 January and 21 February, and 3-5 GW on 3 February.
-- **Weekends and holidays are now the weaker side**: on Sunday 26 April and the 1 May holiday the
-  forecast is 2-4 GW too high, and on New Year's Day it was too high all morning. The grid
-  operators' forecast is least reliable on such days.
+  plateau, and an evening bump. Days such as 15 April, 29 August, and 21 September are within about
+  600-1,000 MW.
+- **Cold working days come out too low.** On 13 January the forecast is about 3-5 GW under, on 3
+  February about 5-7 GW, and on 21 February about 4-5 GW. Demand on those days depends on things the
+  weather forecast cannot show, such as industrial schedules.
+- **Some days off come out too high:** New Year's morning by about 4 GW, and the middle of 26 April
+  and 6 June by 2-4 GW. The night of 25 May (Whit Monday) is about 4 GW too low.
+- **The grid operators' own load forecast is not used.** It was tried as an extra input for the
+  next day and helped (about 1,700 MW typical miss here instead of 2,013), but it is only published
+  around 10:00 on the day before delivery, a couple of hours before the auction. A forecast made in
+  the morning cannot have it, so the project does without it.
 
 ## Part 2 - What does each model rely on?
 
@@ -112,9 +113,9 @@ so on - and turns them into one number. **SHAP** is a method that answers: *for 
 hour, how much did each input push the forecast up or down?*
 
 Think of it like splitting a restaurant bill. The model starts from an **average** forecast, the
-*base value* (for the price model, 92.10 EUR/MWh). Each input then adds or subtracts its own share.
-For one hour it might read: base 92.10, plus 30 because demand is high, minus 25 because it is
-sunny, minus 10 because it is windy - giving a forecast of 87.10. The shares always add up exactly
+*base value* (for the price model, 92.11 EUR/MWh). Each input then adds or subtracts its own share.
+For one hour it might read: base 92.11, plus 30 because demand is high, minus 25 because it is
+sunny, minus 10 because it is windy - giving a forecast of 87.11. The shares always add up exactly
 to the forecast. Each share is that input's **SHAP value** for that hour, measured in the forecast's
 own unit (EUR/MWh for price, MW for the others).
 
@@ -213,11 +214,11 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 
 ![SHAP summary of the load model](data/analysis/shap_load.png)
 
-- **The calendar dominates** (about 7,200 MW of push): people's routines drive electricity use more
+- **The calendar dominates** (about 7,100 MW of push): people's routines drive electricity use more
   than the weather does.
-- **"day_of_week"**: weekends (red, high values = Saturday and Sunday) lower use by 3,000-11,000 MW.
-  **"is_holiday"**: public holidays lower it by 6,000-14,000 MW - the single largest effect.
-- **"hour"**: night hours (blue) lower use by up to about 9,000 MW.
+- **"day_of_week"**: weekends (red, high values = Saturday and Sunday) lower use by 2,000-9,000 MW.
+  **"is_holiday"**: public holidays lower it by 4,000-14,000 MW - the single largest effect.
+- **"hour"**: night hours (blue) lower use by up to about 7,500 MW.
 - **Temperature** adds about 1,600 MW. In the "t_de..." rows (temperatures at individual weather
   points), cold hours (blue) push use up - more heating.
 - **"month_cos"** is a way of telling the model the season; its high values (red) mean winter, which
@@ -229,7 +230,7 @@ input's effect depends a lot on circumstances, not that the model is unsure.
   25 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
 - **Solar's old systematic error is gone** (too high at midday, from falling output per unit of
   sunlight); what remains is mostly days with negative prices, when solar parks switch off.
-  Load is now close on working days; weekends and holidays tend to come out somewhat high.
+  Load still misses cold working days (too low) and some days off (too high).
 - **The models rely on sensible inputs in sensible directions:** demand and sunshine drive the
   price, wind speed drives wind output, sunlight drives solar, and routines drive demand.
 - These results cover only the next day. Forecasts further ahead depend on less accurate weather

@@ -31,7 +31,7 @@ eex backfill weather --start 2023-01-01
 eex backfill nuclear --start 2023-01-01
 eex backfill ntc --start 2023-01-01
 
-eex model tune --target wind                 # repeat for solar, load, load_d1, and price as needed
+eex model tune --target wind                 # repeat for solar, load, and price as needed
 eex model train
 eex forecast --plot
 ```
@@ -285,16 +285,12 @@ The adopted configuration on the 18 holdout days, the out-of-sample headline, is
 |---|---:|---:|
 | Wind | 1,803.702 MW | 2,203.244 MW |
 | Solar | 808.642 MW | 1,407.867 MW |
-| Load | 1,692.594 MW | 1,936.882 MW |
-| Price | 25.044 EUR/MWh | 37.685 EUR/MWh |
+| Load | 2,013.292 MW | 2,303.413 MW |
+| Price | 25.248 EUR/MWh | 37.676 EUR/MWh |
 
 Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
-prices from -499 to 666 EUR/MWh): they carry 44% of it, and the MAE without them is 16.834 EUR/MWh.
+prices from -499 to 666 EUR/MWh): they carry 43% of it, and the MAE without them is 17.326 EUR/MWh.
 See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
-
-Both tables score D+1 with the TSOs' next-day load forecast available on every day, as for a run made
-after its publication (around 10:00 Berlin) and before the auction. A run before publication uses the
-base load model for D+1 (development load MAE 1,741 MW, price about 0.2 EUR/MWh worse at adoption).
 
 The development result over the 92 development days - the reference for comparing model changes -
 is:
@@ -303,8 +299,8 @@ is:
 |---|---:|---:|
 | Wind | 1,426.052 MW | 1,803.784 MW |
 | Solar | 640.463 MW | 1,154.805 MW |
-| Load | 1,557.884 MW | 1,791.075 MW |
-| Price | 14.438 EUR/MWh | 19.428 EUR/MWh |
+| Load | 1,745.413 MW | 1,999.043 MW |
+| Price | 14.867 EUR/MWh | 19.828 EUR/MWh |
 
 Reports made before the 2026-10-01 expansion used only the original 22 days (price 11.327 EUR/MWh);
 compare a new run with them on `DEV_CORE_CUTOFFS`, not on the full 52.

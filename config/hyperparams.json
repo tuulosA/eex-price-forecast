@@ -54,19 +54,5 @@
     "tree_method": "hist",
     "random_state": 42,
     "n_jobs": 0
-  },
-  "load_d1": {
-    "n_estimators": 400,
-    "max_depth": 6,
-    "learning_rate": 0.03252009848008516,
-    "subsample": 0.6747816026657115,
-    "colsample_bytree": 0.6242526152513002,
-    "min_child_weight": 19.63025521505872,
-    "reg_alpha": 0.05830404358087179,
-    "reg_lambda": 0.018756206282287354,
-    "objective": "reg:squarederror",
-    "tree_method": "hist",
-    "random_state": 42,
-    "n_jobs": 0
   }
 }

@@ -88,11 +88,6 @@ DEFAULT_REFRESH_DAYS = 14
 NUCLEAR_ZONES: tuple[str, ...] = ("FR",)
 NUCLEAR_COLUMN = "nuclear_available_mw"
 
-# The TSOs' day-ahead total load forecast (ENTSO-E 6.1.B). Published around 10:00 Berlin for the next
-# delivery day only, so it exists for a morning run's first forecast day and never beyond. Kept in its own
-# column: ``load_forecast_mw`` is this project's model output and must not be overwritten.
-LOAD_TSO_FORECAST_COLUMN = "load_tso_forecast_mw"
-
 # Cross-border transfer capacity (NTC). The interconnectors cap how much power can flow between DE and each
 # neighbour, so they set how tightly the zones couple: ample NTC pulls prices together, a reduced border
 # (maintenance/outage) lets a zone decouple and spike. We fetch forecasted NTC [11.1] per border in both

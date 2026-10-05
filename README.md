@@ -13,10 +13,9 @@ wind/solar/load fundamentals, and cross-border market drivers.
 
 `eex-price-forecast` provides a Python 3.11+ package and an `eex` command-line interface that:
 
-1. backfills German prices, generation, load, the TSOs' day-ahead load forecast, capacity, weather,
-   nuclear availability, and transfer capacity into SQLite;
-2. forecasts wind, solar, and load from ECMWF weather with three XGBoost sub-models (for the first
-   forecast day, load also reads the TSOs' day-ahead load forecast through a `load_d1` companion);
+1. backfills German prices, generation, load, capacity, weather, nuclear availability, and transfer
+   capacity into SQLite;
+2. forecasts wind, solar, and load from ECMWF weather with three XGBoost sub-models;
 3. forecasts German day-ahead price from those fundamentals, calendar and lag features, German weather,
    and cross-border conditions;
 4. writes a forecast CSV and optional price, fundamentals, and driver plots;
@@ -96,7 +95,7 @@ eex backfill weather --start 2023-01-01     # history at the committed weather p
 eex backfill nuclear --start 2023-01-01     # French nuclear availability
 eex backfill ntc --start 2023-01-01         # cross-border transfer capacity
 eex update                                  # refresh the most recent actuals and weather
-eex model train                             # train wind, solar, load, load_d1, and price
+eex model train                             # train wind, solar, load, and price
 eex forecast --plot                         # write data/forecast/*
 ```
 
@@ -212,12 +211,8 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 |---|---:|---:|
 | Wind | 1,803.70 MW | 2,203.24 MW |
 | Solar | 808.64 MW | 1,407.87 MW |
-| Load | 1,692.59 MW | 1,936.88 MW |
-| Price | 25.04 EUR/MWh | 37.69 EUR/MWh |
-
-These D+1 figures assume a late-morning run: the TSOs' load forecast for the next day (published
-around 10:00 Berlin) is already out and feeds the `load_d1` companion. A run before that uses the
-base load model for D+1, about 1,850 MW holdout load MAE (1,741 MW on the development days).
+| Load | 2,013.29 MW | 2,303.41 MW |
+| Price | 25.25 EUR/MWh | 37.68 EUR/MWh |
 
 ![Actual vs D+1 forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
@@ -225,8 +220,8 @@ base load model for D+1, about 1,850 MW holdout load MAE (1,741 MW on the develo
 > own y-scale. Written by `eex analyze eval --holdout --plot`.
 
 Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
-666 EUR/MWh peak on 24 June. Those three account for 44% of the price error; without them the MAE is
-16.83 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+666 EUR/MWh peak on 24 June. Those three account for 43% of the price error; without them the MAE is
+17.33 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
 
 A few things are worth keeping in mind when reading these figures:
 
@@ -275,8 +270,8 @@ Every `eex` invocation also writes a timestamped file under `logs/`. Logs older 
 
 ## Data sources
 
-- [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — prices, generation, load, the
-  TSOs' day-ahead load forecast, installed capacity, nuclear outages, and transfer capacity;
+- [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) — prices, generation, load,
+  installed capacity, nuclear outages, and transfer capacity;
 - [Open-Meteo](https://open-meteo.com/) — live and archived ECMWF IFS forecasts;
 - [Eurostat GISCO](https://ec.europa.eu/eurostat/web/gisco) — country land geometry;
 - [Marine Regions](https://www.marineregions.org/) — maritime and EEZ geometry.

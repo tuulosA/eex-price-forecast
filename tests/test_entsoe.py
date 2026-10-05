@@ -56,22 +56,3 @@ def test_fetch_load_guards_spike_and_resamples(monkeypatch: pytest.MonkeyPatch) 
     assert list(out.columns) == ["timestamp", "load_actual_mw"]
     assert out["load_actual_mw"].max() < 200_000  # spike rejected, not averaged in
     assert 50_000 < out["load_actual_mw"].median() < 70_000
-
-
-def test_fetch_load_tso_forecast_is_hourly_and_unguarded(monkeypatch: pytest.MonkeyPatch) -> None:
-    index = pd.date_range("2025-06-01", periods=8, freq="15min", tz="Europe/Berlin")
-    raw = pd.DataFrame({"Forecasted Load": np.arange(8.0) * 1_000 + 50_000}, index=index)
-    calls: list[str] = []
-
-    class FakeClient:
-        def query_load_forecast(
-            self, zone: str, start: pd.Timestamp, end: pd.Timestamp, process_type: str
-        ) -> pd.DataFrame:
-            calls.append(process_type)
-            return raw
-
-    monkeypatch.setattr(entsoe, "_client", lambda: FakeClient())
-    out = entsoe.fetch_load_tso_forecast("2025-06-01", "2025-06-02")
-    assert calls == ["A01"]  # the day-ahead process only
-    assert list(out.columns) == ["timestamp", "load_tso_forecast_mw"]
-    assert out["load_tso_forecast_mw"].tolist() == pytest.approx([51_500.0, 55_500.0])
