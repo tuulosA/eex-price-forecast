@@ -215,6 +215,10 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 | Load | 1,692.59 MW | 1,936.88 MW |
 | Price | 25.04 EUR/MWh | 37.69 EUR/MWh |
 
+These D+1 figures assume a late-morning run: the TSOs' load forecast for the next day (published
+around 10:00 Berlin) is already out and feeds the `load_d1` companion. A run before that uses the
+base load model for D+1, about 1,850 MW holdout load MAE (1,741 MW on the development days).
+
 ![Actual vs D+1 forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
 > Each panel is one holdout day: the actual price in black, the D+1 forecast in blue, each on its

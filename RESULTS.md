@@ -94,7 +94,9 @@ Typical miss: **1,693 MW**.
 - **The daily pattern is captured well:** low at night, a steep rise in the morning, a working-day
   plateau, and an evening bump.
 - **For the next day, the model also reads the grid operators' own load forecast**, published each
-  morning. That forecast knows things the weather cannot show, such as industrial schedules. It
+  morning around 10:00. These charts assume it was already out, as for a forecast made late in the
+  morning; a forecast made earlier would be roughly 1,850 MW off in a typical hour instead. That
+  forecast knows things the weather cannot show, such as industrial schedules. It
   narrowed the old gap on cold working days, when the model alone was 3-4.5 GW too low, but those
   days are still too low: about 2-3 GW on 13 January and 21 February, and 3-5 GW on 3 February.
 - **Weekends and holidays are now the weaker side**: on Sunday 26 April and the 1 May holiday the
