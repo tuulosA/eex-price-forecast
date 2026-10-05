@@ -35,7 +35,7 @@ from eex_forecast.ensemble.client import (
 )
 from eex_forecast.ensemble.store import FORECAST_COLUMNS, TIMESTAMP
 from eex_forecast.features import active_weather_columns, preceding_hour_mean_columns
-from eex_forecast.model import REGISTRY, SUBMODELS, ChainPredictor, TrainedModel, load_for_forecast
+from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
 logger = logging.getLogger(__name__)
@@ -177,7 +177,7 @@ def propagate_members(
     *,
     forward_from: pd.Timestamp,
     forward_until: pd.Timestamp | None = None,
-    models: dict[str, TrainedModel | ChainPredictor] | None = None,
+    models: dict[str, TrainedModel] | None = None,
 ) -> pd.DataFrame:
     """Run the full chain for every member; returns frame[``member``, ``timestamp``, *forecast columns].
 
@@ -198,7 +198,7 @@ def propagate_members(
     weather - :func:`_member_frame` leaves the base frame's values where a member has none - producing a
     zero-width band that looks like broken data and implies ensemble information where there is none.
     """
-    loaded = models or {name: load_for_forecast(name) for name in _CHAIN}
+    loaded = models or {name: TrainedModel.load(REGISTRY[name]) for name in _CHAIN}
     missing = [name for name in _CHAIN if name not in loaded]
     if missing:
         raise ValueError(f"Missing trained model(s): {', '.join(missing)}.")
@@ -266,7 +266,7 @@ def run_ensemble(
     horizon_days: int,
     forward_until: pd.Timestamp | None = None,
     member_weather: pd.DataFrame | None = None,
-    models: dict[str, TrainedModel | ChainPredictor] | None = None,
+    models: dict[str, TrainedModel] | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fetch (unless supplied) and propagate the ensemble; returns ``(member_forecasts, member_weather)``.
 

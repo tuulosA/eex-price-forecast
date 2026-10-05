@@ -19,12 +19,7 @@ Forecasting is two-stage: **weather → three generation sub-models → price mo
    aggregates + the three fundamentals. The lag is NaN past D+7 at serve (the look-back lands after the
    issue date), so training reproduces that gap - see `model.apply_train_nan_lag_mask` (and the
    walk-forward backtest does the same, so ablation/tuning see live behaviour, not a leak).
-3. Load has a **day-ahead companion**, `load_d1` (`model.DAY_AHEAD_COMPANIONS`): the load features
-   plus the TSOs' day-ahead load forecast, used only on rows where that forecast exists (in practice a
-   morning run's first unknown day) via `model.combine_day_ahead`; the base `load` model serves every
-   other row. It is not a reported model - reports keep `ALL_MODELS` - but it has its own artefact and
-   `config/hyperparams.json` entry (`eex model tune --target load_d1`).
-4. The fundamentals reach the price model through an **actual-or-forecast coalesce**
+3. The fundamentals reach the price model through an **actual-or-forecast coalesce**
    (`features.fundamentals`): the measured value where a row has one, else the sub-model forecast. This
    is why a *single* feature builder serves both training (on measured fundamentals) and inference (on
    forecast fundamentals). Sub-models must therefore run **before** the price model — see
@@ -38,7 +33,7 @@ src/eex_forecast/
   db/
     schema.py          # `timeseries` table; separate actual/forecast columns; ensure_columns adds weather cols
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
-  sources/entsoe.py    # DE price + wind/solar/load actuals + TSO day-ahead load forecast + capacity
+  sources/entsoe.py    # DE price + wind/solar/load actuals + capacity
   sources/nuclear.py   # cross-border nuclear availability = capacity - A80/B14 outages (known-ahead)
   sources/ntc.py       # per-border transfer capacity (NTC), week-ahead carried forward, import/export (known-ahead)
   weather/
@@ -129,11 +124,6 @@ docs/
   to prefix-only schema discovery or retired anchors will silently remain in models and direct price
   weather means. The forecast weather-coverage guard uses the same active-column set so stale columns
   cannot falsely truncate the published horizon.
-- **A day-ahead companion serves only rows with its input.** `load_tso_forecast_mw` is a provider
-  forecast in its own column - never write model output there or TSO data into `load_forecast_mw`. The
-  live forecast, every ensemble member, and the eval/oracle folds must all go through
-  `model.combine_day_ahead` / `ChainPredictor` so they apply the same switch. Do not train one horizon-wide
-  load model with the input masked instead: that tested worse (it learns to ignore the input).
 - **Serve known-ahead inputs the way their history was stored.** The NTC history is week-ahead, so the
   forecast horizon carries the last week-ahead value forward (`sources.ntc.blend_week_over_month`);
   month-ahead fills only where no week-ahead exists. Do not reintroduce a month-ahead far horizon:

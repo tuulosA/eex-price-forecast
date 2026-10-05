@@ -30,7 +30,6 @@ import pandas as pd
 
 from eex_forecast.config import (
     AREA_CODE,
-    LOAD_TSO_FORECAST_COLUMN,
     MARKET_TIMEZONE,
     NTC_IMPORT_PREFIX,
     NUCLEAR_COLUMN,
@@ -702,22 +701,6 @@ def load_features(frame: pd.DataFrame) -> pd.DataFrame:
         ],
         axis=1,
     )
-
-
-def load_day_ahead_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Load drivers plus the TSO day-ahead load forecast, for the first forecast day only.
-
-    The TSO forecast knows what this model cannot see (industrial schedules, holiday and bridge-day
-    behaviour, embedded generation), while the model is better on its own (1,958 vs 1,758 MW D+1 MAE);
-    together they reached 1,610 MW. It exists only for the next delivery day, so this builder serves the
-    ``load_d1`` companion model, used just where the column is present (see ``model.predict_chain``).
-    """
-    tso = (
-        pd.to_numeric(frame[LOAD_TSO_FORECAST_COLUMN], errors="coerce")
-        if LOAD_TSO_FORECAST_COLUMN in frame.columns
-        else pd.Series(np.nan, index=frame.index)
-    )
-    return pd.concat([load_features(frame), tso.rename(LOAD_TSO_FORECAST_COLUMN)], axis=1)
 
 
 def nuclear_feature(frame: pd.DataFrame) -> pd.DataFrame:

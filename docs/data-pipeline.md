@@ -28,8 +28,8 @@ the corresponding sub-model forecast.
 ## Core sources
 
 - [ENTSO-E Transparency Platform](https://transparency.entsoe.eu/) supplies German day-ahead prices,
-  actual generation, actual load, the TSOs' day-ahead load forecast, installed capacity, French nuclear
-  outages, and forecast transfer capacity.
+  actual generation, actual load, installed capacity, French nuclear outages, and forecast transfer
+  capacity.
 - [Open-Meteo ECMWF Forecast API](https://open-meteo.com/en/docs/ecmwf-api) supplies forward weather.
 - [Open-Meteo Ensemble API](https://open-meteo.com/en/docs/ensemble-api) supplies the optional
   51-member ECMWF ensemble used by `eex forecast --ensemble` (see
@@ -208,19 +208,6 @@ capacity is used, and its last published value is carried over the far horizon; 
 where no week-ahead has been published, because its levels differ systematically from the week-ahead
 history the price model trains on. The price model reads the nine per-border imports
 (`ntc_imp_<border>`); the exports remain stored for experiments. Per-border imports replaced the import and export totals on 2026-10-05.
-
-## TSO day-ahead load forecast
-
-`load_tso_forecast_mw` holds the TSOs' day-ahead total load forecast for DE-LU (ENTSO-E 6.1.B, process
-A01), averaged from quarter-hours to the delivery hour. It is a provider forecast, so it has its own
-column and is never written by a forecast run; `load_forecast_mw` stays this project's output.
-
-It is published around 10:00 Berlin for the next delivery day only (2026-10-04: between 10:03 and 10:08).
-`eex backfill entsoe` and `eex update` fetch it with the other ENTSO-E series - their window already
-reaches tomorrow - and the forecast step fetches today and tomorrow again. The `load_d1` companion model
-uses it wherever it is present, which in a live run is the first unknown delivery day of a morning run
-made after publication and before the auction result; evening runs and days 2-14 use the base load
-model. History holds the latest version ENTSO-E serves, which can include later revisions.
 
 ## Weather ensemble
 
