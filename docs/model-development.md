@@ -43,7 +43,10 @@ Last updated: **2026-10-05**
    tell fleet eras apart and removed the 2026 over-forecast: solar MAE fell from **781 to 645 MW** and
    end-to-end price MAE from **16.238 to 16.047 EUR/MWh**; on the holdout, solar fell from 1,386 to
    766 MW and price from 26.753 to 26.150. It supersedes the earlier capacity-drift branch.
-6. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
+6. **Per-border transfer capacity imports replaced the import/export totals (2026-10-05).** End-to-end
+   price MAE fell from **16.047 to 14.560 EUR/MWh** (holdout 26.150 to 24.728). The far horizon now
+   carries the last week-ahead NTC instead of month-ahead, whose levels the model never trained on.
+7. Consider cross-model changes such as training-history learning curves, recency weighting, and robust
    objectives after the feature work.
 
 ### Completed evaluation work
@@ -104,7 +107,7 @@ Committed reports:
 ### Current end-to-end baseline
 
 **The reference for model changes is the 92-day development set (updated 2026-10-05 for installed
-capacity as a solar feature, after the 2026-10-04 solar azimuth adoption, direct-radiation removal, and
+capacity as a solar feature and per-border transfer capacity imports, after the 2026-10-04 solar azimuth adoption, direct-radiation removal, and
 `load_d1` TSO load companion).** The adopted configuration, with all models at their configured tree
 counts, one seed:
 
@@ -113,9 +116,10 @@ counts, one seed:
 | Wind | 1,426.052 MW | 1,803.784 MW | 1,504.538 MW | 1,228.647 MW | 1,530.938 MW |
 | Solar | 644.601 MW | 1,146.531 MW | 706.437 MW | 583.448 MW | 656.455 MW |
 | Load | 1,576.739 MW | 1,821.171 MW | 1,538.042 MW | 1,572.274 MW | 1,601.372 MW |
-| Price | 16.047 EUR/MWh | 21.064 EUR/MWh | 11.414 EUR/MWh | 14.961 EUR/MWh | 19.411 EUR/MWh |
+| Price | 14.560 EUR/MWh | 19.621 EUR/MWh | 10.484 EUR/MWh | 13.510 EUR/MWh | 17.589 EUR/MWh |
 
-Before the capacity feature, solar was 781.455 MW (RMSE 1,305.612; groups 864.566 / 592.608 /
+Before per-border transfer capacity, price was 16.047 EUR/MWh (RMSE 21.064; groups 11.414 / 14.961 /
+19.411). Before the capacity feature, solar was 781.455 MW (RMSE 1,305.612; groups 864.566 / 592.608 /
 877.381) and price 16.238 EUR/MWh (RMSE 21.287; groups 11.341 / 15.144 / 19.753). The 2026-10-02
 report, before the 2026-10-04 solar changes, had solar 787.849 MW (RMSE 1,313.190; groups 847.183 /
 596.268 / 898.900) and price 16.483 EUR/MWh (RMSE 21.398; groups 11.327 / 15.253 / 20.242). Before
@@ -124,16 +128,16 @@ report, before the 2026-10-04 solar changes, had solar 787.849 MW (RMSE 1,313.19
 the live forecast were regenerated on 2026-10-05 for the current configuration.
 
 The original-22 column reproduces the pre-expansion report exactly, so neither expansion changed an
-earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (11.4),
-the systematic grid in between (15.0), and the randomly drawn days the hardest (19.4) - close to the
-holdout's 26.2 once its three extreme days are set aside (18.0). Which days are sampled moves price
+earlier result. The groups differ a lot for price: the hand-picked stress set is the calmest (10.5),
+the systematic grid in between (13.5), and the randomly drawn days the hardest (17.6) - close to the
+holdout's 24.7 once its three extreme days are set aside (16.5). Which days are sampled moves price
 MAE far more than most model changes do, which is why comparisons need the larger set and a
-day-level bootstrap. The 92-day oracle: `all_actual` 15.271 EUR/MWh; forecasting wind alone +0.090,
-solar +0.627, load -0.012, and all three +0.776 (16.047, matching eval). On the untouched holdout
-the same configuration scores 26.150 EUR/MWh price MAE (26.753 before the capacity feature, 26.858
-before `load_d1`, 26.814 before the 2026-10-04 solar changes; see the 2026-10-01 decision) and solar
-765.733 MW (1,386.124 before). The holdout oracle: `all_actual` 23.893; wind +0.720, solar +0.666,
-load +1.018, all three +2.258.
+day-level bootstrap. The 92-day oracle: `all_actual` 14.077 EUR/MWh; forecasting wind alone +0.123,
+solar +0.286, load +0.075, and all three +0.483 (14.560, matching eval). On the untouched holdout
+the same configuration scores 24.728 EUR/MWh price MAE (26.150 before per-border transfer capacity,
+26.753 before the capacity feature, 26.858 before `load_d1`, 26.814 before the 2026-10-04 solar
+changes; see the 2026-10-01 decision) and solar 765.733 MW (1,386.124 before the capacity feature).
+The holdout oracle: `all_actual` 22.396; wind +0.940, solar +0.488, load +1.016, all three +2.332.
 
 The earlier 22-day baseline, kept for comparison with reports made before the expansion, was:
 
@@ -1134,6 +1138,50 @@ Treat both methods as descriptive rather than causal. SHAP distributes credit am
 while permutation measures dependence of the fitted model without showing whether retraining without the
 feature would improve it. Existing retrained ablation remains the stronger feature-adoption test.
 
+### 5. Price-model inputs
+
+#### Per-border transfer capacity imports
+
+**Status: completed and adopted 2026-10-05.** The price model read transfer capacity as two totals,
+imports and exports summed over the nine borders. Which border is constrained matters more than the
+sum, so the per-border values (already stored) were compared directly. Screen on the 92 development
+days, five seeds, tuned price parameters held fixed, actual fundamentals:
+
+| Transfer capacity input | Features | Price MAE (EUR/MWh) | Delta, 90% day interval | Seeds / days better |
+|---|---:|---:|---|---|
+| Two totals (production) | 30 | 15.278 +/- 0.075 | - | - |
+| **Per-border imports (9)** | 37 | **14.194** +/- 0.047 | **-1.084 [-1.564, -0.623]** | 5/5, 63/92 |
+| Per-border imports and exports (18) | 46 | 14.262 +/- 0.049 | -1.016 [-1.546, -0.523] | 5/5, 64/92 |
+| No transfer capacity | 28 | 16.020 +/- 0.083 | +0.742 [+0.122, +1.433] | 0/5, 36/92 |
+
+The gain held in every year (2024 -1.23, 2025 -1.12, 2026 -0.90) and season (spring -1.88, winter -1.49,
+summer -0.77, autumn -0.41); without its largest day (2024-12-12, -13.9) it is still about -0.93. The
+exports add nothing over the imports. DK1 and AT imports carry most of it (5.0% and 3.1% of total gain;
+all NTC 9.8%).
+
+**Adoption.** `features.ntc_features` returns the nine `ntc_imp_<border>` columns; the exports stay
+stored for experiments. A matched 20-trial retune with the incumbent protected moved price to 650 trees
+at learning rate 0.027 (seed-42 14.146 -> 14.077).
+
+- **End-to-end eval** (92 development days, one seed): price 16.047 -> 14.560 EUR/MWh (-1.487, 90% day interval [-2.020, -0.957], better on 60 of 92 days;
+  RMSE 21.064 -> 19.621). Wind, solar and load are unchanged.
+- **Oracle.** `all_actual` 15.271 -> 14.077. Forecasting wind costs +0.123 (was +0.090), solar +0.286
+  (was +0.627), load +0.075 (was -0.012), all three +0.483 (was +0.776).
+- **Holdout** (reported after adoption): price 26.150 -> 24.728 EUR/MWh (-1.422, [-2.959, -0.052], better
+  on 10 of 18 days); the holdout oracle's `all_actual` 23.893 -> 22.396.
+
+**DK1 and the far horizon.** SHAP shows high DK1 import capacity pushing the price forecast *up*, the
+opposite of the physical effect. DK1 sat at 500 MW for almost all of 2023-2025 and has been 1,875 MW
+since 2026-04-30, a period of higher prices, so the model partly reads it as a period marker: forcing
+DK1 from 1,875 to 500 on August-October 2026 lowered the predicted price by 40.4 EUR/MWh on average.
+That mattered for the live forecast, not for the D+1 evaluation: the stored history is week-ahead NTC,
+but the far horizon fell back to month-ahead, whose levels differ (DK1 500 vs 1,875, CZ 1,750 vs 450, FR
+1,500 vs 1,800). `sources.ntc.blend_week_over_month` now carries the last week-ahead value over the far
+horizon and uses month-ahead only where no week-ahead exists. History and the D+1 results are
+unchanged; in the 2026-10-05 live forecast, days 6-14 rose by 4-38 EUR/MWh (horizon mean 97.5 ->
+111.5) with no step at the old switch day. A new published DK1 level will still move the forecast
+through this learned association; dropping DK1 or masking it remain options if that proves unstable.
+
 ## Weather-ensemble forecasting
 
 **Status: implemented as an optional product (`eex forecast --ensemble`), deliberately unvalidated
@@ -1359,6 +1407,13 @@ Before changing a production feature/model:
 ## Decision history
 
 ### 2026-10-05
+
+- Replaced the price model's transfer-capacity totals with the nine per-border imports, with a matched
+  retune (14.146 -> 14.077). Five-seed screen on actual fundamentals: 15.278 -> 14.194 EUR/MWh; adding
+  the exports was slightly worse (14.262). End-to-end price 16.047 -> 14.560, holdout 26.150 -> 24.728.
+  DK1 imports act partly as a period marker (1,875 vs 500 MW moves the forecast ~40 EUR/MWh), so the NTC
+  far horizon now carries the last week-ahead value instead of switching to month-ahead. See
+  [Per-border transfer capacity imports](#per-border-transfer-capacity-imports).
 
 - Adopted installed capacity (`solar_capacity_mw`, forward-filled) as a solar feature, with a matched
   retune (incumbent 688.0 -> 644.6 MW; five seeds 688.1 -> 647.4). Five-seed screen: 780.4 -> 688.1 MW,

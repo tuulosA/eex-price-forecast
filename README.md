@@ -53,7 +53,7 @@ The price model uses the sub-model forecasts where future actuals are unavailabl
 - German weather aggregates;
 - neighbour wind for DK, NL, PL, FR, CH, CZ, and AT;
 - French scheduled nuclear availability;
-- German-border import and export transfer capacity.
+- the transfer capacity into Germany on each of its nine borders.
 
 All stored timestamps are UTC. Calendar features are derived in `Europe/Berlin` so local midnight,
 weekends, holidays, and daylight-saving transitions match the German market.
@@ -213,7 +213,7 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 | Wind | 1,803.70 MW | 2,203.24 MW |
 | Solar | 765.73 MW | 1,353.90 MW |
 | Load | 1,590.19 MW | 1,845.07 MW |
-| Price | 26.15 EUR/MWh | 39.51 EUR/MWh |
+| Price | 24.73 EUR/MWh | 37.40 EUR/MWh |
 
 ![Actual vs D+1 forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
@@ -221,8 +221,8 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 > own y-scale. Written by `eex analyze eval --holdout --plot`.
 
 Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
-666 EUR/MWh peak on 24 June. Those three account for 42% of the price error; without them the MAE is
-18.03 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+666 EUR/MWh peak on 24 June. Those three account for 44% of the price error; without them the MAE is
+16.52 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
 
 A few things are worth keeping in mind when reading these figures:
 

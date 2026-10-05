@@ -27,16 +27,19 @@ def test_series_to_hourly_empty() -> None:
     assert len(out) == 3 and pd.isna(out).all()
 
 
-def test_blend_week_over_month_uses_week_near_and_month_far() -> None:
+def test_blend_carries_the_last_week_ahead_value_over_the_far_horizon() -> None:
     hours = pd.date_range("2025-01-01", periods=24 * 6, freq="h", tz="UTC")  # 6 days
-    week = pd.Series(  # week-ahead published for days 1-2 only
-        [1200.0, 1100.0], index=pd.to_datetime(["2025-01-01", "2025-01-02"], utc=True)
+    week = pd.Series(  # week-ahead published for days 2-3 only
+        [1200.0, 1100.0], index=pd.to_datetime(["2025-01-02", "2025-01-03"], utc=True)
     )
     month = pd.Series([1000.0], index=pd.to_datetime(["2025-01-01"], utc=True))  # flat over the month
     out = pd.Series(blend_week_over_month(week, month, hours), index=hours)
-    assert out["2025-01-01 12:00"] == 1200.0  # day 1 -> the refined week-ahead level
-    assert out["2025-01-02 12:00"] == 1100.0  # day 2 -> week-ahead
-    assert out["2025-01-05 12:00"] == 1000.0  # far horizon -> month-ahead (week did not ffill-leak)
+    assert out["2025-01-01 12:00"] == 1000.0  # before any week-ahead -> month-ahead fills
+    assert out["2025-01-02 12:00"] == 1200.0  # week-ahead
+    assert out["2025-01-03 12:00"] == 1100.0  # week-ahead
+    # The far horizon keeps the last week-ahead level: month-ahead's levels differ systematically from
+    # the week-ahead history the price model trains on, so switching to it would shift the forecast.
+    assert out["2025-01-06 12:00"] == 1100.0
 
 
 def test_blend_falls_back_to_month_without_week() -> None:

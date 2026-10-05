@@ -40,7 +40,7 @@ TINY: dict[str, Any] = {
         ("clear_sky_ghi", "solar geometry"),
         ("price_lag_168h", "price one week earlier"),
         ("nbr_wind_dk", "neighbour wind"),
-        ("ntc_imp_total", "transfer capacity"),
+        ("ntc_imp_dk1", "transfer capacity"),
         ("nuclear_available_mw", "French nuclear availability"),
         ("something_new", "something_new"),  # unrecognised features keep their name
     ],

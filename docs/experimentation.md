@@ -236,7 +236,7 @@ Ablation removes selected features and measures the loss:
 
 ```bash
 eex analyze ablation --target price
-eex analyze ablation --target price --drop ntc_imp_total,ntc_exp_total
+eex analyze ablation --target price --drop ntc_imp_dk1,ntc_imp_at
 eex analyze ablation --target price --drop nuclear_available_mw --seeds 5
 ```
 
@@ -288,10 +288,10 @@ The adopted configuration on the 18 holdout days, the out-of-sample headline, is
 | Wind | 1,803.702 MW | 2,203.244 MW |
 | Solar | 765.733 MW | 1,353.902 MW |
 | Load | 1,590.191 MW | 1,845.072 MW |
-| Price | 26.150 EUR/MWh | 39.513 EUR/MWh |
+| Price | 24.728 EUR/MWh | 37.395 EUR/MWh |
 
 Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
-prices from -499 to 666 EUR/MWh): they carry 42% of it, and the MAE without them is 18.032 EUR/MWh.
+prices from -499 to 666 EUR/MWh): they carry 44% of it, and the MAE without them is 16.522 EUR/MWh.
 See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
 
 The development result over the 92 development days - the reference for comparing model changes -
@@ -302,7 +302,7 @@ is:
 | Wind | 1,426.052 MW | 1,803.784 MW |
 | Solar | 644.601 MW | 1,146.531 MW |
 | Load | 1,576.739 MW | 1,821.171 MW |
-| Price | 16.047 EUR/MWh | 21.064 EUR/MWh |
+| Price | 14.560 EUR/MWh | 19.621 EUR/MWh |
 
 Reports made before the 2026-10-01 expansion used only the original 22 days (price 11.327 EUR/MWh);
 compare a new run with them on `DEV_CORE_CUTOFFS`, not on the full 52.
@@ -354,9 +354,9 @@ converted from capacity factor to MW; price stays in EUR/MWh.
 
 Read them as what each model *relies on*, not as causes:
 
-- SHAP describes the model's associations. In the price model, for example, high import capacity
-  pushes the prediction up, most likely because transfer capacity is seasonal and coincides with
-  winter prices, not because capacity raises prices.
+- SHAP describes the model's associations. In the price model, for example, high DK1 import
+  capacity pushes the prediction up, because DK1's 1,875 MW level began in April 2026 and coincides
+  with a period of higher prices, not because capacity raises prices.
 - The history includes the 168 h price lag on every row, but it is absent for the far horizon at
   serve time, so the lag's importance describes the first forecast week.
 - The non-negative clip and the solar-darkness override are applied after the model and are not part

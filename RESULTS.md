@@ -36,7 +36,7 @@ the *shapes* between charts, not the heights.
 
 ![Actual vs forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **26.15 EUR/MWh** in a typical hour.
+Over the 18 days the price forecast is off by **24.73 EUR/MWh** in a typical hour.
 
 - **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
   when people use more power, and lower around midday, when solar panels produce most. The forecast
@@ -47,7 +47,7 @@ Over the 18 days the price forecast is off by **26.15 EUR/MWh** in a typical hou
   solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
   training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
   hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 42% of the total error.** Without them the MAE would be 18.03
+- **Those three extreme days carry 44% of the total error.** Without them the MAE would be 16.52
   EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
 - **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
   forecast stayed 30-60 EUR/MWh higher.
@@ -110,9 +110,9 @@ so on - and turns them into one number. **SHAP** is a method that answers: *for 
 hour, how much did each input push the forecast up or down?*
 
 Think of it like splitting a restaurant bill. The model starts from an **average** forecast, the
-*base value* (for the price model, 92.01 EUR/MWh). Each input then adds or subtracts its own share.
-For one hour it might read: base 92.01, plus 30 because demand is high, minus 25 because it is
-sunny, minus 10 because it is windy - giving a forecast of 87.01. The shares always add up exactly
+*base value* (for the price model, 92.02 EUR/MWh). Each input then adds or subtracts its own share.
+For one hour it might read: base 92.02, plus 30 because demand is high, minus 25 because it is
+sunny, minus 10 because it is windy - giving a forecast of 87.02. The shares always add up exactly
 to the forecast. Each share is that input's **SHAP value** for that hour, measured in the forecast's
 own unit (EUR/MWh for price, MW for the others).
 
@@ -156,7 +156,7 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 ![SHAP summary of the price model](data/analysis/shap_price.png)
 
 - **Electricity use (load) and sunshine matter most** - each moves the forecast by about 16-17
-  EUR/MWh in a typical hour. High demand (red, "load" row) pushes the price up; strong sunshine
+  EUR/MWh in a typical hour, followed by the transfer capacity into Germany (about 13). High demand (red, "load" row) pushes the price up; strong sunshine
   (red, "irr_solar") pushes it down, by up to about 90 EUR/MWh on the sunniest hours.
 - **Interestingly, the model reads sunshine directly** from the weather forecast more than from the
   solar model's output ("solar"). This is one reason errors in the solar forecast do relatively
@@ -166,11 +166,14 @@ input's effect depends a lot on circumstances, not that the model is unsure.
   power available ("nuclear_available_mw") lowers it too.
 - **"price_lag_168h"** is the price at the same hour one week earlier: high prices last week push
   this week's forecast up. This input exists only for the first week of a forecast.
-- **A misleading-looking example:** more import capacity from neighbouring countries
-  ("ntc_imp_total", red) pushes the forecast *up*, although in reality more import capacity should
-  lower prices. The likely explanation is timing: these capacities tend to be high in winter, when
-  prices are high anyway, and the model has picked up that coincidence. This is the "association,
-  not cause" caution above.
+- **Transfer capacity is read border by border** ("ntc_imp_dk1", "ntc_imp_nl", "ntc_imp_at", ...):
+  how much power can flow into Germany from each neighbour. Which border is limited matters more
+  than the total.
+- **A misleading-looking example:** more import capacity from western Denmark ("ntc_imp_dk1", red)
+  pushes the forecast *up*, although in reality more import capacity should lower prices. The likely
+  explanation is timing: that border has been rated at 1,875 MW only since April 2026, a period of
+  higher prices, and 500 MW before, so the model has partly learned "this is the recent period". This
+  is the "association, not cause" caution above.
 
 ### Wind model
 
@@ -221,7 +224,7 @@ input's effect depends a lot on circumstances, not that the model is unsure.
 ## What to take away
 
 - **For the next day, the forecast captures the daily shape of prices well**, typically within about
-  26 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
+  25 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
 - **Solar's old systematic error is gone** (too high at midday, from falling output per unit of
   sunlight); what remains is mostly days with negative prices, when solar parks switch off.
   Load is now close on working days; weekends and holidays tend to come out somewhat high.

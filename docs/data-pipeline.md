@@ -199,10 +199,11 @@ it. France is configured today; the source supports extending the zone list.
 Interconnectors determine how tightly neighbouring prices can couple to Germany. The NTC source fetches
 both directions for AT, BE, CZ, DK1, DK2, FR, NL, NO2, and SE4.
 
-Per-border values are stored as `ntc_imp_<border>` and `ntc_exp_<border>`. For each day, refined
-week-ahead capacity is preferred and month-ahead capacity fills the remaining far horizon. The price
-model currently consumes `ntc_imp_total` and `ntc_exp_total`, while per-border detail remains available
-in SQLite for experiments.
+Per-border values are stored as `ntc_imp_<border>` and `ntc_exp_<border>`. For each day the week-ahead
+capacity is used, and its last published value is carried over the far horizon; month-ahead only fills
+where no week-ahead has been published, because its levels differ systematically from the week-ahead
+history the price model trains on. The price model reads the nine per-border imports
+(`ntc_imp_<border>`); the exports remain stored for experiments. Per-border imports replaced the import and export totals on 2026-10-05.
 
 ## TSO day-ahead load forecast
 
