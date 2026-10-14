@@ -200,6 +200,7 @@ eex analyze ablation --target price         # remove features and measure the ch
 eex analyze aggregation wind                # compare weather representations
 eex analyze anchors wind                    # compare anchor selections (also load / solar)
 eex model tune --target wind                # Optuna tuning with incumbent protection
+eex analyze price-models --run-id price_nn_screen  # optional price-only NN experiment
 eex analyze eval --holdout --plot           # report on the untouched holdout days
 ```
 
@@ -241,6 +242,10 @@ deliberately does not maintain one.
 
 See [Experimentation and evaluation](docs/experimentation.md) for methodology, command options, report
 locations, and interpretation.
+
+The price-only neural experiment requires the optional `nn` extra (`pip install -e ".[nn]"`).
+It compares against XGBoost on frozen development inputs and leaves the operational model unchanged.
+See [the neural experiment workflow](docs/experimentation.md#price-only-neural-experiment).
 
 ## Documentation
 

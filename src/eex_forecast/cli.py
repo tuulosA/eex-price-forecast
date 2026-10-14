@@ -21,6 +21,7 @@ Command groups:
 - eex analyze solar-irradiance: A/B GTI/direct/diffuse/DNI/cloud solar inputs.
 - eex analyze eval: end-to-end backtest the sub-models -> price chain on the frozen cutoffs.
 - eex analyze oracle: diagnose each sub-model's downstream price effect with actual substitutions.
+- eex analyze price-models: optional price-only neural screen/search on frozen development inputs.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast (--ensemble adds spread bands).
@@ -145,6 +146,62 @@ class ModelName(StrEnum):
     solar = "solar"
     load = "load"
     price = "price"
+
+
+class PriceExperimentStage(StrEnum):
+    screen = "screen"
+    search = "search"
+    development = "development"
+
+
+@analyze_app.command("price-models")
+def analyze_price_models(
+    run_id: Annotated[
+        str, typer.Option(help="Unique experiment ID; reuse to continue its frozen run.")
+    ],
+    stage: Annotated[
+        PriceExperimentStage,
+        typer.Option(help="Screen, freeze a search shortlist, or score full development."),
+    ] = PriceExperimentStage.screen,
+    screen_days: Annotated[
+        int, typer.Option(help="Development days spread across the calendar.")
+    ] = 12,
+    trials: Annotated[
+        int, typer.Option(help="Total Optuna trial budget in the search stage.")
+    ] = 12,
+) -> None:
+    """Compare a price-only neural network with XGBoost using identical forecast fundamentals.
+
+    Requires the optional nn dependency. Snapshots and checkpoints live under data/analysis/price_models;
+    this never trains operative models, writes source data, or opens the reporting holdout.
+    """
+    try:
+        from eex_forecast.analysis.price_models import run_experiment
+    except ModuleNotFoundError as exc:
+        if exc.name == "torch":
+            raise typer.BadParameter(
+                'Install the neural extra first: pip install -e ".[nn]"'
+            ) from exc
+        raise
+    try:
+        path, report = run_experiment(
+            get_settings().db_path,
+            run_id=run_id,
+            stage=stage.value,
+            screen_days=screen_days,
+            trials=trials,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if "summary" in report:
+        for name in ("xgb_incumbent", "nn", "xgb_seed_mean", "blend_50_50"):
+            metrics = report["summary"][name]
+            typer.echo(f"{name}: MAE {metrics['mae']:.3f} | RMSE {metrics['rmse']:.3f} EUR/MWh")
+    elif stage == PriceExperimentStage.search:
+        typer.echo(f"Frozen {len(report['finalists'])} finalist(s).")
+    else:
+        typer.echo(f"Adoption recommended: {report['adoption_recommended']}")
+    typer.echo(f"Report: {path}")
 
 
 @app.callback()

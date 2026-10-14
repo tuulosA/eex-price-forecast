@@ -52,6 +52,7 @@ src/eex_forecast/
     residual_load.py   # residual-load feature variants for price, with the regime-bias check
     comparison.py      # shared per-day errors and day-level bootstrap for experiments
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
+    price_models.py    # optional price-only NN screen/search on frozen forecast-fundamental inputs
     breakdown.py       # systematic-error breakdown of an eval: bias by regime/hour/season/day type
     solar.py           # solar error slices + physics/irradiance feature A/B commands
   ensemble/            # optional weather-ensemble product; depends on core, never vice versa
@@ -64,6 +65,7 @@ src/eex_forecast/
   quality.py           # reject gross upstream actual-data corruption before hourly resampling
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
+  price_nn.py          # optional single-area neural challenger; never registered for operative serving
   backtest_cutoffs.py  # frozen development/holdout cutoffs + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB (calls plots)
@@ -195,6 +197,13 @@ docs/
   the deterministic feed, against ~0.98 for the control).
 
 ## Commands
+
+`eex analyze price-models` is an optional price-only neural experiment (`pip install -e ".[nn]"`).
+Its runner (`analysis/price_models.py`) freezes a read-only SQLite backup and reuses eval's held-out
+fundamental forecasts with upstream seed 42. Screening/search import only `DEV_CUTOFFS`; there is no
+holdout or arbitrary-cutoff CLI option. New source/configuration semantics require a new run ID.
+Neither operative artifacts nor source data are written. Neural tests skip without PyTorch; install
+the extra to run them. See `docs/experimentation.md` for the stages and adoption criteria.
 
 ```bash
 pip install -e ".[dev]"          # install package + dev tools

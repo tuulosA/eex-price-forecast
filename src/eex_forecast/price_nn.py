@@ -1,0 +1,241 @@
+"""A small price-only neural challenger, deliberately outside the operative model registry.
+
+The network uses SiLU layers, AdamW,
+training-only feature/target scaling, and explicit missingness indicators. It consumes exactly the
+production price feature matrix. In particular, missing weekly lags must remain distinguishable from
+ordinary prices after imputation. The shared training lag mask is applied before fitting preprocessing.
+
+The caller supplies an already train-only-winsorised target. Fixed epochs are a configuration choice,
+not selected by early stopping on the scored delivery day. Negative prices remain possible through a
+linear output. Numeric NPZ snapshots include preprocessing and feature order; loading never unpickles
+an object. Import this module only on the optional neural path so ordinary CLI use needs no PyTorch.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, cast
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+import torch
+from torch import nn
+
+from eex_forecast.features import price_features
+from eex_forecast.model import REGISTRY, apply_train_nan_lag_mask, postprocess_predictions
+
+logger = logging.getLogger(__name__)
+FloatArray = npt.NDArray[np.float64]
+SNAPSHOT_VERSION = 1
+
+
+@dataclass(frozen=True, slots=True)
+class NNParams:
+    """Fixed fit budget; the experiment varies these using development days only."""
+
+    hidden: int = 64
+    epochs: int = 60
+    batch_size: int = 512
+    learning_rate: float = 0.001
+    weight_decay: float = 0.0001
+    dropout: float = 0.0
+    seed: int = 42
+    threads: int = 4
+
+    def __post_init__(self) -> None:
+        for name in ("hidden", "epochs", "batch_size", "threads"):
+            if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be a positive integer.")
+        if type(self.seed) is not int or not 0 <= self.seed < 2**32:
+            raise ValueError("seed must be an unsigned 32-bit integer.")
+        if not 0 < self.learning_rate <= 1 or not 0 <= self.weight_decay <= 1:
+            raise ValueError("Invalid learning rate or weight decay.")
+        if not 0 <= self.dropout < 1:
+            raise ValueError("dropout must be in [0, 1).")
+
+
+@dataclass(slots=True)
+class FeatureScaling:
+    """Training medians replace gaps; indicators preserve their distinct meaning for the network."""
+
+    median: FloatArray
+    center: FloatArray
+    scale: FloatArray
+
+    @classmethod
+    def fit(cls, values: FloatArray) -> FeatureScaling:
+        if values.ndim != 2 or not len(values) or values.shape[1] == 0:
+            raise ValueError("Feature scaling requires a non-empty matrix.")
+        finite = np.where(np.isfinite(values), values, np.nan)
+        median = np.array(
+            [np.nanmedian(column) if np.isfinite(column).any() else 0.0 for column in finite.T]
+        )
+        filled = np.where(np.isfinite(values), values, median)
+        deviation = filled.std(axis=0)
+        return cls(median, filled.mean(axis=0), np.where(deviation > 1e-6, deviation, 1.0))
+
+    def transform(self, values: FloatArray) -> npt.NDArray[np.float32]:
+        if values.ndim != 2 or values.shape[1] != len(self.median):
+            raise ValueError("Feature width differs from fitted preprocessing.")
+        missing = ~np.isfinite(values)
+        filled = np.where(missing, self.median, values)
+        return cast(
+            "npt.NDArray[np.float32]",
+            np.concatenate(
+                ((filled - self.center) / self.scale, missing.astype(float)), axis=1
+            ).astype(np.float32),
+        )
+
+
+def _network(width: int, params: NNParams) -> Any:
+    return nn.Sequential(
+        nn.Linear(width, params.hidden),
+        nn.SiLU(),
+        nn.Dropout(params.dropout),
+        nn.Linear(params.hidden, params.hidden),
+        nn.SiLU(),
+        nn.Linear(params.hidden, 1),
+    )
+
+
+@dataclass(slots=True)
+class TrainedPriceNN:
+    """One fitted seed; experiments average predictions, not per-seed error metrics."""
+
+    network: Any
+    feature_names: list[str]
+    scaling: FeatureScaling
+    target_center: float
+    target_scale: float
+    params: NNParams
+    history: list[float]
+    training_seconds: float
+
+    def predict_features(self, matrix: pd.DataFrame) -> pd.Series:
+        missing = set(self.feature_names) - set(matrix.columns)
+        if missing:
+            raise ValueError(f"Missing trained price features: {sorted(missing)}")
+        values = matrix.reindex(columns=self.feature_names).to_numpy(dtype=float)
+        if not len(matrix):
+            return pd.Series(
+                dtype=float, index=matrix.index, name=REGISTRY["price"].forecast_column
+            )
+        self.network.eval()
+        with torch.no_grad():
+            predicted = self.network(torch.from_numpy(self.scaling.transform(values))).numpy()[:, 0]
+        predicted = np.asarray(predicted, dtype=float) * self.target_scale + self.target_center
+        if not np.isfinite(predicted).all():
+            raise ValueError("Non-finite neural price prediction.")
+        return postprocess_predictions(REGISTRY["price"], predicted, matrix)
+
+    def predict(self, frame: pd.DataFrame) -> pd.Series:
+        """Reuse the production feature builder and natural-unit prediction contract."""
+        return self.predict_features(price_features(frame))
+
+    def save(self, path: Path) -> None:
+        """Save all inference state without pickle; a snapshot never replaces an existing artifact."""
+        metadata = {
+            "schema_version": SNAPSHOT_VERSION,
+            "feature_names": self.feature_names,
+            "params": asdict(self.params),
+            "target_center": self.target_center,
+            "target_scale": self.target_scale,
+            "history": self.history,
+            "training_seconds": self.training_seconds,
+        }
+        arrays = {
+            "metadata": np.frombuffer(json.dumps(metadata).encode("utf-8"), dtype=np.uint8),
+            "median": self.scaling.median,
+            "center": self.scaling.center,
+            "scale": self.scaling.scale,
+            **{f"weight_{k}": v.detach().numpy() for k, v in self.network.state_dict().items()},
+        }
+        with path.open("xb") as handle:
+            np.savez_compressed(handle, **arrays)
+
+    @classmethod
+    def load(cls, path: Path) -> TrainedPriceNN:
+        with np.load(path, allow_pickle=False) as arrays:
+            meta = json.loads(arrays["metadata"].tobytes().decode("utf-8"))
+            if meta["schema_version"] != SNAPSHOT_VERSION:
+                raise ValueError("Unsupported neural price snapshot.")
+            params = NNParams(**meta["params"])
+            network = _network(2 * len(meta["feature_names"]), params)
+            state = {
+                k: torch.from_numpy(arrays[f"weight_{k}"].copy()) for k in network.state_dict()
+            }
+            network.load_state_dict(state, strict=True)
+            network.eval()
+            return cls(
+                network,
+                list(meta["feature_names"]),
+                FeatureScaling(*(arrays[k].copy() for k in ("median", "center", "scale"))),
+                float(meta["target_center"]),
+                float(meta["target_scale"]),
+                params,
+                list(meta["history"]),
+                float(meta["training_seconds"]),
+            )
+
+
+def fit_price_nn(matrix: pd.DataFrame, target: pd.Series, params: NNParams) -> TrainedPriceNN:
+    """Fit only the supplied training rows, reproducing the price model's missing-lag training gap.
+
+    Targets must already be clipped on these rows alone by the fold preparer. No test inputs, target
+    quantiles or validation losses enter this function. Mini-batch shuffling stays within training;
+    chronological train/test separation is established before fitting, not by splitting shuffled rows.
+    """
+    if not matrix.index.equals(target.index) or not len(target):
+        raise ValueError("Training features and targets must have matching non-empty indices.")
+    if not np.isfinite(target.to_numpy(dtype=float)).all():
+        raise ValueError("Training prices must be finite; missing labels cannot be imputed.")
+    started = time.perf_counter()
+    masked = apply_train_nan_lag_mask(matrix)
+    scaling = FeatureScaling.fit(masked.to_numpy(dtype=float))
+    inputs = torch.from_numpy(scaling.transform(masked.to_numpy(dtype=float)))
+    center = float(target.median())
+    scale = max(float(target.quantile(0.75) - target.quantile(0.25)), 1.0)
+    labels = torch.from_numpy(((target.to_numpy(dtype=float) - center) / scale).astype(np.float32))
+    previous_threads = torch.get_num_threads()
+    previous_determinism = torch.are_deterministic_algorithms_enabled()
+    history: list[float] = []
+    try:
+        torch.set_num_threads(params.threads)
+        torch.use_deterministic_algorithms(True)
+        # Keep this optional experiment from changing another caller's RNG sequence.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(params.seed)
+            generator = torch.Generator().manual_seed(params.seed)
+            network = _network(inputs.shape[1], params)
+            optimizer = torch.optim.AdamW(
+                network.parameters(), lr=params.learning_rate, weight_decay=params.weight_decay
+            )
+            for _epoch in range(params.epochs):
+                network.train()
+                total = 0.0
+                for batch in torch.randperm(len(labels), generator=generator).split(
+                    params.batch_size
+                ):
+                    optimizer.zero_grad(set_to_none=True)
+                    loss = nn.functional.l1_loss(network(inputs[batch])[:, 0], labels[batch])
+                    if not bool(torch.isfinite(loss)):
+                        raise ValueError("Non-finite neural price training loss.")
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(network.parameters(), 5.0)
+                    optimizer.step()
+                    total += float(loss.detach()) * len(batch)
+                history.append(total / len(labels))
+            network.eval()
+    finally:
+        torch.set_num_threads(previous_threads)
+        torch.use_deterministic_algorithms(previous_determinism)
+    elapsed = time.perf_counter() - started
+    logger.info("[price-nn] seed %d | %d epochs | %.2fs", params.seed, params.epochs, elapsed)
+    return TrainedPriceNN(
+        network, list(matrix.columns), scaling, center, scale, params, history, elapsed
+    )

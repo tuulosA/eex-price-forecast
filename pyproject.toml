@@ -30,6 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+nn = ["torch>=2.8,<2.9"]  # optional price-only neural experiments; core remains XGBoost
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
@@ -70,7 +71,7 @@ warn_unused_ignores = true
 warn_redundant_casts = true
 # Third-party libraries without type stubs:
 [[tool.mypy.overrides]]
-module = ["entsoe.*", "responses.*", "matplotlib.*", "xgboost.*", "holidays.*", "shap.*"]
+module = ["entsoe.*", "responses.*", "matplotlib.*", "xgboost.*", "holidays.*", "shap.*", "torch.*"]
 ignore_missing_imports = true
 follow_imports = "skip"
 

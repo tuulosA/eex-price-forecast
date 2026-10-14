@@ -105,6 +105,72 @@ This leads to two different evaluation contracts:
 Live prediction and every scoring path share the same natural-unit post-processing: capacity-factor
 reversal, non-negative clipping, and the solar-darkness constraint.
 
+## Price-only neural experiment
+
+`eex analyze price-models` compares a German-price MLP with the incumbent XGBoost while keeping
+wind, solar, load, weather points, feature semantics, and upstream seed 42 fixed. Production continues
+to use XGBoost. Install the optional PyTorch dependency in the active environment first:
+
+```cmd
+pip install -e ".[nn]"
+eex analyze price-models --run-id price_nn_20261014 --stage screen
+eex analyze price-models --run-id price_nn_20261014 --stage search --trials 12
+eex analyze price-models --run-id price_nn_20261014 --stage development
+```
+
+The first invocation makes a consistent SQLite backup under
+`data/analysis/price_models/<run-id>/source.db`, copies the three modelling configurations, and records
+their hashes plus the code hashes, dependency versions, Git revision, fixed seed settings, and database checksum in
+`manifest.json`. The operative database is opened read-only. Reusing the run ID deliberately reuses
+this snapshot, even if the operative database is refreshed later. A changed code/configuration hash
+or snapshot checksum refuses reuse; create a new run ID after changing semantics. Run one process
+per run ID. No stage performs external fetches, rewrites production models, or opens the holdout.
+
+Stages are ordered:
+
+- `screen`: 12 evenly spread development days (change with `--screen-days`, consistently for the run)
+  and price seed 42, starting with two 64-unit SiLU layers, 60 epochs, batch 512, AdamW learning rate
+  0.001, weight decay 0.0001, and no dropout. The output remains linear, allowing negative prices.
+- `search`: Optuna searches width 32/64/128, epochs 40/60/80, batches 256/512/1024, learning rate
+  0.0003-0.003, weight decay 0.000001-0.001, and dropout 0/0.025/0.05 on that same screen. `--trials`
+  is the total budget, including the initial configuration. Up to two distinct completed candidates
+  that beat XGBoost are frozen in `shortlist.json` before full development is examined. If none win,
+  the shortlist is empty. Once frozen, search cannot reopen within the run.
+- `development`: evaluates only those frozen finalists on all 92 development days using price seeds
+  7/23/42; upstream forecasts remain seed 42. Selects the lowest development MAE NN and reports its
+  predeclared gate. It neither promotes models nor reports the holdout.
+
+Each cached fold comes from the standard end-to-end evaluator: train before Berlin delivery midnight,
+clear existing DB forecast columns, generate fresh sub-model predictions, and hide held-out
+fundamental actuals. A direct matrix prediction must reproduce the standard evaluator's incumbent
+price output before that fold is accepted. Both families use identical train-only target clipping and
+the same weekly-lag training mask. NN preprocessing fits only on masked training rows: median
+imputation, standardisation, missingness indicators, and median/IQR target scaling. Fits use the
+configured epochs, with MAE loss and no early stopping or recency-weighting change.
+
+Per-day NN prediction checkpoints allow interrupted fits/reporting to continue; interrupted Optuna
+trials finish with their already sampled parameters before search continues. `candidates/<id>/`
+contains the configuration, per-day/per-seed training curves and timings, `hourly.csv`, and
+`report.json`. The run-level `screen.json`, `search.json`/`shortlist.json`, and `development.json`
+summarise the stages. Reports show individual seeds, NN seed-mean predictions, the incumbent, a
+matched XGBoost seed-mean control, and an exploratory fixed 50/50 blend. The objective and adoption
+gate concern the standalone NN; blend results do not silently nominate a different model.
+
+Headlines average delivery-day errors, matching eval; breakdowns pool hourly errors. Seed-mean
+predictions are scored after averaging, rather than averaging individual seed errors. Paired
+90% bootstrap intervals resample whole delivery days. The full-development NN gate requires:
+
+- at least 0.5 EUR/MWh lower MAE than the incumbent;
+- the paired 90% MAE-delta interval wholly below zero;
+- mean daily RMSE no more than 2% worse;
+- negative-price and spike (>=250 EUR/MWh) MAE no more than 10% worse, where those regimes occur.
+
+Season, hour, day type, bias, and worst-day diagnostics remain available for review. A screen cannot
+pass the gate. Even a passing full-development result is a recommendation for a separate adoption
+change; operational persistence, deterministic/member serving, and neural attribution must be
+integrated and verified before deployment. Only after adopting on development may the holdout report
+the new model. D+1 weather optimism and the lack of multi-day accuracy evidence remain unchanged.
+
 ## Quick inspection
 
 These commands produce maps and correlations under `data/analysis/`:

@@ -8,7 +8,38 @@ It complements the user-facing [README](../README.md), the reproducible commands
 [Experimentation and evaluation](experimentation.md), and the implementation rules in
 [AGENTS.md](../AGENTS.md). Generated JSON/CSV reports remain the source of truth for exact results.
 
-Last updated: **2026-10-05**
+Last updated: **2026-10-14** (adopted-model benchmarks remain dated 2026-10-05).
+
+Research tooling added **2026-10-14**: a price-only neural challenger and frozen-input development
+comparison. Production remains XGBoost; the benchmark tables below still describe its adopted
+configuration. The workflow and gate are documented in
+[Price-only neural experiment](experimentation.md#price-only-neural-experiment). It adapts the
+train-only scaling, missingness indicators, SiLU MLP, AdamW/MAE objective, and seed averaging
+without a multi-area joint architecture. Wind,
+solar, load, and the production feature set remain fixed.
+
+The first run completed 12 configurations on 12 evenly spread development days with price/upstream
+seed 42 and the refreshed 2026-10-14 database snapshot. All 12 incumbent daily MAEs reproduced the
+committed evaluator to its four-decimal reporting precision. This is a screen, not the 92-day baseline:
+
+| Price method | Screen MAE (EUR/MWh) | Mean daily RMSE |
+|---|---:|---:|
+| Incumbent XGBoost | 10.966 | 13.463 |
+| Initial NN (64 units, 60 epochs) | 12.301 | 14.545 |
+| Best screened NN (64 units, 40 epochs) | 11.849 | 14.023 |
+| Fixed 50/50 incumbent / best-NN blend | 11.035 | 12.989 |
+
+The best NN's paired mean delta was +0.884 EUR/MWh, with a 90% day-bootstrap interval
+[-0.625, +2.334]; it won five of twelve days. No candidate beat the incumbent screen MAE, so the
+shortlist was empty and no full-development or holdout evaluation was opened. The blend slightly
+improved RMSE but not MAE; its MAE-delta interval also included zero. **No price-model change is
+recommended from this run.** This does not rule out other neural architectures, seed ensembles,
+training-weight choices, or richer regional inputs.
+The negative/spike slices are small (eight/four hours), so their gains cannot establish tail robustness.
+
+Evidence: [compact report](../data/analysis/price_model_experiment_summary.json),
+[daily comparison](../data/analysis/price_model_screen.png). The complete snapshot, per-day caches,
+checkpoints, predictions, and curves are local under `data/analysis/price_models/price_nn_20261014/`.
 
 ## Contents
 
@@ -1480,6 +1511,16 @@ Before changing a production feature/model:
 - Are tests, Ruff, and mypy green?
 
 ## Decision history
+
+### 2026-10-14
+
+- Added the optional, price-only neural experiment and ran the 12-configuration development screen.
+  No configuration earned the full-development gate; retained operative XGBoost. See the screen
+  evidence at the top of this document and the workflow in `docs/experimentation.md`.
+- Neural tests cover train-only scaling/clipping, missing-lag training, numerical persistence,
+  shared end-to-end inputs, frozen database/cache reuse, DST, and development-only CLI stages.
+  Perfect-prediction diagnostics exposed a division-by-zero in the common breakdown; fixed with a
+  regression test, including errors small enough to round to zero.
 
 ### 2026-10-05
 

@@ -129,7 +129,10 @@ def model_breakdown(hourly: pd.DataFrame, model: str) -> dict[str, Any]:
         "by_season": _group_table(rows, season, ["winter", "spring", "summer", "autumn"]),
         "by_day_type": _group_table(rows, day_type, ["working day", "weekend", "holiday"]),
         "worst_tenth_of_days_error_pct": round(
-            float(day_sum.iloc[:worst_share].sum() / day_sum.sum() * 100), 2
+            float(day_sum.iloc[:worst_share].sum() / day_sum.sum() * 100)
+            if day_sum.sum() > 0
+            else 0.0,
+            2,
         ),
         "median_day_mae": round(float(by_day.mean().median()), 4),
         "worst_days": [
@@ -152,7 +155,12 @@ def model_breakdown(hourly: pd.DataFrame, model: str) -> dict[str, Any]:
         result["level_vs_shape"] = {
             "mae": result["mae"],
             "mae_with_exact_daily_level": round(shape_only, 4),
-            "daily_level_share_pct": round((1.0 - shape_only / result["mae"]) * 100, 2),
+            "daily_level_share_pct": round(
+                (1.0 - shape_only / float(rows["abs"].mean())) * 100
+                if rows["abs"].mean() > 0
+                else 0.0,
+                2,
+            ),
         }
     return result
 
