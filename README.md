@@ -6,9 +6,9 @@ wind/solar/load fundamentals, and cross-border market drivers.
 
 ![Example German day-ahead price forecast](data/forecast/forecast.png)
 
-![German price, wind, solar and load weather-ensemble forecasts](data/forecast/forecast_ensemble.png)
+![German wind, solar generation and load: recent actuals and forecasts](data/forecast/fundamentals.png)
 
-> Example outputs from `eex forecast --ensemble --plot`. The committed images are static snapshots and
+> Example outputs from `eex forecast --plot`. The committed images are static snapshots and
 > may lag the latest code and data.
 
 ## What it does
@@ -175,27 +175,15 @@ is expected, not a fault.
 
 ### Weather ensemble (optional)
 
-`eex forecast --ensemble` additionally runs the same trained models once per member of ECMWF's
-51-member weather ensemble, giving a spread around the deterministic forecast:
+Run the trained model chain for 51 ECMWF weather scenarios to produce ensemble means and bands:
 
-```bash
+```cmd
 eex forecast --ensemble --plot
 ```
 
-This writes `forecast_ensemble.csv` (per-hour mean and p10/p25/p50/p75/p90 for wind, solar, load, and
-price) and, with `--plot`, `forecast_ensemble.png`: one panel each for price, wind, solar, and load, with
-actuals, ensemble means and shaded bands. Each series begins after its own last actual, subject to
-member-weather coverage. `forecast.png` stays deterministic-only and remains the
-headline forecast. Per-member predictions are stored in `data/eex_ensemble.db`; the raw member weather is
-archived to `data/eex_ensemble_weather.db` on a rolling 30-run window.
-
-> **These bands are weather-driven spread only.** Members differ solely in their weather realisation, so
-> the bands exclude sub-model error, price-model error, plant outages, and demand shocks, and are
-> therefore narrower than realised forecast error. They are not calibrated predictive intervals.
-
-The ensemble runs after the deterministic forecast is written and cannot affect it — if the ensemble
-endpoint fails, the run still produces a normal forecast. Expect it to take a few minutes: each request
-returns 51 series per variable, so requests are paced against Open-Meteo's per-minute budget.
+See [Weather ensemble forecasts](docs/ensemble.md) for the figure, how to read the bands, their
+limits and output files. The bands describe weather-driven spread, not calibrated prediction
+intervals. The deterministic forecast is written first and remains available if the ensemble fails.
 
 ## Evaluation
 
@@ -264,6 +252,7 @@ smoothness/accuracy trade-off and current benchmarks.
 |---|---|
 | [Results explained](RESULTS.md) | Plain-language walkthrough of the holdout forecasts and attribution plots, for non-specialists |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
+| [Weather ensemble forecasts](docs/ensemble.md) | Ensemble figure, interpretation, commands and limitations |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |
 | [Model development](docs/model-development.md) | Findings, rejected alternatives, decisions, and next research priorities |
 | [AGENTS.md](AGENTS.md) | Repository invariants and guidance for coding agents |

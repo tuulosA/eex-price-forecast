@@ -219,6 +219,9 @@ history the price model trains on. The price model reads the nine per-border imp
 
 ## Weather ensemble
 
+For the example figure, commands and interpretation, see [Weather ensemble forecasts](ensemble.md).
+This section owns the source and storage contracts.
+
 `eex forecast --ensemble` adds an optional second product: the same trained models run once per ECMWF
 ensemble member, giving a weather-driven spread around the deterministic forecast.
 
