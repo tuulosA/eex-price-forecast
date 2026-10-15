@@ -273,7 +273,7 @@ load. Actual columns are populated only where measurements exist.
 `--plot` adds:
 
 - `forecast.png`: settled price followed by genuinely out-of-sample price;
-- `fundamentals.png`: wind, solar, and load actual/forecast series;
+- `fundamentals.png`: wind, solar, and load actuals followed by forecasts;
 - `drivers.png`: weather and cross-border driver panels;
 - `features.png`: every raw column a model reads, exactly as stored (each weather point by role,
   neighbour wind, nuclear, and per-border NTC), with no aggregation or radiation alignment. Fetched

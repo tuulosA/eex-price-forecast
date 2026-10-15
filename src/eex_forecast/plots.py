@@ -185,11 +185,21 @@ def _draw_fundamental(
     *,
     label: str,
 ) -> None:
-    """Draw one fundamental's actual (grey, on top) and its sub-model forecast on ``ax``."""
+    """Hand each fundamental's actual series over to its forecast at its last measured hour.
+
+    Fundamental publication times differ from settled prices and from each other, so each panel uses
+    its own actual availability. Retain the boundary point as in the price plot; if no measurements
+    exist, leave the forecast visible throughout the supplied window.
+    """
     _, actual_col, forecast_col, ylabel, color = panel
+    actual = numeric_column(frame, actual_col)
+    forecast = numeric_column(frame, forecast_col)
+    measured = actual.notna()
+    if measured.any():
+        forecast = _forward_only(forecast, times, times[measured].max())
     ax.plot(
         times,
-        numeric_column(frame, actual_col),
+        actual,
         color="0.45",
         linewidth=1.0,
         label="actual",
@@ -197,7 +207,7 @@ def _draw_fundamental(
     )
     ax.plot(
         times,
-        numeric_column(frame, forecast_col),
+        forecast,
         color=color,
         linewidth=1.4,
         label=label,
@@ -208,7 +218,7 @@ def _draw_fundamental(
 
 
 def plot_fundamentals(frame: pd.DataFrame, times: pd.Series, path: object) -> object:
-    """Plot the wind / solar / load sub-model forecasts against recent actuals, one panel each.
+    """Plot recent wind / solar / load actuals followed by their forecasts, one panel each.
 
     Deterministic only, like :func:`plot_forecast`; the per-fundamental ensemble spread lives in
     :func:`plot_ensemble`.
