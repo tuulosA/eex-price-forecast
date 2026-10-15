@@ -4,7 +4,7 @@ The weather ensemble shows how the German price, wind, solar and load forecasts 
 51 ECMWF weather scenarios. Each member passes through the same trained model chain: weather to
 wind, solar and load, then to the German price NN. The outputs are combined after prediction.
 
-![German price, wind, solar and load weather-ensemble forecasts](../data/forecast/forecast_ensemble.png)
+![German price, wind, solar and load weather-ensemble forecasts](data/forecast/forecast_ensemble.png)
 
 This committed image is a static example and may lag the latest code and data.
 
@@ -17,7 +17,7 @@ This committed image is a static example and may lag the latest code and data.
 
 Wider bands indicate greater disagreement between weather scenarios. Price is in EUR/MWh; wind,
 solar and load are in MW. Time is UTC. The deterministic forecast has its own
-[price](../data/forecast/forecast.png) and [fundamentals](../data/forecast/fundamentals.png) figures.
+[price](data/forecast/forecast.png) and [fundamentals](data/forecast/fundamentals.png) figures.
 
 Each series begins after its own last actual, subject to complete member-weather coverage. Wind,
 solar and load can therefore start before price, whose day-ahead auction may already have settled
@@ -36,7 +36,7 @@ member. No temporal smoothing is applied to the predictions.
 
 ## Generate the ensemble
 
-After completing the [initial setup](../README.md#first-forecast) and training the models, run from
+After completing the [initial setup](README.md#first-forecast) and training the models, run from
 the activated environment:
 
 ```cmd
@@ -57,5 +57,5 @@ The deterministic forecast is written first. An ensemble failure is logged and d
 that forecast from being published.
 
 For source variables, coverage checks, API limits and the two ensemble databases, see the
-[ensemble source contract](data-pipeline.md#weather-ensemble) and
-[forecast output contract](data-pipeline.md#forecast-outputs).
+[ensemble source contract](docs/data-pipeline.md#weather-ensemble) and
+[forecast output contract](docs/data-pipeline.md#forecast-outputs).

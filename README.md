@@ -181,7 +181,7 @@ Run the trained model chain for 51 ECMWF weather scenarios to produce ensemble m
 eex forecast --ensemble --plot
 ```
 
-See [Weather ensemble forecasts](docs/ensemble.md) for the figure, how to read the bands, their
+See [Weather ensemble forecasts](ENSEMBLE.md) for the figure, how to read the bands, their
 limits and output files. The bands describe weather-driven spread, not calibrated prediction
 intervals. The deterministic forecast is written first and remains available if the ensemble fails.
 
@@ -252,7 +252,7 @@ smoothness/accuracy trade-off and current benchmarks.
 |---|---|
 | [Results explained](RESULTS.md) | Plain-language walkthrough of the holdout forecasts and attribution plots, for non-specialists |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
-| [Weather ensemble forecasts](docs/ensemble.md) | Ensemble figure, interpretation, commands and limitations |
+| [Weather ensemble forecasts](ENSEMBLE.md) | Ensemble figure, interpretation, commands and limitations |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |
 | [Model development](docs/model-development.md) | Findings, rejected alternatives, decisions, and next research priorities |
 | [AGENTS.md](AGENTS.md) | Repository invariants and guidance for coding agents |

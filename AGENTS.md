@@ -79,8 +79,8 @@ config/
   weather_points.json  # adopted German and neighbour weather anchors
   backtest_cutoffs.yaml  # frozen delivery days: development (selection) + holdout (reporting)
 data/                  # runtime data is ignored; selected plots/reports are re-included as evidence
+ENSEMBLE.md            # ensemble figure, interpretation, commands and limitations
 docs/
-  ensemble.md           # ensemble figure, interpretation, commands and limitations
   data-pipeline.md      # sources, update windows, timestamps, weather alignment, cross-border inputs
   experimentation.md   # point selection, tuning, aggregation, ablation, eval, oracle, diagnostics
   model-development.md  # experiment findings, decisions, current priorities, and deferred research
@@ -234,7 +234,7 @@ Documentation is part of the behavior being changed. Keep these sources aligned 
   figures, numbers, and readings in step with the committed images when they are regenerated.
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
-- `docs/ensemble.md` owns the ensemble figure walkthrough, user commands and interpretation limits.
+- `ENSEMBLE.md` owns the ensemble figure walkthrough, user commands and interpretation limits.
 - `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
   radiation alignment, cross-border inputs, and the weather-ensemble contract (members, retention,
   API weighting, and the ensemble databases).
