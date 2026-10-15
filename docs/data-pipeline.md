@@ -285,20 +285,21 @@ load. Actual columns are populated only where measurements exist.
 `--ensemble` adds `data/forecast/forecast_ensemble.csv`: one row per forward hour with `timestamp`,
 `n_members`, and `<model>_mean` plus `<model>_p10/p25/p50/p75/p90` for `wind`, `solar`, `load`, and
 `price` (26 columns). With `--plot` it also writes `forecast_ensemble.png`, with one panel each for price,
-wind, solar, and load: the same actual and deterministic series as `forecast.png` / `fundamentals.png`,
-with that model's p10-p90 and p25-p75 bands and ensemble mean behind them. Bands and mean use the
-panel's own series colour; the bands are translucent and the mean is dashed, so they stay distinct from
-the solid deterministic line. The plot is captioned to say that only the weather varies between
-members. `forecast.png` and `fundamentals.png` never carry ensemble bands, and no ensemble plot is
-written when the ensemble step fails.
+wind, solar, and load: measured history, p10-p90 and p25-p75 bands, and the ensemble mean.
+Bands and mean use the panel's own series colour; the bands are translucent and the mean is dashed.
+Deterministic predictions appear in the separate `forecast.png` and `fundamentals.png` images.
+The plot is captioned to say that only the weather varies between members. `forecast.png` and
+`fundamentals.png` never carry ensemble bands, and no ensemble plot is written when the ensemble step
+fails.
 
-The ensemble CSV covers only the hours members actually cover, which begins at the ensemble run's own
-start rather than at the last settled price. `forecast.csv` therefore starts earlier than
-`forecast_ensemble.csv`, by design — emitting the intervening hours would imply ensemble information
-where the members all carry the same already-observed weather.
+The ensemble CSV covers the union of each target's unknown hours, clipped to complete member-weather
+coverage. Each target starts one hour after its own last actual: wind, solar and load can begin before
+tomorrow's already-settled prices. Mean and quantile columns remain empty until that target starts;
+`n_members` counts the available members for the row. `forecast.csv` also includes earlier measured
+history; the ensemble CSV excludes hours before any target needs a forecast or before member weather
+is complete.
 
-The same rule sets the end, and there the ensemble usually stops **about a day before** the
-deterministic forecast. The ECMWF ensemble runs about 15 days from its own initialisation, and
+The same coverage check sets the end; the ensemble can stop before the deterministic forecast. The ECMWF ensemble runs about 15 days from its own initialisation, and
 Open-Meteo pads the requested window with timestamps whose values are null, so an hour counts as
 covered only when every member has every weather column - and, for radiation, the following hour
 too, since radiation is read from `t + 1 h`. Hours past that are left out of

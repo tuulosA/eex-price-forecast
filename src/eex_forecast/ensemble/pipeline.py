@@ -68,9 +68,9 @@ def run_ensemble_forecast(
     ``base`` must be the **untrimmed, buffered** forecast frame - the same one the deterministic models
     predict on. It carries the history the price lag needs *and* the row after the last published hour,
     without which the preceding-hour radiation lookup yields NaN irradiance on the final hour and
-    corrupts its price. ``forward_from`` is the first hour with no settled price, and ``forward_until``
-    is the exclusive end of the published window, so the bands cover exactly the hours the deterministic
-    forecast does.
+    corrupts its price. ``forward_from`` is the earliest unknown hour across the targets. Propagation
+    masks each target until its own observations end, so fundamentals can start before already-settled
+    day-ahead prices. ``forward_until`` is the exclusive end of the published window.
 
     Never raises: ``None`` means the bands could not be produced; a returned summary may still have
     failed to persist, which is logged (see the module docs).

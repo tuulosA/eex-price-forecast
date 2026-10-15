@@ -197,6 +197,9 @@ docs/
   nothing: Open-Meteo retains ensemble members for ~3 days, so there is no history to train or backtest
   on, and it reuses `TrainedModel.predict` per member rather than reimplementing prediction — which is
   what keeps capacity reversal, clipping, and the solar-darkness constraint identical to production.
+  Each target's ensemble starts after its own last actual, clipped to member-weather coverage;
+  earlier cells for that target stay null (settled day-ahead prices must not delay fundamentals).
+  The ensemble plot contains actuals, means and bands only.
   Aggregate the *outputs* across members, never the member weather before predicting: wind power is
   ~v³, so `f(mean(v)) != mean(f(v))`, and the ensemble mean field is measurably smoothed (corr ~0.70 vs
   the deterministic feed, against ~0.98 for the control).

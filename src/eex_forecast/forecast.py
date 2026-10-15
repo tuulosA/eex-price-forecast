@@ -379,7 +379,10 @@ def run_forecast(
 
         summary = run_ensemble_forecast(
             full_frame,
-            forward_from=_first_forward_hour(actual_price, times, now),
+            forward_from=min(
+                _first_forward_hour(numeric_column(frame, REGISTRY[name].target_column), times, now)
+                for name in (*SUBMODELS, "price")
+            ),
             forward_until=end,  # the same published window the deterministic result was trimmed to
             horizon_days=horizon_days,
         )
@@ -395,9 +398,7 @@ def run_forecast(
         plot_drivers(frame, times, now, FORECAST_DIR / "drivers.png")
         plot_features(frame, times, now, FORECAST_DIR / "features.png")
         if summary is not None and not summary.empty:
-            plot_ensemble(
-                frame, times, split, FORECAST_DIR / "forecast_ensemble.png", summary=summary
-            )
+            plot_ensemble(frame, times, FORECAST_DIR / "forecast_ensemble.png", summary=summary)
     return result
 
 
@@ -412,12 +413,11 @@ def _forecast_split(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> p
 
 
 def _first_forward_hour(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> pd.Timestamp:
-    """The first hour with no settled price: the hour after :func:`_forecast_split`.
+    """The first hour after this target's last observation, falling back to ``now`` if none exists.
 
-    The ensemble needs this, not the split itself. The split is the last *settled* hour, kept in both
-    plotted lines so they hand off without a gap; passing it to the ensemble made the bands begin on an
-    hour whose price was already known. With no actual at all the split is ``now`` itself rather than a
-    settled hour, so ``now`` is returned unshifted.
+    The ensemble uses this separately for price and every fundamental. Plotting may retain the last
+    observed hour to join actual and forecast lines; the ensemble starts one hour later so known
+    observations are not presented as uncertain predictions. With no actuals, return ``now`` unshifted.
     """
     if not bool(actual.notna().any()):
         return now

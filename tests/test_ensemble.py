@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 from tests.conftest import NN_TINY, make_timeseries
 
+from eex_forecast.db import write_frame
 from eex_forecast.ensemble import client as ensemble_client
 from eex_forecast.ensemble.client import (
     CONTROL_MEMBER,
@@ -291,6 +292,37 @@ def test_propagate_returns_forward_rows_per_member() -> None:
     assert len(out) == 4 * len(forward_times)
 
 
+def test_each_ensemble_target_starts_after_its_own_actuals(tmp_path: Path) -> None:
+    """Known day-ahead prices must not delay fundamentals or appear as uncertain price forecasts."""
+    base, models, now = _base_and_models()
+    times = pd.to_datetime(base[TIMESTAMP], utc=True)
+    starts = {
+        "wind": now,
+        "solar": now + pd.Timedelta(hours=1),
+        "load": now + pd.Timedelta(hours=2),
+        "price": now + pd.Timedelta(hours=6),
+    }
+    for name, start in starts.items():
+        base.loc[(times >= now) & (times < start), REGISTRY[name].target_column] = 100.0
+    before = base.copy(deep=True)
+    out = propagate_members(
+        base, _member_weather(times[times >= now]), forward_from=now, models=models
+    )
+    summary = summarise_members(out)
+    for name, start in starts.items():
+        column = REGISTRY[name].forecast_column
+        assert out.loc[out[TIMESTAMP] < start, column].isna().all()
+        assert out.loc[out[TIMESTAMP] >= start, column].notna().all()
+        assert summary.loc[summary[f"{name}_mean"].notna(), TIMESTAMP].min() == start
+        assert summary.loc[summary[TIMESTAMP] < start, f"{name}_p10"].isna().all()
+    with connect_ensemble(tmp_path / "ens.db") as conn:
+        create_ensemble_schema(conn)
+        write_member_forecasts(conn, 1, out)
+        stored = read_member_forecasts(conn, 1)
+    assert stored.loc[stored[TIMESTAMP] < starts["price"], "price_forecast_eur_mwh"].isna().all()
+    pd.testing.assert_frame_equal(base, before)
+
+
 def test_different_members_produce_different_forecasts() -> None:
     """The whole point: member weather must actually move the predictions."""
     base, models, now = _base_and_models()
@@ -361,7 +393,6 @@ def _stub_forecast_env(
 ) -> tuple[Path, pd.Timestamp, dict[str, Any]]:
     """A trained, network-free forecast environment: DB, models, stubbed input fetch, temp output dir."""
     from eex_forecast import forecast as forecast_ops
-    from eex_forecast.db import write_frame
 
     now = pd.Timestamp.now(tz="UTC").floor("h")
     frame = make_timeseries(periods=24 * 45 + 1, start=now - pd.Timedelta(days=40))
@@ -529,11 +560,20 @@ def test_ensemble_csv_failure_still_returns_the_bands(
 def test_ensemble_bands_start_on_the_first_unsettled_hour(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Regression: forward_from was the last *settled* hour, so the bands began on a known price."""
+    """Price waits for its first unsettled hour while fundamentals start after their own actuals."""
     from eex_forecast.ensemble import pipeline as ensemble_pipeline
     from eex_forecast.forecast import run_forecast
 
     db_path, now, _ = _stub_forecast_env(tmp_path, monkeypatch)
+    write_frame(
+        db_path,
+        pd.DataFrame(
+            {
+                TIMESTAMP: pd.date_range(now, periods=12, freq="h", tz="UTC"),
+                "price_actual_eur_mwh": 100.0,
+            }
+        ),
+    )
 
     def fake_fetch(*, horizon_days: int) -> pd.DataFrame:
         # Members also cover the settled hours, so only forward_from decides where the bands start.
@@ -548,10 +588,14 @@ def test_ensemble_bands_start_on_the_first_unsettled_hour(
     result = run_forecast(str(db_path), horizon_days=3, history_days=30, ensemble=True)
 
     summary = pd.read_csv(tmp_path / "out" / "forecast_ensemble.csv")
-    first_band = pd.to_datetime(summary["timestamp"], utc=True).min()
+    band_times = pd.to_datetime(summary["timestamp"], utc=True)
+    first_band = band_times[summary["price_mean"].notna()].min()
     times = pd.to_datetime(result["timestamp"], utc=True)
     first_unsettled = times[result["price_actual_eur_mwh"].isna().to_numpy()].min()
     assert first_band == first_unsettled
+    first_wind = band_times[summary["wind_mean"].notna()].min()
+    assert first_wind == now
+    assert first_wind < first_band
 
 
 def test_ensemble_never_writes_to_the_production_database(
@@ -730,9 +774,7 @@ def test_ensemble_is_drawn_in_the_series_colour_and_told_apart_by_form() -> None
         labels = [str(line.get_label()) for line in ax.get_lines()]
         assert "ensemble mean" in labels
         mean_line = next(ln for ln in ax.get_lines() if ln.get_label() == "ensemble mean")
-        assert (
-            mean_line.get_linestyle() == "--"
-        )  # distinguishable from the solid deterministic line
+        assert mean_line.get_linestyle() == "--"
         assert mean_line.get_color() == "C0"
         band_labels = {str(c.get_label()) for c in ax.collections}
         assert band_labels == {"ensemble p10-p90", "ensemble p25-p75"}
@@ -904,7 +946,7 @@ def test_ensemble_csv_never_extends_past_the_deterministic_forecast(
 
 
 def test_ensemble_lives_in_its_own_plot() -> None:
-    """The headline price plot carries no bands or caption; the ensemble plot carries both, per panel."""
+    """The ensemble image needs only observations and member summaries, never deterministic outputs."""
     import io
 
     import matplotlib
@@ -951,11 +993,17 @@ def test_ensemble_lives_in_its_own_plot() -> None:
     assert not price_ax.collections  # no bands on the headline plot
 
     ensemble_axes = drawn_axes(
-        lambda: plot_ensemble(frame, times, now, io.BytesIO(), summary=summary)
+        lambda: plot_ensemble(
+            frame.drop(columns=list(FORECAST_COLUMNS), errors="ignore"),
+            times,
+            io.BytesIO(),
+            summary=summary,
+        )
     )
     assert len(ensemble_axes) == 4  # price, wind, solar, load
     assert ensemble_axes[0].get_title(loc="right") == SPREAD_CAPTION
     for ax in ensemble_axes:
+        assert {str(line.get_label()) for line in ax.get_lines()} == {"actual", "ensemble mean"}
         assert {str(c.get_label()) for c in ax.collections} == {
             "ensemble p10-p90",
             "ensemble p25-p75",

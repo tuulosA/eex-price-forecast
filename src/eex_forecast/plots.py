@@ -67,16 +67,8 @@ def _draw_ensemble(
     Two nested bands rather than one: the inner quartile band is where half the members sit, and the
     contrast between them shows whether the spread is a broad plateau or a tight core with tails.
 
-    Everything is drawn in ``color``, the panel's own series colour, rather than a dedicated ensemble
-    hue: the bands are translucent fills and the mean is dashed, so they stay distinct from the solid
-    deterministic line by form alone, and the plots need no colours beyond matplotlib's defaults.
-
-    The mean is drawn because the *gap* between it and the deterministic line is the most useful thing on
-    the plot - a deterministic run sitting near the edge of its own ensemble is a warning that the
-    published number is an atypical draw. The two genuinely differ (measured: ~10 EUR/MWh mean absolute
-    difference, rising past 25 at long lead times) and that difference is expected, not a defect. The
-    ensemble mean is nonetheless *not* the headline: averaging 51 nonlinear paths shaves peaks, so it is
-    drawn thinner and dashed, below the deterministic line's ``zorder``.
+    Everything uses the panel's series colour: translucent bands show dispersion and the dashed mean
+    shows the average member prediction. The deterministic forecast has its own separate images.
     """
     if summary is None or summary.empty:
         return False
@@ -244,17 +236,15 @@ def plot_fundamentals(frame: pd.DataFrame, times: pd.Series, path: object) -> ob
 def plot_ensemble(
     frame: pd.DataFrame,
     times: pd.Series,
-    split: pd.Timestamp,
     path: object,
     *,
     summary: pd.DataFrame,
 ) -> object:
     """Plot the weather-ensemble spread for price, wind, solar, and load, one panel each.
 
-    Each panel repeats its deterministic plot - the same actual and forecast series as
-    :func:`plot_forecast` / :func:`plot_fundamentals` - with that model's p10-p90 / p25-p75 bands and
-    ensemble mean behind it. Keeping the spread in its own image leaves the headline forecast plots
-    uncluttered and states plainly that this is an optional, secondary product.
+    Each panel shows measured history, the ensemble mean and p10-p90 / p25-p75 bands. No deterministic
+    predictions enter this image, so its forward extent follows the ensemble's actual coverage.
+    The separate price and fundamentals images retain the deterministic forecast.
 
     The top panel is captioned that only the weather varies between members: the bands exclude model
     error, outages, and demand shocks, so they are narrower than realised error and are not calibrated
@@ -269,15 +259,25 @@ def plot_ensemble(
 
     from eex_forecast.ensemble.summary import SPREAD_CAPTION
 
-    fig, axes = plt.subplots(1 + len(_FUNDAMENTAL_PANELS), 1, figsize=(12.0, 12.0), sharex=True)
-    _draw_ensemble(axes[0], summary, "price", color=PRICE_COLOR)
-    _draw_price(axes[0], frame, times, split, label="forecast (deterministic)")
-    for ax, panel in zip(axes[1:], _FUNDAMENTAL_PANELS, strict=True):
-        _draw_ensemble(ax, summary, panel[0], color=panel[4])
-        _draw_fundamental(ax, frame, times, panel, label="forecast (deterministic)")
-    for ax in axes:
+    panels = [
+        ("price", "price_actual_eur_mwh", "EUR / MWh", PRICE_COLOR),
+        *((name, actual, ylabel, color) for name, actual, _, ylabel, color in _FUNDAMENTAL_PANELS),
+    ]
+    fig, axes = plt.subplots(len(panels), 1, figsize=(12.0, 12.0), sharex=True)
+    for ax, (name, actual, ylabel, color) in zip(axes, panels, strict=True):
+        _draw_ensemble(ax, summary, name, color=color)
+        ax.plot(
+            times,
+            numeric_column(frame, actual),
+            color="black" if name == "price" else "0.45",
+            linewidth=1.4 if name == "price" else 1.0,
+            label="actual",
+            zorder=5,
+        )
+        ax.set_ylabel(ylabel)
+        ax.grid(True, color="0.92")
         ax.legend(loc="upper left", fontsize=8)
-    axes[0].set_title(f"DE weather ensemble: {HORIZON_DAYS}-day forecast", loc="left")
+    axes[0].set_title("DE weather ensemble forecast", loc="left")
     axes[0].set_title(SPREAD_CAPTION, loc="right", fontsize=7, color="0.4")
     axes[-1].set_xlabel("time (UTC)")
     fig.autofmt_xdate()

@@ -181,10 +181,11 @@ def propagate_members(
 ) -> pd.DataFrame:
     """Run the full chain for every member; returns frame[``member``, ``timestamp``, *forecast columns].
 
-    ``forward_from`` is the first genuinely forward hour - the first with no settled price, i.e. the hour
-    *after* the deterministic plot's hand-off point: rows before it are predicted (the price lag needs
-    them) but not returned. ``models`` is an injection seam for tests; production loads the persisted
-    artifacts.
+    ``forward_from`` is the earliest requested hour across the four targets. Each target also starts
+    strictly after its own last observation: day-ahead prices can already be settled for tomorrow while
+    wind, solar and load measurements end today. Earlier cells stay missing for that target, rather
+    than delaying every fundamental until the price boundary. ``models`` is an injection seam for
+    tests; production loads the persisted artifacts.
 
     Output is additionally clipped to the hours the member weather actually covers, **at both ends**, and
     to ``forward_until`` when given.
@@ -215,7 +216,20 @@ def propagate_members(
     if coverage is None:
         raise ValueError("No hour has complete ensemble weather for every member.")
     covered_start, covered_end = coverage
-    start = max(forward_from, covered_start)
+    base_times = pd.to_datetime(base[TIMESTAMP], utc=True)
+    starts: dict[str, pd.Timestamp] = {}
+    for name in _CHAIN:
+        target = REGISTRY[name].target_column
+        measured = (
+            pd.to_numeric(base[target], errors="coerce").notna()
+            if target in base
+            else pd.Series(False, index=base.index)
+        )
+        first_unknown = (
+            base_times[measured].max() + pd.Timedelta(hours=1) if measured.any() else forward_from
+        )
+        starts[name] = max(forward_from, first_unknown)
+    start = max(min(starts.values()), covered_start)
     end = covered_end
     if covered_end < pd.to_datetime(member_weather[TIMESTAMP], utc=True).max():
         logger.info(
@@ -244,6 +258,11 @@ def propagate_members(
         times = pd.to_datetime(frame[TIMESTAMP], utc=True)
         forward = frame[((times >= start) & (times <= end)).to_numpy()]
         out = forward[[TIMESTAMP, *FORECAST_COLUMNS]].copy()
+        for name in _CHAIN:
+            column = REGISTRY[name].forecast_column
+            out[column] = out[column].where(
+                pd.to_datetime(out[TIMESTAMP], utc=True) >= starts[name]
+            )
         out.insert(0, MEMBER_COLUMN, member)
         results.append(out.reset_index(drop=True))
 

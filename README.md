@@ -6,8 +6,10 @@ wind/solar/load fundamentals, and cross-border market drivers.
 
 ![Example German day-ahead price forecast](data/forecast/forecast.png)
 
-> Example output from `eex forecast --plot`. The committed image is a static snapshot and may lag the
-> latest code and data.
+![German price, wind, solar and load weather-ensemble forecasts](data/forecast/forecast_ensemble.png)
+
+> Example outputs from `eex forecast --ensemble --plot`. The committed images are static snapshots and
+> may lag the latest code and data.
 
 ## What it does
 
@@ -182,7 +184,8 @@ eex forecast --ensemble --plot
 
 This writes `forecast_ensemble.csv` (per-hour mean and p10/p25/p50/p75/p90 for wind, solar, load, and
 price) and, with `--plot`, `forecast_ensemble.png`: one panel each for price, wind, solar, and load, with
-the bands drawn behind the deterministic line. `forecast.png` stays deterministic-only and remains the
+actuals, ensemble means and shaded bands. Each series begins after its own last actual, subject to
+member-weather coverage. `forecast.png` stays deterministic-only and remains the
 headline forecast. Per-member predictions are stored in `data/eex_ensemble.db`; the raw member weather is
 archived to `data/eex_ensemble_weather.db` on a rolling 30-run window.
 
