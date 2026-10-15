@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast.analysis.plots import plot_shap
 from eex_forecast.analysis.shap import explain_model, feature_family, shap_window
@@ -53,7 +53,7 @@ def test_feature_family_groups_every_kind_of_feature(feature: str, family: str) 
 def test_shap_values_add_up_to_the_prediction_in_natural_units(name: str) -> None:
     """SHAP's defining property, kept through the MW conversion: base + values = prediction."""
     frame = make_timeseries(periods=24 * 40)
-    trained = train(REGISTRY[name], frame, params=TINY)
+    trained = train(REGISTRY[name], frame, params=NN_TINY if name == "price" else TINY)
     times = pd.to_datetime(frame["timestamp"], utc=True)
     start, end = times.iloc[24 * 10], times.iloc[-1]
 
@@ -69,6 +69,9 @@ def test_shap_values_add_up_to_the_prediction_in_natural_units(name: str) -> Non
     assert result.unit == ("MW" if name == "wind" else "EUR/MWh")
     assert result.start >= start and result.end < end
     assert result.family_importance().index[0] in set(map(feature_family, trained.feature_names))
+    assert result.method == ("Integrated gradients" if name == "price" else "TreeSHAP")
+    if name == "price":
+        assert result.max_additivity_error < 0.01
 
 
 def test_explain_model_refuses_an_empty_window() -> None:

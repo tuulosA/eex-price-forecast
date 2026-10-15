@@ -9,12 +9,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from tests.conftest import NN_TINY
 
 from eex_forecast.analysis.evaluation import (
     EVAL_HORIZON_DAYS,
     ORACLE_SCENARIOS,
     report_filename,
     run_evaluation,
+    run_evaluation_and_oracle,
     run_oracle_diagnostics,
     save_evaluation_report,
     save_oracle_report,
@@ -36,6 +38,7 @@ FAST_PARAMS = {
     }
     for name in ALL_MODELS
 }
+FAST_PARAMS["price"] = dict(NN_TINY)
 
 
 def _hourly_frame(start: str, end: str) -> pd.DataFrame:
@@ -227,7 +230,8 @@ def test_oracle_scenarios_are_matched_and_forecast_all_reproduces_eval(
     for result in oracle.scenarios:
         fold = result.folds[0]
         assert fold["test_rows"] == reference_fold["test_rows"]
-        assert fold["delta_mae"] == pytest.approx(fold["mae"] - reference_fold["mae"], abs=1e-4)
+        # Three independently rounded four-decimal terms can differ by up to 0.00015.
+        assert fold["delta_mae"] == pytest.approx(fold["mae"] - reference_fold["mae"], abs=1.5e-4)
     assert "[oracle] seed 1/1 | cutoff 1/1 2024-03-01 complete" in caplog.text
 
 
@@ -249,3 +253,27 @@ def test_run_evaluation_scores_a_dst_exact_delivery_day() -> None:
 def test_run_evaluation_rejects_zero_seeds() -> None:
     with pytest.raises(ValueError, match="seeds"):
         run_evaluation(pd.DataFrame(), seeds=0)
+
+
+def test_combined_eval_oracle_matches_standalone_reports_with_one_fit_per_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from eex_forecast.analysis import evaluation as operations
+
+    frame = _hourly_frame("2024-01-01", "2024-04-01")
+    cutoffs = CUTOFFS[:1]
+    reference = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
+    oracle_reference = run_oracle_diagnostics(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
+    original = operations._prepare_fold
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(args[2])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(operations, "_prepare_fold", counted)
+    result, oracle = run_evaluation_and_oracle(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
+    assert calls == list(cutoffs)
+    assert result.report == reference.report
+    assert oracle.report == oracle_reference.report
+    pd.testing.assert_frame_equal(result.hourly, reference.hourly)

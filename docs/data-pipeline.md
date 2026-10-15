@@ -1,5 +1,13 @@
 # Data pipeline and sources
 
+The model handoff is weather -> XGBoost wind/solar/load -> the operational DE price NN. Price uses
+the existing actual-or-forecast fundamental coalesce and regional drivers; timestamps and CSV/DB
+columns are unchanged. It returns raw hourly prices with no temporal output filter or peak scaler.
+PyTorch is required. Training writes numeric state and preprocessing to `data/models/price.npz`, with
+a backend/feature-order sidecar `price.meta.json`; legacy price trees are not loaded. Fundamentals
+retain native XGBoost JSON and their capacity/clipping/darkness contracts. Weather-ensemble members
+call this same saved NN after forecasting their own fundamentals, then aggregate member outputs.
+
 This guide documents how data enters `eex-price-forecast`, how timestamps and forecast horizons are
 handled, and why the cross-border features exist. See the [README](../README.md) for installation and
 routine commands, and [experimentation](experimentation.md) for evaluation methodology.

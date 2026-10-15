@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast.analysis.ablation import (
     feature_names,
@@ -17,14 +17,7 @@ from eex_forecast.analysis.ablation import (
 )
 from eex_forecast.model import REGISTRY
 
-TINY = {
-    "n_estimators": 15,
-    "max_depth": 3,
-    "objective": "reg:squarederror",
-    "tree_method": "hist",
-    "random_state": 0,
-    "n_jobs": 0,
-}
+TINY = dict(NN_TINY)
 
 # Cutoffs inside the synthetic 2024 frame (the frozen production set is 2025-26), scored at a 2-day horizon.
 CUTOFFS = ("2024-03-01", "2024-04-01")

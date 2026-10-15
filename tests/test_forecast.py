@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
@@ -57,7 +57,10 @@ def test_run_forecast_fills_fundamentals_then_price(
 
     # Train tiny models on the history, and serve them via TrainedModel.load.
     history = frame.loc[~future]
-    models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
+    models = {
+        name: train(REGISTRY[name], history, params=NN_TINY if name == "price" else TINY)
+        for name in ALL_MODELS
+    }
     # No network: stub the forward-looking input fetch (weather forecast + nuclear + NTC) entirely.
     monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -331,7 +334,10 @@ def test_history_days_defaults_to_the_config_value_and_governs_every_output(
     write_frame(db_path, frame)
 
     history = frame.loc[times < now]
-    models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
+    models = {
+        name: train(REGISTRY[name], history, params=NN_TINY if name == "price" else TINY)
+        for name in ALL_MODELS
+    }
     monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
     monkeypatch.setattr(
         forecast_ops.TrainedModel,

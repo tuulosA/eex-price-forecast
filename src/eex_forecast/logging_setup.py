@@ -74,7 +74,9 @@ def configure_logging(
         log_dir.mkdir(parents=True, exist_ok=True)
         prune_old_logs(log_dir, retention_days)
         log_path = log_dir / f"eex_{datetime.now():%Y-%m-%d_%H%M%S}.log"
-        file_handler = logging.FileHandler(log_path, encoding="utf-8")  # UTF-8: avoid Windows cp1252
+        file_handler = logging.FileHandler(
+            log_path, encoding="utf-8"
+        )  # UTF-8: avoid Windows cp1252
         file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
         root.addHandler(file_handler)
     except OSError:  # file logging is best-effort; the console handler still works

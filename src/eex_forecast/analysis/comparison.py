@@ -1,6 +1,6 @@
 """Comparing two model variants fairly: per-day errors and a day-level bootstrap.
 
-Every experiment here scores variants with the shared walk-forward engine over several XGBoost seeds.
+Every experiment here scores variants with the shared walk-forward engine over several model seeds.
 The seed spread only measures how much the model fit varies. Whether a difference would survive a
 different sample of days is usually the larger uncertainty, so each experiment also bootstraps the
 paired per-day difference over delivery days. These helpers are shared so every experiment reports

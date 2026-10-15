@@ -1,23 +1,25 @@
-"""A small price-only neural challenger, deliberately outside the operative model registry.
+"""The operational DE price network, fitted on the production price feature matrix.
 
-The network uses SiLU layers, AdamW,
-training-only feature/target scaling, and explicit missingness indicators. It consumes exactly the
+Two SiLU layers, AdamW and a fixed epoch count provide a continuous response to price drivers, with
+training-only feature/target scaling and explicit missingness indicators. It consumes exactly the
 production price feature matrix. In particular, missing weekly lags must remain distinguishable from
 ordinary prices after imputation. The shared training lag mask is applied before fitting preprocessing.
 
 The caller supplies an already train-only-winsorised target. Fixed epochs are a configuration choice,
 not selected by early stopping on the scored delivery day. Negative prices remain possible through a
 linear output. Numeric NPZ snapshots include preprocessing and feature order; loading never unpickles
-an object. Import this module only on the optional neural path so ordinary CLI use needs no PyTorch.
+an object. The shared estimator adapter supplies this same mapping to every operational price path.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, cast
 
 import numpy as np
@@ -36,13 +38,13 @@ SNAPSHOT_VERSION = 1
 
 @dataclass(frozen=True, slots=True)
 class NNParams:
-    """Fixed fit budget; the experiment varies these using development days only."""
+    """Fixed operational fit budget; tuning varies these on development days only."""
 
     hidden: int = 64
-    epochs: int = 60
+    epochs: int = 40
     batch_size: int = 512
-    learning_rate: float = 0.001
-    weight_decay: float = 0.0001
+    learning_rate: float = 0.0015317709628184257
+    weight_decay: float = 0.0000011527987128232402
     dropout: float = 0.0
     seed: int = 42
     threads: int = 4
@@ -105,7 +107,7 @@ def _network(width: int, params: NNParams) -> Any:
 
 @dataclass(slots=True)
 class TrainedPriceNN:
-    """One fitted seed; experiments average predictions, not per-seed error metrics."""
+    """One fitted price network with its exact preprocessing and feature order."""
 
     network: Any
     feature_names: list[str]
@@ -137,8 +139,8 @@ class TrainedPriceNN:
         """Reuse the production feature builder and natural-unit prediction contract."""
         return self.predict_features(price_features(frame))
 
-    def save(self, path: Path) -> None:
-        """Save all inference state without pickle; a snapshot never replaces an existing artifact."""
+    def save(self, path: Path, *, overwrite: bool = False) -> None:
+        """Save inference state without pickle; production replacements use an atomic numeric write."""
         metadata = {
             "schema_version": SNAPSHOT_VERSION,
             "feature_names": self.feature_names,
@@ -155,8 +157,19 @@ class TrainedPriceNN:
             "scale": self.scaling.scale,
             **{f"weight_{k}": v.detach().numpy() for k, v in self.network.state_dict().items()},
         }
-        with path.open("xb") as handle:
-            np.savez_compressed(handle, **arrays)
+        if not overwrite:
+            with path.open("xb") as handle:
+                np.savez_compressed(handle, **arrays)
+        else:
+            temporary: Path | None = None
+            try:
+                with NamedTemporaryFile(dir=path.parent, suffix=".npz", delete=False) as handle:
+                    temporary = Path(handle.name)
+                    np.savez_compressed(handle, **arrays)
+                os.replace(temporary, path)
+            finally:
+                if temporary is not None and temporary.exists():
+                    temporary.unlink()
 
     @classmethod
     def load(cls, path: Path) -> TrainedPriceNN:
@@ -207,7 +220,7 @@ def fit_price_nn(matrix: pd.DataFrame, target: pd.Series, params: NNParams) -> T
     try:
         torch.set_num_threads(params.threads)
         torch.use_deterministic_algorithms(True)
-        # Keep this optional experiment from changing another caller's RNG sequence.
+        # Preserve the caller's RNG sequence across deterministic neural fits.
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(params.seed)
             generator = torch.Generator().manual_seed(params.seed)
@@ -239,3 +252,76 @@ def fit_price_nn(matrix: pd.DataFrame, target: pd.Series, params: NNParams) -> T
     return TrainedPriceNN(
         network, list(matrix.columns), scaling, center, scale, params, history, elapsed
     )
+
+
+class NeuralPriceEstimator:
+    """Matrix adapter used by the common model factory and its persisted-state loader.
+
+    Imputation, scaling and missingness indicators live in the fitted network object, so forecasting,
+    weather-ensemble members and backtests cannot accidentally use different preprocessing. Prices
+    are returned directly: there is no temporal smoothing, peak scaling or output clipping.
+    """
+
+    def __init__(self, params: NNParams) -> None:
+        self.params = params
+        self._trained: TrainedPriceNN | None = None
+
+    @property
+    def trained(self) -> TrainedPriceNN:
+        if self._trained is None:
+            raise RuntimeError("Price network is not fitted.")
+        return self._trained
+
+    def fit(self, matrix: pd.DataFrame, target: pd.Series) -> NeuralPriceEstimator:
+        self._trained = fit_price_nn(matrix, target, self.params)
+        return self
+
+    def predict(self, matrix: pd.DataFrame) -> np.ndarray[Any, Any]:
+        return self.trained.predict_features(matrix).to_numpy()
+
+    def save_model(self, path: Path) -> None:
+        self.trained.save(path, overwrite=True)
+
+    @classmethod
+    def load(cls, path: Path) -> NeuralPriceEstimator:
+        trained = TrainedPriceNN.load(path)
+        estimator = cls(trained.params)
+        estimator._trained = trained
+        return estimator
+
+    def integrated_gradients(
+        self, matrix: pd.DataFrame, *, steps: int = 64, batch_size: int = 128
+    ) -> tuple[FloatArray, float, float]:
+        """Explain raw prices relative to training-mean inputs with all missingness flags cleared.
+
+        Physical-value and missingness contributions are combined per original feature. Gauss-Legendre
+        integration follows the complete path through the fitted network, not a surrogate. The returned
+        maximum completeness residual makes numerical approximation visible instead of redistributing
+        it across features. This explains associations, not causal effects or forecast uncertainty.
+        """
+        if steps < 2 or batch_size < 1:
+            raise ValueError("Use at least two integration points and a positive batch size.")
+        fitted = self.trained
+        raw = matrix.reindex(columns=fitted.feature_names).to_numpy(dtype=float)
+        values = fitted.scaling.transform(raw)
+        nodes, weights = np.polynomial.legendre.leggauss(steps)  # type: ignore[no-untyped-call]
+        nodes = torch.tensor((nodes + 1) / 2, dtype=torch.float32)
+        weights = torch.tensor(weights / 2, dtype=torch.float32)
+        network = fitted.network
+        with torch.no_grad():
+            base = float(network(torch.zeros((1, values.shape[1])))[0, 0])
+        chunks = []
+        for start in range(0, len(values), batch_size):
+            current = torch.from_numpy(values[start : start + batch_size])
+            path = (current[:, None, :] * nodes[None, :, None]).reshape(-1, values.shape[1])
+            path.requires_grad_(True)
+            gradient = torch.autograd.grad(network(path).sum(), path)[0]
+            gradient = gradient.reshape(len(current), steps, -1)
+            attribution = current * (gradient * weights[None, :, None]).sum(dim=1)
+            chunks.append(attribution.detach().numpy())
+        combined = np.concatenate(chunks).astype(float) * fitted.target_scale
+        width = len(fitted.feature_names)
+        contributions = combined[:, :width] + combined[:, width:]
+        base_value = base * fitted.target_scale + fitted.target_center
+        error = self.predict(matrix) - (contributions.sum(axis=1) + base_value)
+        return contributions, base_value, float(np.abs(error).max())

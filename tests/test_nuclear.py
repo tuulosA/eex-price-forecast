@@ -15,7 +15,9 @@ from eex_forecast.sources.nuclear import (
 )
 
 
-def _outage(mrid: str, revision: int, unit: str, nominal: float, start: str, end: str, avail: float):
+def _outage(
+    mrid: str, revision: int, unit: str, nominal: float, start: str, end: str, avail: float
+):
     return {
         "mrid": mrid,
         "revision": revision,
@@ -55,7 +57,9 @@ def test_hourly_unavailable_takes_min_available_across_points() -> None:
     outages = pd.DataFrame(
         [
             _outage("m1", 1, "u1", 1000, "2025-01-01 01:00", "2025-01-01 03:00", 500),
-            _outage("m2", 1, "u1", 1000, "2025-01-01 02:00", "2025-01-01 03:00", 200),  # more restrictive
+            _outage(
+                "m2", 1, "u1", 1000, "2025-01-01 02:00", "2025-01-01 03:00", 200
+            ),  # more restrictive
         ]
     )
     # 01:00 only first outage (avail 500 -> 500 out); 02:00 both, min avail 200 -> 800 out.
@@ -82,9 +86,7 @@ def test_yearly_to_hourly_forward_fills() -> None:
     yearly = pd.Series(
         [60000.0, 61000.0], index=pd.to_datetime(["2024-01-01", "2025-01-01"], utc=True)
     )
-    hours = pd.to_datetime(
-        ["2024-06-01 00:00", "2025-03-01 00:00"], utc=True
-    )  # one in each year
+    hours = pd.to_datetime(["2024-06-01 00:00", "2025-03-01 00:00"], utc=True)  # one in each year
     out = yearly_to_hourly(yearly, pd.DatetimeIndex(hours))
     assert out.tolist() == [60000.0, 61000.0]
 

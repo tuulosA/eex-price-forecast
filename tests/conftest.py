@@ -10,6 +10,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
+NN_TINY = {
+    "hidden": 8,
+    "epochs": 2,
+    "batch_size": 256,
+    "learning_rate": 0.001,
+    "weight_decay": 0.0001,
+    "dropout": 0.0,
+    "seed": 42,
+    "threads": 1,
+}
+
 
 @pytest.fixture(autouse=True)
 def _isolated_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:

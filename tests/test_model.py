@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
+from tests.conftest import NN_TINY
 
 from eex_forecast import model as model_ops
 from eex_forecast.model import (
@@ -101,13 +102,49 @@ def test_serve_unavailable_lag_mask_is_noop_within_a_week_or_without_column() ->
 
 
 def test_save_load_round_trip(timeseries_frame: pd.DataFrame, tmp_path: Path) -> None:
-    trained = train(REGISTRY["price"], timeseries_frame, params=TINY)
+    trained = train(REGISTRY["price"], timeseries_frame, params=NN_TINY)
     trained.save(tmp_path)
     loaded = TrainedModel.load(REGISTRY["price"], tmp_path)
     assert loaded.feature_names == trained.feature_names
     pd.testing.assert_series_equal(
         loaded.predict(timeseries_frame), trained.predict(timeseries_frame)
     )
+
+
+def test_price_is_neural_and_never_loads_a_legacy_tree(tmp_path: Path) -> None:
+    assert REGISTRY["price"].backend == "neural"
+    assert all(REGISTRY[name].backend == "xgboost" for name in ("wind", "solar", "load"))
+    (tmp_path / "price.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="Legacy price trees are not loaded"):
+        TrainedModel.load(REGISTRY["price"], tmp_path)
+    with pytest.raises(TypeError):
+        model_ops.make_estimator(REGISTRY["price"], TINY)
+    with pytest.raises(ValueError, match="require the neural"):
+        replace(REGISTRY["price"], backend="xgboost")
+
+
+def test_neural_artifact_overwrite_and_feature_sidecar_validation(
+    timeseries_frame: pd.DataFrame, tmp_path: Path
+) -> None:
+    import json
+
+    trained = train(REGISTRY["price"], timeseries_frame, params=NN_TINY)
+    assert len(trained.booster.trained.history) == NN_TINY["epochs"]
+    path = trained.save(tmp_path)
+    assert path.name == "price.npz"
+    trained.save(tmp_path)  # Routine retraining must atomically replace the previous numeric state.
+    loaded = TrainedModel.load(REGISTRY["price"], tmp_path)
+    matrix = loaded.spec.build_features(timeseries_frame)
+    expected = loaded.booster.predict(matrix)
+    np.testing.assert_allclose(
+        loaded.booster.predict(matrix.iloc[[100]]), expected[[100]], atol=1e-5
+    )
+    meta = tmp_path / "price.meta.json"
+    payload = json.loads(meta.read_text(encoding="utf-8"))
+    payload["feature_names"] = payload["feature_names"][::-1]
+    meta.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="sidecar differs"):
+        TrainedModel.load(REGISTRY["price"], tmp_path)
 
 
 def test_load_missing_model_raises(tmp_path: Path) -> None:
@@ -121,7 +158,7 @@ def test_params_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     merged = load_params("wind")
     assert merged["max_depth"] == 9 and merged["n_estimators"] == 700
     assert "objective" in merged  # defaults are still merged in
-    assert load_params("price")["max_depth"] == model_ops.DEFAULT_PARAMS["max_depth"]  # untouched
+    assert load_params("price")["epochs"] == 40  # neural defaults stay independent of trees
 
 
 def test_capacity_scaled_target_is_a_fraction(timeseries_frame: pd.DataFrame) -> None:

@@ -38,7 +38,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from xgboost import XGBRegressor
 
 from eex_forecast.backtest_cutoffs import (
     CUTOFF_SETS,
@@ -59,6 +58,8 @@ from eex_forecast.model import (
     apply_train_nan_lag_mask,
     capacity_scaled,
     load_params,
+    make_estimator,
+    seeded_params,
 )
 from eex_forecast.tuning import seed_list
 
@@ -168,7 +169,7 @@ def _fit_before(
 
     matrix = spec.build_features(frame)
     x_train = apply_train_nan_lag_mask(matrix.loc[train])
-    booster = XGBRegressor(**params)
+    booster = make_estimator(spec, params)
     booster.fit(x_train, y_train)
     return TrainedModel(spec, booster, list(matrix.columns))
 
@@ -325,7 +326,7 @@ def _evaluate_seed(
     seed_number: int,
     n_seeds: int,
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame]:
-    """Run every cutoff for one common XGBoost seed; aggregate each model's folds and hourly rows."""
+    """Run every cutoff for one common model seed; aggregate each model's folds and hourly rows."""
     folds_by_model: dict[str, list[dict[str, Any]]] = {name: [] for name in ALL_MODELS}
     hourly: list[pd.DataFrame] = []
     for cutoff_number, delivery_day in enumerate(cutoffs, start=1):
@@ -378,6 +379,13 @@ def _oracle_fold(
     if prepared is None:
         return None
 
+    return _oracle_prepared(prepared, frame, delivery_day)
+
+
+def _oracle_prepared(
+    prepared: _PreparedFold, frame: pd.DataFrame, delivery_day: str
+) -> dict[str, dict[str, Any]] | None:
+    """Reuse one fitted chain for every substitution; the held-out rows remain identical."""
     # Oracle comparisons need every fundamental actual on every scored row. Otherwise all-actual would
     # silently coalesce a missing measurement to forecast and scenarios would no longer differ only by the
     # declared substitution.
@@ -504,12 +512,12 @@ def run_evaluation(
     by_seed: list[dict[str, dict[str, Any]]] = []
     first_hourly: pd.DataFrame | None = None
     for index, seed in enumerate(seed_values):
-        seeded_params = {
-            name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
+        parameters = {
+            name: seeded_params(REGISTRY[name], resolved_params[name], seed) for name in ALL_MODELS
         }
         evaluated, hourly = _evaluate_seed(
             frame,
-            seeded_params,
+            parameters,
             cutoffs,
             seed_number=index + 1,
             n_seeds=len(seed_values),
@@ -525,6 +533,18 @@ def run_evaluation(
                 *(evaluated[name]["mean_mae"] for name in ALL_MODELS),
             )
 
+    assert first_hourly is not None
+    return _evaluation_result(by_seed, first_hourly, seed_values, cutoffs, cutoff_set)
+
+
+def _evaluation_result(
+    by_seed: list[dict[str, dict[str, Any]]],
+    first_hourly: pd.DataFrame,
+    seed_values: list[int],
+    cutoffs: tuple[str, ...],
+    cutoff_set: str,
+) -> EvaluationResult:
+    """One report builder for standalone evaluation and the shared eval/oracle run."""
     multiple_seeds = len(seed_values) > 1
     results: list[ModelEval] = []
     for name in ALL_MODELS:
@@ -568,6 +588,7 @@ def run_evaluation(
         },
         "config": {
             "cutoff_set": cutoff_set,
+            "model_backends": {name: REGISTRY[name].backend for name in ALL_MODELS},
             "seeds": seed_values,
             "n_cutoffs": len(cutoffs),
             "cutoffs": list(cutoffs),
@@ -620,12 +641,12 @@ def run_oracle_diagnostics(
 
     by_seed: list[dict[str, dict[str, Any]]] = []
     for index, seed in enumerate(seed_values):
-        seeded_params = {
-            name: {**resolved_params[name], "random_state": int(seed)} for name in ALL_MODELS
+        parameters = {
+            name: seeded_params(REGISTRY[name], resolved_params[name], seed) for name in ALL_MODELS
         }
         evaluated = _evaluate_oracle_seed(
             frame,
-            seeded_params,
+            parameters,
             cutoffs,
             seed_number=index + 1,
             n_seeds=len(seed_values),
@@ -641,6 +662,16 @@ def run_oracle_diagnostics(
                 *(evaluated[name]["mean_delta_mae"] for name in tuple(ORACLE_SCENARIOS)[1:]),
             )
 
+    return _oracle_result(by_seed, seed_values, cutoffs, cutoff_set)
+
+
+def _oracle_result(
+    by_seed: list[dict[str, dict[str, Any]]],
+    seed_values: list[int],
+    cutoffs: tuple[str, ...],
+    cutoff_set: str,
+) -> OracleResult:
+    """Aggregate the same matched scenario metrics regardless of how their folds were scheduled."""
     multiple_seeds = len(seed_values) > 1
     results: list[OracleScenarioEval] = []
     for scenario, forecast_fundamentals in ORACLE_SCENARIOS.items():
@@ -698,6 +729,7 @@ def run_oracle_diagnostics(
         },
         "config": {
             "cutoff_set": cutoff_set,
+            "model_backends": {name: REGISTRY[name].backend for name in ALL_MODELS},
             "seeds": seed_values,
             "n_cutoffs": len(cutoffs),
             "cutoffs": list(cutoffs),
@@ -722,6 +754,94 @@ def run_oracle_diagnostics(
         ],
     }
     return OracleResult(results, report)
+
+
+def run_evaluation_and_oracle(
+    frame: pd.DataFrame,
+    *,
+    params_by_model: dict[str, dict[str, Any]] | None = None,
+    seeds: int = 1,
+    cutoff_set: str = DEVELOPMENT,
+    cutoffs: tuple[str, ...] | None = None,
+) -> tuple[EvaluationResult, OracleResult]:
+    """Fit each chain once for eval and oracle, keeping the standalone reports' exact semantics.
+
+    The expensive upstream fits and radiation-aware feature construction are common to both reports.
+    Sharing one prepared fold avoids refitting an identical chain merely to change held-out price
+    inputs. Nothing is cached across runs or configuration changes, and no holdout choice is made here.
+    """
+    days = _resolve_cutoffs(cutoff_set, cutoffs)
+    seed_values = seed_list(seeds)
+    resolved = _resolve_params(params_by_model)
+    by_seed = []
+    oracle_by_seed = []
+    first_hourly: pd.DataFrame | None = None
+    for seed in seed_values:
+        parameters = {
+            name: seeded_params(REGISTRY[name], resolved[name], seed) for name in ALL_MODELS
+        }
+        model_folds: dict[str, list[dict[str, Any]]] = {name: [] for name in ALL_MODELS}
+        scenario_folds: dict[str, list[dict[str, Any]]] = {name: [] for name in ORACLE_SCENARIOS}
+        hourly = []
+        for index, day in enumerate(days, 1):
+            prepared = _prepare_fold(frame, parameters, day)
+            if prepared is None:
+                logger.warning("[eval+oracle] unusable fold %s", day)
+                continue
+            prediction = _price_scenario_prediction(prepared, SUBMODELS)
+            price = _fold_error(
+                REGISTRY["price"], frame, prepared.times, prepared.window, prediction, day
+            )
+            if price is None:
+                continue
+            scores = {**prepared.fundamental_metrics, "price": price}
+            for name in ALL_MODELS:
+                model_folds[name].append(scores[name])
+            hourly.append(_fold_hourly(prepared, frame, prediction, day))
+            scenarios = _oracle_prepared(prepared, frame, day)
+            if scenarios is not None:
+                for name in ORACLE_SCENARIOS:
+                    scenario_folds[name].append(scenarios[name])
+            logger.info(
+                "[eval+oracle] %s seed=%d fold=%d/%d %s price MAE %.3f",
+                cutoff_set,
+                seed,
+                index,
+                len(days),
+                day,
+                price["mae"],
+            )
+        if not hourly or any(not folds for folds in scenario_folds.values()):
+            raise ValueError("No usable matched evaluation/oracle folds.")
+        by_seed.append(
+            {
+                name: {
+                    "mean_mae": float(np.mean([fold["mae"] for fold in folds])),
+                    "mean_rmse": float(np.mean([fold["rmse"] for fold in folds])),
+                    "folds": folds,
+                }
+                for name, folds in model_folds.items()
+            }
+        )
+        oracle_by_seed.append(
+            {
+                name: {
+                    "mean_mae": float(np.mean([fold["mae"] for fold in folds])),
+                    "mean_rmse": float(np.mean([fold["rmse"] for fold in folds])),
+                    "mean_delta_mae": float(np.mean([fold["delta_mae"] for fold in folds])),
+                    "mean_delta_rmse": float(np.mean([fold["delta_rmse"] for fold in folds])),
+                    "folds": folds,
+                }
+                for name, folds in scenario_folds.items()
+            }
+        )
+        if first_hourly is None:
+            first_hourly = pd.concat(hourly, ignore_index=True)
+    assert first_hourly is not None
+    return (
+        _evaluation_result(by_seed, first_hourly, seed_values, days, cutoff_set),
+        _oracle_result(oracle_by_seed, seed_values, days, cutoff_set),
+    )
 
 
 def _resolve_cutoffs(cutoff_set: str, cutoffs: tuple[str, ...] | None) -> tuple[str, ...]:

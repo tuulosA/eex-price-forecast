@@ -32,7 +32,9 @@ def test_blend_carries_the_last_week_ahead_value_over_the_far_horizon() -> None:
     week = pd.Series(  # week-ahead published for days 2-3 only
         [1200.0, 1100.0], index=pd.to_datetime(["2025-01-02", "2025-01-03"], utc=True)
     )
-    month = pd.Series([1000.0], index=pd.to_datetime(["2025-01-01"], utc=True))  # flat over the month
+    month = pd.Series(
+        [1000.0], index=pd.to_datetime(["2025-01-01"], utc=True)
+    )  # flat over the month
     out = pd.Series(blend_week_over_month(week, month, hours), index=hours)
     assert out["2025-01-01 12:00"] == 1000.0  # before any week-ahead -> month-ahead fills
     assert out["2025-01-02 12:00"] == 1200.0  # week-ahead

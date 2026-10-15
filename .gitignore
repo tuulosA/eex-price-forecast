@@ -47,6 +47,9 @@ data/**
 !data/analysis/neighbour_anchor_experiment.json
 !data/analysis/residual_load_experiment.json
 !data/analysis/price_model_experiment_summary.json
+!data/analysis/price_profile_experiment_summary.json
+!data/analysis/price_nn_operational_validation.json
+!data/history/pre_nn_20261015/**/*.json
 data/pytest_tmp/
 
 # OS / editor
@@ -56,3 +59,6 @@ data/pytest_tmp/
 
 # Timestamped per-run CLI logs (see eex_forecast.logging_setup)
 logs/
+
+# Local analysis notebooks
+notebooks/

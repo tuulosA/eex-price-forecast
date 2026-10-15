@@ -1,26 +1,16 @@
-"""Global SHAP explanations of the production models: what each one relies on, in natural units.
+"""Attribution of saved production models in their natural output units.
 
-SHAP attributes every prediction to its features: for each row, the per-feature values plus a common
-base value sum exactly to the model's output. Averaging their magnitude over many rows gives a global
-importance that, unlike XGBoost's split-count or gain importance, is in the target's own units and
-accounts for interactions consistently. No extra dependency is needed: XGBoost computes exact TreeSHAP
-itself (``pred_contribs=True``).
+Fundamentals use XGBoost's exact TreeSHAP. Price uses integrated gradients through its saved neural
+network, relative to training-mean standardized inputs with missingness flags cleared. Contributions
+from an input's value and its missingness indicator are combined, so each displayed column retains
+its physical meaning. Quadrature error is measured and logged rather than hidden in a residual term.
+These neural attributions are not SHAP values; the plotting library only renders their bar/beeswarm.
 
-Three choices shape what the numbers mean:
-
-- **The production models are explained**, loaded from ``data/models`` - the artifacts ``eex model
-  train`` ships - rather than refitted, so the answer describes what actually forecasts.
-- **They are explained on recent history** (``days``, default one year) with measured fundamentals,
-  which is how the price model is trained. At serve time the far horizon has no 168 h price lag, so the
-  lag's importance here describes the first week of the horizon, not all of it.
-- **Wind and solar values are converted to MW.** Those models learn a capacity factor, and SHAP is
-  additive in the model's output, so multiplying each row's values by that row's installed capacity
-  keeps the decomposition exact in MW. The non-negative clip and the solar-darkness override in
-  ``model.postprocess_predictions`` are not additive and are not part of the explanation.
-
-Features are also summed into **families** (:func:`feature_family`). Additivity makes this exact, and it
-is what makes the wind and solar models readable: forty wind-point columns are one "wind speed" story,
-not forty near-identical bars.
+Features are built over the complete read window before slicing, retaining weekly-lag and radiation
+alignment. Recent historical rows use measured fundamentals. Their lag contributions describe the
+available-lag regime, not the second forecast week. Wind/solar attributions are capacity-scaled to MW;
+physical clamps and the solar-darkness override are outside the additive explanation. Feature-family
+sums preserve the original contributions. Associations in these figures do not establish causes.
 """
 
 from __future__ import annotations
@@ -78,7 +68,7 @@ _GEOMETRY = frozenset(solar_geometry_features(_PROBE).columns) | frozenset(
 
 
 def feature_family(feature: str) -> str:
-    """The family a model feature belongs to, for summing SHAP values into readable groups.
+    """The family a feature belongs to, for summing attributions into readable groups.
 
     Fundamentals are matched first because the price model's ``wind`` must not fall into a weather
     role. Weather features match by role name (the price model's means and solar's statistics, e.g.
@@ -113,11 +103,12 @@ def feature_family(feature: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ShapResult:
-    """SHAP values for one model over a window, in the model's natural unit.
+    """Attributions for one model over a window, in the model's natural unit.
 
     ``values`` and ``features`` share an index (one row per explained hour) and the model's training
     feature order as columns. ``base_value`` is the mean of the per-row base terms, so for any row
-    ``base`` + its ``values`` reproduce the model's (pre-post-processing) output in natural units.
+    ``base`` + its ``values`` reproduce the pre-post-processing output, up to numerical integration
+    error for the NN. ``max_additivity_error`` records that residual rather than hiding it.
     """
 
     model: str
@@ -127,21 +118,23 @@ class ShapResult:
     base_value: float
     start: pd.Timestamp
     end: pd.Timestamp
+    method: str = "TreeSHAP"
+    max_additivity_error: float = 0.0
 
     def family_importance(self) -> pd.Series:
-        """Mean |SHAP| per family, largest first. Values are summed within a row before ``abs``."""
+        """Mean absolute attribution per family, summing each row before taking ``abs``."""
         by_family = self.values.T.groupby(feature_family).sum().T
         return by_family.abs().mean().sort_values(ascending=False)
 
     def feature_importance(self) -> pd.Series:
-        """Mean |SHAP| per individual feature, largest first."""
+        """Mean absolute attribution per individual feature, largest first."""
         return self.values.abs().mean().sort_values(ascending=False)
 
 
 def explain_model(
     trained: TrainedModel, frame: pd.DataFrame, *, start: pd.Timestamp, end: pd.Timestamp
 ) -> ShapResult:
-    """Exact TreeSHAP for ``trained`` on the rows of ``frame`` in ``[start, end)`` with a target.
+    """Explain target-bearing rows in ``[start, end)`` using the estimator's attribution method.
 
     Features are built over the whole ``frame`` first and sliced afterwards, so timestamp lookups
     such as the price lag see the history before ``start``.
@@ -156,11 +149,29 @@ def explain_model(
         raise ValueError(f"No '{spec.target_column}' rows between {start} and {end} to explain.")
 
     window = matrix[rows]
-    contributions = trained.booster.get_booster().predict(
-        xgb.DMatrix(window, missing=np.nan), pred_contribs=True
-    )
-    values = pd.DataFrame(contributions[:, :-1], index=window.index, columns=window.columns)
-    base = pd.Series(contributions[:, -1], index=window.index)
+    if spec.backend == "neural":
+        from eex_forecast.price_nn import NeuralPriceEstimator
+
+        if not isinstance(trained.booster, NeuralPriceEstimator):
+            raise TypeError("Neural specification requires a neural estimator.")
+        attribution, baseline, error = trained.booster.integrated_gradients(window)
+        if error > 0.01:
+            attribution, baseline, error = trained.booster.integrated_gradients(window, steps=128)
+        values = pd.DataFrame(attribution, index=window.index, columns=window.columns)
+        base = pd.Series(baseline, index=window.index)
+        method = "Integrated gradients"
+        logger.info("[attribution] price: max completeness residual %.6f EUR/MWh", error)
+    else:
+        from xgboost import XGBRegressor
+
+        if not isinstance(trained.booster, XGBRegressor):
+            raise TypeError("Tree specification requires an XGBoost estimator.")
+        contributions = trained.booster.get_booster().predict(
+            xgb.DMatrix(window, missing=np.nan), pred_contribs=True
+        )
+        values = pd.DataFrame(contributions[:, :-1], index=window.index, columns=window.columns)
+        base = pd.Series(contributions[:, -1], index=window.index)
+        method, error = "TreeSHAP", 0.0
     capacity = capacity_for(spec, frame)
     if capacity is not None:  # capacity factor -> MW, row by row, keeping the sum exact
         scale = pd.to_numeric(capacity[rows], errors="coerce").to_numpy()
@@ -175,6 +186,8 @@ def explain_model(
         base_value=float(base.mean()),
         start=times[rows].min(),
         end=times[rows].max(),
+        method=method,
+        max_additivity_error=error,
     )
 
 

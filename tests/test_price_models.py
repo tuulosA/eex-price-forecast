@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+from tests.conftest import NN_TINY
 from typer.testing import CliRunner
 
 pytest.importorskip("torch")
@@ -18,12 +18,12 @@ from eex_forecast.analysis.evaluation import _pipeline_fold
 from eex_forecast.backtest_cutoffs import cutoff_utc
 from eex_forecast.cli import app
 from eex_forecast.model import ALL_MODELS
-from eex_forecast.price_nn import NNParams
 
 FAST_PARAMS = {
     name: {"n_estimators": 2, "max_depth": 2, "n_jobs": 1, "random_state": 42}
     for name in ALL_MODELS
 }
+FAST_PARAMS["price"] = dict(NN_TINY)
 
 
 @pytest.mark.parametrize("day,hours", [("2024-03-01", 24), ("2024-03-31", 23)])
@@ -92,36 +92,11 @@ def test_freeze_reads_source_and_rejects_config_or_snapshot_changes(
         price_models.freeze_run(source, run, 12)
 
 
-def test_screen_has_checkpointed_finite_outputs_and_cannot_pass_adoption(
-    tmp_path: Path, timeseries_frame: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    manifest = {"params_by_model": FAST_PARAMS}
-    result = price_models.evaluate_candidate(
-        tmp_path,
-        timeseries_frame,
-        manifest,
-        NNParams(epochs=2, hidden=8),
-        ("2024-03-01",),
-        (42,),
-        "screen",
-    )
-    assert result["gate"]["eligible"] is False
-    assert result["gate"]["passed"] is False
-    assert result["summary"]["nn"]["mae"] > 0
-    report_file = tmp_path / "candidates" / result["identity"] / "report.json"
-    expected = json.loads(report_file.read_text(encoding="utf-8"))
-    monkeypatch.setattr(price_models, "fit_price_nn", lambda *args: pytest.fail("refit"))
-    report_file.unlink()  # Interrupted reporting still reuses per-day trained predictions.
-    resumed = price_models.evaluate_candidate(
-        tmp_path,
-        timeseries_frame,
-        manifest,
-        NNParams(epochs=2, hidden=8),
-        ("2024-03-01",),
-        (42,),
-        "screen",
-    )
-    assert resumed == expected
+def test_retired_challenger_cannot_create_a_run(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    with pytest.raises(ValueError, match="retired"):
+        price_models.run_experiment(tmp_path / "missing.db", run_id="run", root=tmp_path)
+    assert not run.exists()
 
 
 def test_errors_of_seed_mean_are_not_mean_seed_errors() -> None:
@@ -155,21 +130,8 @@ def test_no_holdout_or_path_escape_can_create_a_run(tmp_path: Path) -> None:
             )
 
 
-def test_cli_exposes_development_stages_without_holdout_or_cutoff_options(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_historical_price_challenger_command_is_retired() -> None:
     runner = CliRunner()
-    help_result = runner.invoke(app, ["analyze", "price-models", "--help"])
-    assert help_result.exit_code == 0
-    assert "--holdout" not in help_result.stdout
-    assert "--cutoffs" not in help_result.stdout
-    monkeypatch.setattr(
-        price_models,
-        "run_experiment",
-        lambda *args, **kwargs: (tmp_path / "search.json", {"finalists": []}),
-    )
-    result = runner.invoke(
-        app, ["analyze", "price-models", "--run-id", "test", "--stage", "search"]
-    )
-    assert result.exit_code == 0, result.exception
-    assert "Frozen 0 finalist" in result.stdout
+    result = runner.invoke(app, ["analyze", "--help"])
+    assert result.exit_code == 0
+    assert "price-models" not in result.stdout

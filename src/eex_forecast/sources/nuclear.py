@@ -55,9 +55,7 @@ def latest_revision(outages: pd.DataFrame) -> pd.DataFrame:
     return kept
 
 
-def hourly_unavailable(
-    outages: pd.DataFrame, hours: pd.DatetimeIndex
-) -> npt.NDArray[np.float64]:
+def hourly_unavailable(outages: pd.DataFrame, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
     """Unavailable nuclear MW on ``hours``, summed over the zone's units (0 where nothing is out).
 
     Per unit, the available capacity at an hour is the **minimum** across its overlapping outage points

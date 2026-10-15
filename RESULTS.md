@@ -1,238 +1,186 @@
 # Results explained
 
-This page walks through the figures that show **how well the forecast works** and **what it bases
-its predictions on**. It assumes no background in machine learning or electricity markets.
+Updated **15 October 2026** for the operational neural price model.
 
-The project forecasts the German electricity price for each hour of the coming days. It does this in
-two steps. First, three models forecast how much electricity German **wind** turbines and **solar**
-panels will produce and how much electricity the country will use (the **load**). Then a fourth
-model uses those three forecasts, together with weather and market information, to forecast the
-**price**.
+The project first forecasts German wind generation, solar generation and electricity use (load).
+A single-area neural network then predicts the German day-ahead price using those fundamentals,
+calendar, weather and market drivers. The three fundamental models remain XGBoost.
 
-## A few terms first
+The price curves shown here are direct hourly NN predictions. Their continuity comes from the
+network's learned response to inputs; no moving average or other output smoothing is applied.
+Smoothness and accuracy are separate properties: the adoption study measured a smoother profile
+alongside a higher price MAE. Its matched comparison is in the
+[model development record](docs/model-development.md#adoption-evidence-and-trade-off).
 
-| Term | Meaning |
-|---|---|
-| **Day-ahead price** | Electricity for each hour of tomorrow is traded in an auction today. Its result, in euros per megawatt-hour (**EUR/MWh**), is the price this project forecasts. |
-| **MW / GW** | Megawatt / gigawatt: a rate of electricity production or use. 1 GW = 1,000 MW. Germany uses roughly 35-80 GW. |
-| **Negative prices** | When far more power is produced than needed (typically sunny, windy holidays), producers can end up paying to deliver, and the price drops below zero. |
-| **D+1** | The next delivery day: the day immediately after the forecast is made. |
-| **MAE** | Mean absolute error: the average size of the forecast's miss, ignoring whether it was too high or too low. Lower is better. An MAE of 25 EUR/MWh means the forecast is off by 25 EUR/MWh in a typical hour. |
-| **Holdout days** | 18 days from January to September 2026 that were kept aside and never used to tune or choose anything in the model. Scores on them are an honest test, like an exam the model never saw. |
+## Reading the evaluation
 
-## Part 1 - How good are the forecasts?
+The figures below show **18 holdout delivery days from January to September 2026**, using seed 42.
+For each day, every model trains on preceding data. The held-out wind, solar and load actuals are
+hidden from the price model, which receives that fold's fresh fundamental forecasts. These holdout
+results report the already adopted configuration; they did not select it.
 
-Each figure in this part shows the 18 holdout days, one small chart per day. For each day the model
-was trained only on data from *before* that day, then asked to forecast it - just as it would be in
-real use.
+The black curve is actual and the coloured curve is forecast. The horizontal axis is German local
+time. Each panel has its own vertical scale, so compare the pattern within a day before comparing
+heights between panels. All scored days here have 24 hours.
 
-**How to read these charts.** The **black line** is what actually happened; the **coloured line** is
-the forecast. The horizontal axis is the hour of the day (0 = midnight, 12 = noon, German time). The
-title gives the date and that day's MAE. Each chart has **its own vertical scale**, because days
-differ enormously: a calm winter day might vary by 60 EUR/MWh, a spring holiday by 600. So compare
-the *shapes* between charts, not the heights.
+**MAE** is the average absolute miss. **RMSE** gives more weight to large misses. MW measures power;
+1,000 MW is 1 GW. EUR/MWh is the electricity price. Neither score measures visual smoothness.
+
+| Model | Holdout MAE | Holdout RMSE |
+|---|---:|---:|
+| Price | 27.22 EUR/MWh | 41.67 EUR/MWh |
+| Wind | 1,793.42 MW | 2,179.38 MW |
+| Solar | 817.07 MW | 1,423.09 MW |
+| Load | 2,018.92 MW | 2,304.68 MW |
+
+Source: [holdout report](data/evaluation/model_eval_holdout.json). These are single-seed point
+estimates. The zero seed spread in that report supplies no across-seed uncertainty estimate.
 
 ### Price
 
-![Actual vs forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
+![Actual and neural price forecast on the holdout days](data/evaluation/price_eval_days_holdout.png)
 
-Over the 18 days the price forecast is off by **25.25 EUR/MWh** in a typical hour.
+The NN catches the broad morning/evening peaks and midday valleys on many days. Examples include
+13 January, 3 February and 15 April. It still misses the level or amplitude on difficult days:
 
-- **The daily rhythm is usually right.** Prices are typically higher in the morning and evening,
-  when people use more power, and lower around midday, when solar panels produce most. The forecast
-  follows that pattern on most days, such as 13 January, 3 February, and 6 June.
-- **Sharp evening spikes are underestimated.** On 4 March, 24 June, and 21 September the forecast
-  rises at the right time but only about half as high as the real price.
-- **Extreme negative prices are missed.** On Sunday 26 April and on the 1 May holiday, a flood of
-  solar power pushed the price to -414 and -499 EUR/MWh. The forecast only dipped to about -90. In
-  training, the most extreme 0.1% of prices at each end are deliberately capped so that a few freak
-  hours do not distort the model, which also means it practically cannot reach such values.
-- **Those three extreme days carry 43% of the total error.** Without them the MAE would be 17.33
-  EUR/MWh. The sample also happens to contain more extreme days than a typical stretch of the year.
-- **New Year's Day sits at the wrong level.** The real price stayed near zero most of the day; the
-  forecast stayed 30-60 EUR/MWh higher.
+- On 4 March and 24 June the evening rise is present, but much smaller than the actual spike.
+- On 26 April and 1 May it predicts negative midday prices but misses the extreme negative troughs.
+  Training caps the outer 0.1% of target values at each tail, and MAE training favours typical
+  outcomes. This does **not** impose a hard floor or ceiling on the NN's predictions.
+- On 1 January the forecast stays above the near-zero actual prices for much of the day.
+- On 26 July and 29 August the forecast goes below zero while actual midday prices remain near zero.
+
+The three days 26 April, 1 May and 24 June account for **43.0%** of total price error. Excluding them
+would give **18.62 EUR/MWh** MAE; the reported headline includes them. The median day's MAE is
+**16.09 EUR/MWh**. This illustrates how strongly an 18-day score depends on its extreme days.
+
+The [error breakdown](data/evaluation/model_eval_breakdown_holdout.json) records an overall price
+bias of **-8.55 EUR/MWh**. Negative-price hours account for 9.7% of hours and 26.9% of error; prices
+of at least 250 EUR/MWh account for 2.1% of hours and 15.3% of error. Smooth profiles therefore still
+need better extreme-regime predictions.
 
 ### Wind generation
 
-![Wind: actual vs forecast on each holdout day](data/evaluation/wind_eval_days_holdout.png)
+![Actual and forecast wind generation](data/evaluation/wind_eval_days_holdout.png)
 
-Typical miss: **1,804 MW**.
-
-- **Rises and falls in wind are caught well**, including when a weather front arrives, as on 21
-  February and 26 April.
-- **The biggest misses are about the level on very windy winter days.** On 1 January and 3 February
-  the forecast had the shape right but stayed several gigawatts too low.
-- The wind forecast depends directly on the weather forecast, so when the weather forecast misjudges
-  a storm's strength or timing, this forecast inherits the error.
+The average absolute miss is **1,793 MW**. The model generally follows weather-driven rises and
+falls, while some very windy winter days have larger errors in level. A timing or strength error
+in the weather forecast passes through to generation. The model learns generation as a fraction
+of installed capacity and converts it back to MW, allowing the fleet size to change over time.
 
 ### Solar generation
 
-![Solar: actual vs forecast on each holdout day](data/evaluation/solar_eval_days_holdout.png)
+![Actual and forecast solar generation](data/evaluation/solar_eval_days_holdout.png)
 
-Typical miss: **809 MW**.
+The average absolute miss is **817 MW**. The daylight arc is generally recognizable, with errors
+around the midday peak on some days. Nighttime zero is an explicit physical constraint when all
+aligned irradiance points are dark; it is not something to credit to statistical accuracy.
+Generation is capacity-scaled. Irradiance intervals are aligned to delivery hours, and the model
+also receives solar geometry, diffuse/DNI radiation and cloud information.
 
-- **The shape of the solar day is always right** - zero at night, a smooth arc peaking around noon.
-- **The midday peak is now about right in summer, missing in both directions.** Until October 2026
-  it was forecast too high on most days, because the solar power produced per unit of sunlight has
-  been falling year on year relative to the official installed capacity. The model now also sees the
-  installed capacity, so it can tell the years apart and learn the current level; that nearly
-  halved the typical miss on these days (from 1,386 MW). The winter and early-spring peaks (1
-  January, 21 February, 4 March) still come out 1-4 GW too high.
-- **Days with negative prices are still too high.** On Sunday 26 April and the 1 May holiday the
-  forecast peak is 3-5 GW above the real one: when prices fall below zero, some solar parks switch
-  off because producing would cost them money, and the real curve is visibly flattened.
-- **The other larger misses are about clouds,** such as the afternoon of 27 March, when the forecast
-  expected cloud that did not arrive. Clear days such as 13 January, 24 June, and 21 September are
-  very close.
+### Load
 
-### Electricity use (load)
+![Actual and forecast load](data/evaluation/load_eval_days_holdout.png)
 
-![Actual vs forecast load on each holdout day](data/evaluation/load_eval_days_holdout.png)
+The average absolute miss is **2,019 MW**. Calendar and temperature help reproduce the day/night
+and working-day patterns. Exceptional days, especially around holidays, can differ substantially
+from the learned pattern. Load errors also reach the price network: the oracle comparison below
+shows their downstream effect on this sample.
 
-Typical miss: **2,013 MW**.
+## What the fundamental errors contribute to price
 
-- **The daily pattern is captured well:** low at night, a steep rise in the morning, a working-day
-  plateau, and an evening bump. Days such as 15 April, 29 August, and 21 September are within about
-  600-1,000 MW.
-- **Cold working days come out too low.** On 13 January the forecast is about 3-5 GW under, on 3
-  February about 5-7 GW, and on 21 February about 4-5 GW. Demand on those days depends on things the
-  weather forecast cannot show, such as industrial schedules.
-- **Some days off come out too high:** New Year's morning by about 4 GW, and the middle of 26 April
-  and 6 June by 2-4 GW. The night of 25 May (Whit Monday) is about 4 GW too low.
-- **The grid operators' own load forecast is not used.** It was tried as an extra input for the
-  next day and helped (about 1,700 MW typical miss here instead of 2,013), but it is only published
-  around 10:00 on the day before delivery, a couple of hours before the auction. A forecast made in
-  the morning cannot have it, so the project does without it.
+The [holdout oracle report](data/evaluation/oracle_substitution_holdout.json) reuses each fitted
+price model and substitutes measured or forecast fundamentals on the same hours.
 
-## Part 2 - What does each model rely on?
+| Price inputs | Price MAE | Change from all measured |
+|---|---:|---:|
+| All fundamentals measured | 25.28 EUR/MWh | reference |
+| Only wind forecast | 25.98 EUR/MWh | +0.70 EUR/MWh |
+| Only solar forecast | 25.01 EUR/MWh | -0.27 EUR/MWh |
+| Only load forecast | 27.03 EUR/MWh | +1.75 EUR/MWh |
+| All three forecast | 27.22 EUR/MWh | +1.94 EUR/MWh |
 
-### What a SHAP plot is
+Measured fundamentals are an impossible live oracle. Load has the largest isolated penalty here.
+The small negative solar delta reflects error cancellation in this finite sample. Deltas do not add
+up because the NN is nonlinear and input errors interact. The all-forecast row matches evaluation.
 
-A forecasting model takes many inputs - wind speed at 20 places, the hour, the day of the week, and
-so on - and turns them into one number. **SHAP** is a method that answers: *for this particular
-hour, how much did each input push the forecast up or down?*
+## What the saved models use
 
-Think of it like splitting a restaurant bill. The model starts from an **average** forecast, the
-*base value* (for the price model, 92.11 EUR/MWh). Each input then adds or subtracts its own share.
-For one hour it might read: base 92.11, plus 30 because demand is high, minus 25 because it is
-sunny, minus 10 because it is windy - giving a forecast of 87.11. The shares always add up exactly
-to the forecast. Each share is that input's **SHAP value** for that hour, measured in the forecast's
-own unit (EUR/MWh for price, MW for the others).
+These explanations describe the final saved production models over the most recent 365 days with
+available targets. They use measured historical fundamentals and are **not** held-out accuracy tests.
+The left panel groups features and ranks their average absolute contribution; the right panel puts
+one dot per hour at its individual feature contribution. Colour indicates the input's raw value.
+Contributions describe learned associations, not causes.
 
-The figures below apply this to every hour of the past year (October 2025 to October 2026, about
-8,760 hours), using the models exactly as they are used for real forecasts.
+### Price: integrated gradients
 
-### How to read the two panels
+![Integrated gradients of the operational price NN](data/analysis/ig_price.png)
 
-Each figure has two panels.
+Price uses **integrated gradients (IG)** through the actual NN. Its reference is the training-mean
+standardized input with all missingness flags cleared. Value and missingness contributions are
+combined for each original input. The method follows the path from that reference to each hour's
+inputs and measures how much each feature contributes to the price difference.
 
-**Left - "Feature families": which inputs matter most overall.** Related inputs are grouped: for
-example, the wind speeds at all 20 weather points become one bar, "wind speed". The length of a bar
-is the **average size of that group's push** across all hours, whether up or down. A longer bar
-means the model leans on that group more. The number at the end of each bar is that average, in the
-forecast's unit.
+<!-- price-attribution-reading:start -->
+The largest grouped contributions in this window are transfer capacity (**20.2 EUR/MWh**), GHI
+(**18.9**), calendar (**15.3**) and load (**13.4**), measured as average absolute IG contribution.
+Several inputs describing neighbouring wind and domestic generation also contribute. These sizes
+are relative to the chosen reference and need not match rankings from the former tree model.
 
-**Right - one dot per hour, for the most important individual inputs.** This view (a *beeswarm*)
-shows not just *how much* each input matters, but *in which direction*:
+The maximum completeness residual is **0.000052 EUR/MWh**, so the approximate contributions sum
+closely to the saved NN's output on these 8,760 explained hours.
+<!-- price-attribution-reading:end -->
 
-- **Each row is one input**, sorted from most to least important.
-- **Each dot is one hour.** Its horizontal position is that input's SHAP value in that hour: dots to
-  the **right** of the grey centre line pushed the forecast **up**, dots to the **left** pushed it
-  **down**. The further from the line, the bigger the push.
-- **The colour is the input's own value** in that hour: **red = high**, **blue = low** (for example,
-  red for strong wind, blue for calm).
-- **Where many dots overlap, they pile up vertically**, so a thick part of a row shows where most
-  hours sit.
-- **"Sum of N other features"** (bottom row) adds together all the less important inputs.
+This baseline choice matters: a contribution is relative to this reference, not a universal price
+premium. Historical weekly-lag importance describes hours where that lag exists, rather than the
+second forecast week where it is unavailable. Numerical integration is approximate; the regeneration
+logs record the maximum difference between the summed contributions plus reference and the NN's
+prediction. No residual is redistributed to force an exact sum. Price axes say IG, not SHAP.
 
-**A worked example.** In the price figure, the row "wind_speed" has red dots on the left and blue
-dots on the right. That reads: *strong wind (red) pushes the price forecast down; calm weather
-(blue) pushes it up.* That matches reality - wind power is cheap, so when it is plentiful, prices
-fall.
+### Fundamentals: TreeSHAP
 
-**Two cautions.** First, SHAP shows what the model has *learned to associate*, which is not always
-the true cause; an example appears in the price figure below. Second, wide spreads in a row mean the
-input's effect depends a lot on circumstances, not that the model is unsure.
+![TreeSHAP of the wind model](data/analysis/shap_wind.png)
 
-### Price model
+Wind's per-point wind speeds capture regional differences in generation. Temperature and calendar
+can supply additional context. The grouped bar combines the effects of all features in a family
+within each hour before taking the average absolute value.
 
-![SHAP summary of the price model](data/analysis/shap_price.png)
+![TreeSHAP of the solar model](data/analysis/shap_solar.png)
 
-- **Electricity use (load) and sunshine matter most** - each moves the forecast by about 15-17
-  EUR/MWh in a typical hour, followed by the transfer capacity into Germany (about 14). High demand (red, "load" row) pushes the price up; strong sunshine
-  (red, "irr_solar") pushes it down, by up to about 90 EUR/MWh on the sunniest hours.
-- **Interestingly, the model reads sunshine directly** from the weather forecast more than from the
-  solar model's output ("solar"). This is one reason errors in the solar forecast do relatively
-  little damage to the price forecast.
-- **Wind behaves as expected:** more wind in Germany ("wind_speed", "wind") and in neighbouring
-  countries ("nbr_wind_nl", "nbr_wind_fr", "nbr_wind_dk") lowers the price. More French nuclear
-  power available ("nuclear_available_mw") lowers it too.
-- **"price_lag_168h"** is the price at the same hour one week earlier: high prices last week push
-  this week's forecast up. This input exists only for the first week of a forecast.
-- **Transfer capacity is read border by border** ("ntc_imp_dk1", "ntc_imp_nl", "ntc_imp_at", ...):
-  how much power can flow into Germany from each neighbour. Which border is limited matters more
-  than the total.
-- **A misleading-looking example:** more import capacity from western Denmark ("ntc_imp_dk1", red)
-  pushes the forecast *up*, although in reality more import capacity should lower prices. The likely
-  explanation is timing: that border has been rated at 1,875 MW only since April 2026, a period of
-  higher prices, and 500 MW before, so the model has partly learned "this is the recent period". This
-  is the "association, not cause" caution above.
+Solar uses radiation, geometry, cloud and installed-capacity information. Geometry describes where
+the sun can be; radiation and cloud help distinguish clear from cloudy delivery hours. Installed
+capacity also identifies different fleet eras in the capacity-factor model.
 
-### Wind model
+![TreeSHAP of the load model](data/analysis/shap_load.png)
 
-![SHAP summary of the wind model](data/analysis/shap_wind.png)
+Load uses calendar, temperature and irradiance to represent schedules, heating/cooling demand and
+weather patterns. Correlated inputs can share or substitute for each other's contributions, so a
+small bar alone is not a reason to remove a feature.
 
-- **Wind speed is almost everything:** about 9,000 MW of push in a typical hour, against 500 MW for
-  air temperature (cold air is denser and carries slightly more energy) and 400 MW for the calendar.
-- **Every row has the same pattern - high wind (red) right, low wind (blue) left** - as it should.
-  The rows "ws_de01", "ws_de02", ... are the wind speeds at individual weather points across Germany
-  and its North and Baltic Sea areas; the model leans most on point 01.
-- **The bottom row has a tail of red dots far to the left**: in the very strongest winds, the
-  combined effect of the remaining points pushes the forecast *down*. This is consistent with
-  turbines shutting down for safety in storms, which the model appears to have learned.
+The fundamental attributions use exact **TreeSHAP**, converted to MW for wind and solar. Their
+non-negative clamps and the solar-darkness override are outside that additive explanation.
+The common `eex analyze shap` command uses IG for price and TreeSHAP for the three fundamentals.
 
-### Solar model
+## Limits and reproduction
 
-![SHAP summary of the solar model](data/analysis/shap_solar.png)
+All accuracy numbers here cover **D+1**, not the full 14-day forecast. The stitched historical
+weather feed can be modestly optimistic relative to a coherent weather run available at issue time.
+There are only 18 holdout days, with no October-December coverage. Actual live error requires
+archived issue-time forecasts scored after delivery.
 
-- **Sunlight reaching the ground (GHI) dominates**, at about 11,200 MW of push in a typical hour.
-  The "irr_solar" row shows it clearly: bright hours (red) add up to about 35,000 MW; dark hours
-  (blue) subtract about 7,500 MW from the average.
-- **Installed capacity comes second**, at about 850 MW ("solar_capacity_mw"). It is the official
-  solar capacity, which steps up once a year. A high value (red, the 2026 fleet) pushes the forecast
-  *down* by up to about 4,000 MW: the model has learned that this year's panels produce less per
-  unit of official capacity than earlier years', which is what removed the old midday over-forecast.
-- **Direct normal irradiance** (sunshine measured facing the sun) adds about 700 MW, and **the sun's
-  position** about 300 MW. The position includes the compass direction of the sun
-  ("solar_azimuth_cos"): most panels face south, so the same sun height gives more power around
-  midday than in the morning or evening.
-- **The calendar, cloud cover, and scattered (diffuse) light add only small refinements.** Direct
-  sunlight on flat ground is no longer an input: it is exactly GHI minus the scattered part, so it
-  added nothing.
+Development figures, including [price](data/evaluation/price_eval_days.png), contain 92 days used
+for model selection. Their [report](data/evaluation/model_eval.json) is separate from the holdout.
+The [pre-NN results](docs/history/results-before-neural-price.md) retain the former model's figures
+and numbers; they should not be read as the current model's results.
 
-### Load model
+Reproduce the current artifacts from CMD after activating the environment:
 
-![SHAP summary of the load model](data/analysis/shap_load.png)
+```cmd
+eex analyze eval --seeds 1 --plot --breakdown --oracle
+eex analyze eval --seeds 1 --holdout --plot --breakdown --oracle
+eex run --train --plot --write-db --ensemble
+eex analyze shap
+```
 
-- **The calendar dominates** (about 7,100 MW of push): people's routines drive electricity use more
-  than the weather does.
-- **"day_of_week"**: weekends (red, high values = Saturday and Sunday) lower use by 2,000-9,000 MW.
-  **"is_holiday"**: public holidays lower it by 4,000-14,000 MW - the single largest effect.
-- **"hour"**: night hours (blue) lower use by up to about 7,500 MW.
-- **Temperature** adds about 1,600 MW. In the "t_de..." rows (temperatures at individual weather
-  points), cold hours (blue) push use up - more heating.
-- **"month_cos"** is a way of telling the model the season; its high values (red) mean winter, which
-  raises use.
-
-## What to take away
-
-- **For the next day, the forecast captures the daily shape of prices well**, typically within about
-  25 EUR/MWh, but it **underestimates sharp spikes and cannot reach extreme negative prices**.
-- **Solar's old systematic error is gone** (too high at midday, from falling output per unit of
-  sunlight); what remains is mostly days with negative prices, when solar parks switch off.
-  Load still misses cold working days (too low) and some days off (too high).
-- **The models rely on sensible inputs in sensible directions:** demand and sunshine drive the
-  price, wind speed drives wind output, sunlight drives solar, and routines drive demand.
-- These results cover only the next day. Forecasts further ahead depend on less accurate weather
-  forecasts and will be less accurate. See the [README](README.md#evaluation) for the remaining
-  caveats.
+See [experimentation](docs/experimentation.md) for the evaluation contract and
+[model development](docs/model-development.md) for architecture, training and adoption evidence.

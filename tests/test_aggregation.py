@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast.analysis.aggregation import (
     AggregationResult,
@@ -227,7 +227,7 @@ def test_run_neighbour_aggregation_ranks_strategies_incl_baseline() -> None:
     result = run_neighbour_aggregation(
         frame,
         strategies=("none", "country_mean", "raw"),
-        params=TINY,
+        params=NN_TINY,
         days=DAYS,
         cutoffs=CUTOFFS,
     )
@@ -248,7 +248,7 @@ def test_save_neighbour_aggregation_report(tmp_path: Path) -> None:
 
     frame = _frame_with_neighbours()
     result = run_neighbour_aggregation(
-        frame, strategies=("none", "country_mean"), params=TINY, days=DAYS, cutoffs=CUTOFFS
+        frame, strategies=("none", "country_mean"), params=NN_TINY, days=DAYS, cutoffs=CUTOFFS
     )
     path = save_neighbour_aggregation_report(result, reports_dir=tmp_path)
     payload = json.loads(path.read_text())

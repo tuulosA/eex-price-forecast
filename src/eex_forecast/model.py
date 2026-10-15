@@ -1,20 +1,17 @@
-"""XGBoost model layer: one specification per model, plus train / predict / persist helpers.
+"""Shared model contract for neural DE prices and XGBoost fundamentals.
 
-Four models share this machinery. Three **generation sub-models** (wind, solar, load) learn a fundamental
-from weather + calendar; the **price model** learns the day-ahead price from calendar, price lags, weather
-aggregates, and the fundamentals (measured in history, the sub-models' forecasts in the future). Each is
-described by a :class:`ModelSpec` - its target column, where its forecast is written, its feature builder,
-and target-specific switches (non-negativity for generation/load, spike clipping for price, and
-**capacity scaling** for wind/solar - learning a capacity factor and multiplying back by installed
-capacity, so the model generalises as the fleet grows).
+Wind, solar and load remain tree models. Price is a fixed-epoch, two-layer SiLU network with
+train-only preprocessing and explicit missingness indicators. ModelSpec selects the backend in code;
+there is no runtime backend option and legacy price trees never satisfy neural loading. Every
+production, tuning and analysis fit uses make_estimator, and seeded comparisons use seeded_params
+so a tree's random_state cannot silently enter the neural parameter schema.
 
-The final model is fit on all rows at exactly the configured ``n_estimators`` - **no early stopping** -
-so the shipped model is the configuration the walk-forward tools benchmarked (see :func:`_fit`). A
-chronological validation slice is still fit first, purely to log **MAE/RMSE/R2** and **residual diagnostics**
-(Durbin-Watson, ACF) for that same configuration alongside features and params. Hyperparameters come from
-``config/hyperparams.json`` when present (written by ``eex model tune``) and fall back to
-:data:`DEFAULT_PARAMS`. Models persist as native XGBoost JSON plus a small sidecar recording the exact
-training feature order, so prediction always reindexes to the columns the model was fit on.
+All models share feature ordering, actual-or-forecast fundamentals, capacity reversal and physical
+fundamental postprocessing. Prices are returned directly and can be negative. The diagnostic
+chronological validation fit selects nothing: final fits always use all available target rows and
+exactly the configured tree count or epoch count. Numeric NPZ state holds the price network and its
+preprocessing; fundamentals retain native tree JSON. Backend/feature-order sidecars prevent mixing
+incompatible artifacts after retraining.
 """
 
 from __future__ import annotations
@@ -24,7 +21,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, Protocol, cast
 
 import numpy as np
 import pandas as pd
@@ -36,6 +33,17 @@ from eex_forecast.config import HYPERPARAMS_PATH, MODELS_DIR
 logger = logging.getLogger(__name__)
 
 FeatureBuilder = Callable[[pd.DataFrame], pd.DataFrame]
+
+
+class Estimator(Protocol):
+    """The matrix interface shared by production, validation and every walk-forward tool."""
+
+    def fit(self, matrix: pd.DataFrame, target: pd.Series) -> Any: ...
+
+    def predict(self, matrix: pd.DataFrame) -> np.ndarray[Any, Any]: ...
+
+    def save_model(self, path: Path) -> None: ...
+
 
 # Validation slice: the trailing rows (chronological) are left out of one extra fit, only so training can
 # log out-of-sample metrics. It does not choose anything - see _fit. Skipped when data is too small.
@@ -88,6 +96,11 @@ class ModelSpec:
     # When set, learn the target as a fraction of installed capacity (a capacity factor) and multiply
     # the prediction back by capacity - so the model generalises as the fleet grows year to year.
     capacity_column: str | None = None
+    backend: Literal["xgboost", "neural"] = "xgboost"
+
+    def __post_init__(self) -> None:
+        if self.target_column == "price_actual_eur_mwh" and self.backend != "neural":
+            raise ValueError("DE price specifications require the neural backend.")
 
 
 REGISTRY: dict[str, ModelSpec] = {
@@ -116,6 +129,7 @@ REGISTRY: dict[str, ModelSpec] = {
         "price_forecast_eur_mwh",
         features.price_features,
         clip_target_quantiles=(0.001, 0.999),
+        backend="neural",
     ),
 }
 
@@ -164,10 +178,10 @@ def postprocess_predictions(
 
 @dataclass(slots=True)
 class TrainedModel:
-    """A fitted XGBoost model plus the exact feature order it was trained on."""
+    """A fitted estimator plus the exact feature order it was trained on."""
 
     spec: ModelSpec
-    booster: XGBRegressor
+    booster: Estimator
     feature_names: list[str]
 
     def predict(self, frame: pd.DataFrame) -> pd.Series:
@@ -179,36 +193,79 @@ class TrainedModel:
         return postprocess_predictions(self.spec, values, built_features, capacity=capacity)
 
     def save(self, models_dir: Path = MODELS_DIR) -> Path:
-        """Persist the booster (native JSON) and a sidecar with the training feature order."""
+        """Persist numeric neural state or native tree JSON, with an explicit backend sidecar."""
         models_dir.mkdir(parents=True, exist_ok=True)
-        model_path = models_dir / f"{self.spec.name}.json"
+        extension = "npz" if self.spec.backend == "neural" else "json"
+        model_path = models_dir / f"{self.spec.name}.{extension}"
         self.booster.save_model(model_path)
         meta_path = models_dir / f"{self.spec.name}.meta.json"
-        meta_path.write_text(json.dumps({"feature_names": self.feature_names}, indent=2) + "\n")
+        meta_path.write_text(
+            json.dumps(
+                {"backend": self.spec.backend, "feature_names": self.feature_names}, indent=2
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         return model_path
 
     @classmethod
     def load(cls, spec: ModelSpec, models_dir: Path = MODELS_DIR) -> TrainedModel:
         """Load a model saved by :meth:`save`."""
-        model_path = models_dir / f"{spec.name}.json"
+        extension = "npz" if spec.backend == "neural" else "json"
+        model_path = models_dir / f"{spec.name}.{extension}"
         if not model_path.exists():
             raise FileNotFoundError(
-                f"No trained '{spec.name}' model at {model_path}. Run `eex model train`."
+                f"No trained {spec.backend} '{spec.name}' model at {model_path}. "
+                "Run `eex model train`. Legacy price trees are not loaded."
             )
-        booster = XGBRegressor()
-        booster.load_model(model_path)
-        meta = json.loads((models_dir / f"{spec.name}.meta.json").read_text())
+        meta = json.loads((models_dir / f"{spec.name}.meta.json").read_text(encoding="utf-8"))
+        if meta.get("backend", "xgboost") != spec.backend:
+            raise ValueError(f"Wrong backend for '{spec.name}'; run `eex model train`.")
+        if spec.backend == "neural":
+            from eex_forecast.price_nn import NeuralPriceEstimator
+
+            neural = NeuralPriceEstimator.load(model_path)
+            if neural.trained.feature_names != meta["feature_names"]:
+                raise ValueError(
+                    "Neural feature sidecar differs from saved weights; retrain price."
+                )
+            booster: Estimator = neural
+        else:
+            tree = XGBRegressor()
+            tree.load_model(model_path)
+            booster = tree
         return cls(spec, booster, list(meta["feature_names"]))
 
 
 def load_params(name: str) -> dict[str, Any]:
     """Tuned hyperparameters for ``name`` merged over the defaults, or the defaults alone."""
-    params = dict(DEFAULT_PARAMS)
+    if name == "price":
+        from dataclasses import asdict
+
+        from eex_forecast.price_nn import NNParams
+
+        params = asdict(NNParams())
+    else:
+        params = dict(DEFAULT_PARAMS)
     if HYPERPARAMS_PATH.exists():
         stored = json.loads(HYPERPARAMS_PATH.read_text()).get(name)
         if stored:
             params.update(stored)
     return params
+
+
+def seeded_params(spec: ModelSpec, params: dict[str, Any], seed: int) -> dict[str, Any]:
+    """Use each estimator's native seed key; tree-only keys must never reach the price NN."""
+    return {**params, "seed" if spec.backend == "neural" else "random_state": int(seed)}
+
+
+def make_estimator(spec: ModelSpec, params: dict[str, Any]) -> Estimator:
+    """Choose the backend from the specification, never from a runtime switch or artifact fallback."""
+    if spec.backend == "neural":
+        from eex_forecast.price_nn import NeuralPriceEstimator, NNParams
+
+        return NeuralPriceEstimator(NNParams(**params))
+    return cast(Estimator, XGBRegressor(**params))
 
 
 def save_params(name: str, params: dict[str, Any]) -> Path:
@@ -301,16 +358,16 @@ def _fit(
     target: pd.Series,
     params: dict[str, Any],
     capacity: pd.Series | None = None,
-) -> tuple[XGBRegressor, dict[str, Any], dict[str, float]]:
-    """Fit the final model on all rows at the configured ``n_estimators``, logging validation metrics.
+) -> tuple[Estimator, dict[str, Any], dict[str, float]]:
+    """Fit all rows for the configured tree count or neural epochs, logging validation metrics.
 
-    The tree count is used exactly as configured - it is a tuned hyperparameter, chosen by walk-forward
+    The training budget is used exactly as configured - it is a hyperparameter, chosen by walk-forward
     scoring over the frozen cutoffs (:mod:`eex_forecast.tuning`), and tuning, eval, and oracle all fit
     it unchanged. Production used to early-stop on the trailing validation slice instead and refit at the best
     iteration. That slice is one recent season, so it cut the tree count hard (price 322 of 850, solar
     166 of 300 in one run), and the shipped models were then not the ones the benchmarks scored: on the
     frozen cutoffs the cut models were worse (price +0.39 EUR/MWh, solar +224 MW). Fitting the
-    configured count keeps every reported benchmark a description of the model that actually ships.
+    configured count (and, for price, fixed epochs) keeps reported benchmarks faithful to serving.
 
     Returns the final model plus residual diagnostics and MAE/RMSE/R2 in natural units (capacity
     scaling reversed) from a separate fit that holds out the trailing slice. That fit uses the same
@@ -318,14 +375,14 @@ def _fit(
     too few rows the validation fit is skipped and no diagnostics/metrics are returned.
     """
     scope = f"[{spec.name}]"
-    final = XGBRegressor(**params)
+    final = make_estimator(spec, params)
     if len(matrix) < _MIN_ROWS_FOR_VALIDATION:
         final.fit(matrix, target)
         return final, {}, {}
 
     split = int(len(matrix) * (1.0 - _VAL_FRACTION))
     logger.info("%s scoring a %d-row chronological validation slice", scope, len(matrix) - split)
-    validator = XGBRegressor(**params)
+    validator = make_estimator(spec, params)
     validator.fit(matrix.iloc[:split], target.iloc[:split])
 
     # Score the validation slice with the exact production post-processing contract.

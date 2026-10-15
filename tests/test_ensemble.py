@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast.ensemble import client as ensemble_client
 from eex_forecast.ensemble.client import (
@@ -249,7 +249,10 @@ def _base_and_models() -> tuple[pd.DataFrame, dict[str, Any], pd.Timestamp]:
     times = pd.to_datetime(frame["timestamp"], utc=True)
     future = times >= now
     history = frame.loc[~future]
-    models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
+    models = {
+        name: train(REGISTRY[name], history, params=NN_TINY if name == "price" else TINY)
+        for name in ALL_MODELS
+    }
     frame.loc[
         future, ["price_actual_eur_mwh", "wind_actual_mw", "solar_actual_mw", "load_actual_mw"]
     ] = np.nan
@@ -371,7 +374,10 @@ def _stub_forecast_env(
     write_frame(db_path, frame)
 
     history = frame.loc[~future]
-    models = {name: train(REGISTRY[name], history, params=TINY) for name in ALL_MODELS}
+    models = {
+        name: train(REGISTRY[name], history, params=NN_TINY if name == "price" else TINY)
+        for name in ALL_MODELS
+    }
     monkeypatch.setattr(forecast_ops, "fetch_forecast_inputs", lambda *a, **k: None)
     monkeypatch.setattr(
         forecast_ops.TrainedModel,

@@ -12,7 +12,7 @@ End to end for the next ``horizon_days``:
    :mod:`eex_forecast.plots`; this module only decides what is published).
 
 The models predict the **entire read window**, not just the future: rows that already have an actual get
-an in-sample prediction that hugs it (giving a continuous forecast line), and the genuinely out-of-sample
+an in-sample prediction for historical display; the genuinely out-of-sample
 forecast is the tail where no actual price exists yet. Since ENTSO-E day-ahead prices are settled through
 D+1, that unseen tail begins at **D+2** - the first day the price model has truly not seen.
 
@@ -123,9 +123,9 @@ def fetch_forecast_nuclear(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
 
 
 def fetch_forecast_ntc(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int:
-    """Fetch month-ahead transfer capacity across the horizon into the database's future rows.
+    """Fetch week-ahead transfer capacity across the horizon into the database's future rows.
 
-    Month-ahead NTC is published ahead, so this fills real per-border capacity for the forecast horizon;
+    Week-ahead NTC is carried forward, with month-ahead filling only missing history;
     the window also spans the recent refresh period, so - like nuclear - NTC is fetched once here and not
     again by ``update``. A no-op if no border returns data.
     """
@@ -266,7 +266,7 @@ def _weather_limited_forecast_end(
     """Keep ``requested_end`` when weather covers it; otherwise drop the incomplete final market day.
 
     ``requested_end`` is exclusive, while ``coverage_end`` is the last covered hourly row. Missing
-    weather makes XGBoost return technically valid but economically nonsensical tail predictions, so a
+    weather makes the models return technically valid but economically nonsensical tail predictions, so a
     partly covered delivery day must not be published. The existing market-day cut is DST-aware.
     """
     required_last_hour = requested_end - pd.Timedelta(hours=1)

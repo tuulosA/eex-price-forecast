@@ -13,7 +13,7 @@ parameters, and the shared walk-forward engine with actual fundamentals (as tuni
 A/B score price). Because each country is still one feature, changing the count changes how
 representative each feature is, not the feature count - so the comparison needs no retune.
 
-Every variant is scored over several XGBoost seeds, and the difference from the production set is also
+Every variant is scored over several model seeds, and the difference from the production set is also
 bootstrapped over **delivery days**. The seed spread only measures how much the model fit varies; the
 day bootstrap measures how much the conclusion depends on which days happen to be in the development
 set, which is usually the larger uncertainty for a small improvement.

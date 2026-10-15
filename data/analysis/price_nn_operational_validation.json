@@ -1,0 +1,107 @@
+{
+  "verified_at": "2026-10-15T18:14:01.230168+00:00",
+  "model_backends": {
+    "wind": "xgboost",
+    "solar": "xgboost",
+    "load": "xgboost",
+    "price": "neural"
+  },
+  "forecast_rows": 673,
+  "forecast_start_utc": "2026-10-01T22:00:00+00:00",
+  "forecast_end_utc": "2026-10-29T22:00:00+00:00",
+  "unknown_price_rows": 313,
+  "maximum_csv_vs_direct_prediction_difference": {
+    "wind": 7.275957614183426e-12,
+    "solar": 7.275957614183426e-12,
+    "load": 0.0,
+    "price": 5.684341886080802e-14
+  },
+  "hourly_utc_continuity": true,
+  "forecast_columns_match_database": true,
+  "fundamentals_non_negative": true,
+  "solar_darkness_constraint": true,
+  "price_saved_history_epochs": 40,
+  "price_artifact_sha256": "8c4ad8b54d6d178f6361ba5d473254f91237b7293e72cba8aed9f4a51395613c",
+  "hyperparams_sha256": "92d2ac22f8f82ae31f8d7cba12e2c2c4aa2452a8fedebe2db7950f604c14b9c0",
+  "evaluation_oracle_forecast_all_match": true,
+  "pytest": {
+    "passed": 312
+  },
+  "ntc_import_ranges_mw": {
+    "ntc_imp_at": {
+      "history_min_mw": 2590.0,
+      "history_max_mw": 4820.0,
+      "forecast_min_mw": 4500.0,
+      "forecast_max_mw": 4500.0
+    },
+    "ntc_imp_be": {
+      "history_min_mw": 0.0,
+      "history_max_mw": 500.0,
+      "forecast_min_mw": 400.0,
+      "forecast_max_mw": 400.0
+    },
+    "ntc_imp_cz": {
+      "history_min_mw": 300.0,
+      "history_max_mw": 1200.0,
+      "forecast_min_mw": 450.0,
+      "forecast_max_mw": 450.0
+    },
+    "ntc_imp_dk1": {
+      "history_min_mw": 480.0,
+      "history_max_mw": 2500.0,
+      "forecast_min_mw": 1875.0,
+      "forecast_max_mw": 1875.0
+    },
+    "ntc_imp_dk2": {
+      "history_min_mw": 0.0,
+      "history_max_mw": 624.0,
+      "forecast_min_mw": 624.0,
+      "forecast_max_mw": 624.0
+    },
+    "ntc_imp_fr": {
+      "history_min_mw": 850.0,
+      "history_max_mw": 3500.0,
+      "forecast_min_mw": 1800.0,
+      "forecast_max_mw": 1800.0
+    },
+    "ntc_imp_nl": {
+      "history_min_mw": 1367.0,
+      "history_max_mw": 2449.0,
+      "forecast_min_mw": 1369.0,
+      "forecast_max_mw": 1369.0
+    },
+    "ntc_imp_no2": {
+      "history_min_mw": 0.0,
+      "history_max_mw": 1444.0,
+      "forecast_min_mw": 1444.0,
+      "forecast_max_mw": 1444.0
+    },
+    "ntc_imp_se4": {
+      "history_min_mw": 0.0,
+      "history_max_mw": 615.0,
+      "forecast_min_mw": 615.0,
+      "forecast_max_mw": 615.0
+    }
+  },
+  "ntc_forecast_within_historical_ranges": true,
+  "price_attribution": {
+    "method": "Integrated gradients",
+    "explained_hours": 8760,
+    "max_completeness_residual_eur_mwh_rounded": 5.2e-05
+  },
+  "pipeline": {
+    "command": "eex run --train --plot --write-db --ensemble",
+    "completed": true,
+    "exit_code": 0,
+    "forecast_delivery_days": 13
+  },
+  "ensemble": {
+    "run_id": 17,
+    "members": 51,
+    "hours": 195,
+    "start_utc": "2026-10-16T22:00:00+00:00",
+    "end_utc": "2026-10-25T00:00:00+00:00",
+    "finite_and_ordered_quantiles": true,
+    "member_hour_predictions": 9945
+  }
+}

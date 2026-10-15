@@ -33,7 +33,6 @@ import numpy as np
 import optuna
 import pandas as pd
 from optuna.samplers import TPESampler
-from xgboost import XGBRegressor
 
 from eex_forecast.backtest_cutoffs import (
     DAY_AHEAD_DAYS,
@@ -49,7 +48,9 @@ from eex_forecast.model import (
     apply_train_nan_lag_mask,
     capacity_for,
     capacity_scaled,
+    make_estimator,
     postprocess_predictions,
+    seeded_params,
 )
 
 logger = logging.getLogger(__name__)
@@ -133,7 +134,7 @@ def _predict_fold(
         y_train = y_train.clip(lower=low, upper=high)
     x_train = apply_train_nan_lag_mask(data.matrix[train])
     x_test = apply_serve_unavailable_lag_mask(data.matrix[test], data.times[test], start)
-    booster = XGBRegressor(**params)
+    booster = make_estimator(spec, params)
     booster.fit(x_train, y_train)
     prediction = postprocess_predictions(
         spec,
@@ -277,7 +278,7 @@ _BASE_SEED = (
 
 
 def seed_list(n_seeds: int) -> list[int]:
-    """``n_seeds`` deterministic, distinct XGBoost seeds (the first is the production default 42)."""
+    """``n_seeds`` deterministic, distinct model seeds (the first is the production default 42)."""
     if n_seeds < 1:
         raise ValueError("n_seeds must be >= 1.")
     return [_BASE_SEED + 1013 * i for i in range(n_seeds)]
@@ -292,7 +293,7 @@ def walk_forward_metrics_seeded(
     seeds: list[int],
     cutoffs: tuple[str, ...] = DEV_CUTOFFS,
 ) -> dict[str, Any]:
-    """Repeat :func:`walk_forward_metrics` once per seed (XGBoost ``random_state``).
+    """Repeat :func:`walk_forward_metrics` once per seed (native ``seed`` / ``random_state``).
 
     A single walk-forward is a point estimate; gradient boosting has real run-to-run variance, so a
     strategy/feature delta of ~1 EUR/MWh can be noise. Refitting under several seeds and reporting the
@@ -308,7 +309,7 @@ def walk_forward_metrics_seeded(
     folds_by_seed: list[list[dict[str, Any]]] = []
     for index, seed in enumerate(seeds):
         folds, mae, rmse = _fold_metrics(
-            spec, data, {**params, "random_state": int(seed)}, cutoffs, days
+            spec, data, seeded_params(spec, params, seed), cutoffs, days
         )
         folds_by_seed.append(folds)
         per_mae.append(mae)
@@ -354,6 +355,20 @@ def suggest_params(trial: optuna.Trial) -> dict[str, Any]:
     }
 
 
+def suggest_neural_params(trial: optuna.Trial) -> dict[str, Any]:
+    """Sample fixed-epoch NN parameters for development-fold scoring."""
+    return {
+        "hidden": trial.suggest_categorical("hidden", [32, 64, 128]),
+        "epochs": trial.suggest_categorical("epochs", [40, 60, 80]),
+        "batch_size": trial.suggest_categorical("batch_size", [256, 512, 1024]),
+        "learning_rate": trial.suggest_float("learning_rate", 0.0003, 0.003, log=True),
+        "weight_decay": trial.suggest_float("weight_decay", 0.000001, 0.01, log=True),
+        "dropout": trial.suggest_categorical("dropout", [0.0, 0.025, 0.05]),
+        "seed": 42,
+        "threads": 4,
+    }
+
+
 def tune(
     spec: ModelSpec,
     frame: pd.DataFrame,
@@ -390,7 +405,10 @@ def tune(
     logger.info("%s features: %s", scope, ", ".join(data.matrix.columns))
 
     def objective(trial: optuna.Trial) -> float:
-        return _score(spec, data, suggest_params(trial), cutoffs, days)
+        suggested = (
+            suggest_neural_params(trial) if spec.backend == "neural" else suggest_params(trial)
+        )
+        return _score(spec, data, suggested, cutoffs, days)
 
     def log_trial(study: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
         value = "failed" if trial.value is None else f"{trial.value:.4f}"
@@ -402,9 +420,8 @@ def tune(
             "%s   trial %d/%d: MAE %s (best %s)", scope, trial.number + 1, n_trials, value, best
         )
 
-    incumbent_candidate = (
-        {**incumbent_params, **FIXED_PARAMS} if incumbent_params is not None else None
-    )
+    fixed = {"seed": 42, "threads": 4} if spec.backend == "neural" else FIXED_PARAMS
+    incumbent_candidate = {**incumbent_params, **fixed} if incumbent_params is not None else None
     incumbent_score = (
         _score(spec, data, incumbent_candidate, cutoffs, days)
         if incumbent_candidate is not None
@@ -415,7 +432,7 @@ def tune(
 
     study = optuna.create_study(direction="minimize", sampler=TPESampler(seed=seed))
     study.optimize(objective, n_trials=n_trials, gc_after_trial=True, callbacks=[log_trial])
-    best_params = {**study.best_params, **FIXED_PARAMS}
+    best_params = {**study.best_params, **fixed}
     best_value = float(study.best_value)
     best_trial: int | str = study.best_trial.number
     if (
@@ -448,13 +465,14 @@ def tune(
         {
             "trial": trial.number,
             "mean_mae": round(trial.value, 4),
-            "params": {**trial.params, **FIXED_PARAMS},
+            "params": {**trial.params, **fixed},
         }
         for trial in study.trials
         if trial.value is not None
     )
     report: dict[str, Any] = {
         "config": {
+            "backend": spec.backend,
             "n_trials": n_trials,
             "n_cutoffs": len(cutoffs),
             "days": days,

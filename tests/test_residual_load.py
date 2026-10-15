@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast.analysis.residual_load import (
     BASELINE,
@@ -21,14 +20,7 @@ from eex_forecast.features import (
     residual_load_block,
 )
 
-TINY: dict[str, Any] = {
-    "n_estimators": 10,
-    "max_depth": 3,
-    "objective": "reg:squarederror",
-    "tree_method": "hist",
-    "random_state": 0,
-    "n_jobs": 1,
-}
+TINY = dict(NN_TINY)
 
 
 def _frame() -> pd.DataFrame:

@@ -36,7 +36,7 @@ eex model train
 eex forecast --plot
 ```
 
-Ranking window, retained point count, aggregation, feature set, and XGBoost
+Ranking window, retained point count, aggregation, feature set, and model
 hyperparameters are all experiment surfaces. The committed configuration is a reproducible starting
 point rather than a restriction.
 
@@ -80,7 +80,7 @@ The weather ensemble (`eex forecast --ensemble`) is deliberately **outside** thi
 added to it. Open-Meteo retains individual ensemble members for only about three days, so there is no
 history to replay at the frozen cutoffs; the ensemble ships as a diagnostic rather than a scored result.
 See [Weather ensemble](data-pipeline.md#weather-ensemble) for the source contract and
-[the development record](model-development.md#weather-ensemble-forecasting) for what was measured.
+[the development record](history/model-development-before-neural-price.md#weather-ensemble-forecasting) for what was measured.
 
 ### Known weather optimism
 
@@ -105,71 +105,39 @@ This leads to two different evaluation contracts:
 Live prediction and every scoring path share the same natural-unit post-processing: capacity-factor
 reversal, non-negative clipping, and the solar-darkness constraint.
 
-## Price-only neural experiment
+## Operational neural price model
 
-`eex analyze price-models` compares a German-price MLP with the incumbent XGBoost while keeping
-wind, solar, load, weather points, feature semantics, and upstream seed 42 fixed. Production continues
-to use XGBoost. Install the optional PyTorch dependency in the active environment first:
+Price is always the DE-only NN; wind, solar and load remain XGBoost. PyTorch is installed with the
+base package. `eex model train --target price` fits the same two-layer SiLU architecture used by live
+prediction, ensemble members and every price analysis. There is no backend flag or tree fallback.
+
+The adopted price parameters specify 64 units per layer, 40 fixed epochs, batch 512, AdamW/MAE,
+learning rate 0.0015317709628184257, weight decay 0.0000011527987128232402, no dropout and seed 42.
+Train-only median imputation and standardization are paired with missingness indicators. The target
+uses training median/IQR scaling. The existing weekly-lag mask runs before preprocessing. Negative
+prices are allowed; neither temporal smoothing nor price scaling is applied to predictions.
+
+State, preprocessing, parameters and feature order are stored numerically in `data/models/price.npz`.
+`price.meta.json` checks its backend and feature order. A stale `price.json` is not a usable price
+artifact. Existing installations must reinstall the package and retrain; changing parameters or
+features also requires retraining.
 
 ```cmd
-pip install -e ".[nn]"
-eex analyze price-models --run-id price_nn_20261014 --stage screen
-eex analyze price-models --run-id price_nn_20261014 --stage search --trials 12
-eex analyze price-models --run-id price_nn_20261014 --stage development
+pip install -e ".[dev]"
+eex model train --target price
+eex model tune --target price --trials 12
 ```
 
-The first invocation makes a consistent SQLite backup under
-`data/analysis/price_models/<run-id>/source.db`, copies the three modelling configurations, and records
-their hashes plus the code hashes, dependency versions, Git revision, fixed seed settings, and database checksum in
-`manifest.json`. The operative database is opened read-only. Reusing the run ID deliberately reuses
-this snapshot, even if the operative database is refreshed later. A changed code/configuration hash
-or snapshot checksum refuses reuse; create a new run ID after changing semantics. Run one process
-per run ID. No stage performs external fetches, rewrites production models, or opens the holdout.
+Price tuning searches NN width, epochs, batch size, learning rate, weight decay and dropout, using
+fixed seed 42 and four CPU threads. It preserves the current parameters unless a fresh trial wins on
+the same development folds. Price tuning/ablation remain conditional on actual fundamentals; use
+end-to-end evaluation before adopting changes.
 
-Stages are ordered:
-
-- `screen`: 12 evenly spread development days (change with `--screen-days`, consistently for the run)
-  and price seed 42, starting with two 64-unit SiLU layers, 60 epochs, batch 512, AdamW learning rate
-  0.001, weight decay 0.0001, and no dropout. The output remains linear, allowing negative prices.
-- `search`: Optuna searches width 32/64/128, epochs 40/60/80, batches 256/512/1024, learning rate
-  0.0003-0.003, weight decay 0.000001-0.001, and dropout 0/0.025/0.05 on that same screen. `--trials`
-  is the total budget, including the initial configuration. Up to two distinct completed candidates
-  that beat XGBoost are frozen in `shortlist.json` before full development is examined. If none win,
-  the shortlist is empty. Once frozen, search cannot reopen within the run.
-- `development`: evaluates only those frozen finalists on all 92 development days using price seeds
-  7/23/42; upstream forecasts remain seed 42. Selects the lowest development MAE NN and reports its
-  predeclared gate. It neither promotes models nor reports the holdout.
-
-Each cached fold comes from the standard end-to-end evaluator: train before Berlin delivery midnight,
-clear existing DB forecast columns, generate fresh sub-model predictions, and hide held-out
-fundamental actuals. A direct matrix prediction must reproduce the standard evaluator's incumbent
-price output before that fold is accepted. Both families use identical train-only target clipping and
-the same weekly-lag training mask. NN preprocessing fits only on masked training rows: median
-imputation, standardisation, missingness indicators, and median/IQR target scaling. Fits use the
-configured epochs, with MAE loss and no early stopping or recency-weighting change.
-
-Per-day NN prediction checkpoints allow interrupted fits/reporting to continue; interrupted Optuna
-trials finish with their already sampled parameters before search continues. `candidates/<id>/`
-contains the configuration, per-day/per-seed training curves and timings, `hourly.csv`, and
-`report.json`. The run-level `screen.json`, `search.json`/`shortlist.json`, and `development.json`
-summarise the stages. Reports show individual seeds, NN seed-mean predictions, the incumbent, a
-matched XGBoost seed-mean control, and an exploratory fixed 50/50 blend. The objective and adoption
-gate concern the standalone NN; blend results do not silently nominate a different model.
-
-Headlines average delivery-day errors, matching eval; breakdowns pool hourly errors. Seed-mean
-predictions are scored after averaging, rather than averaging individual seed errors. Paired
-90% bootstrap intervals resample whole delivery days. The full-development NN gate requires:
-
-- at least 0.5 EUR/MWh lower MAE than the incumbent;
-- the paired 90% MAE-delta interval wholly below zero;
-- mean daily RMSE no more than 2% worse;
-- negative-price and spike (>=250 EUR/MWh) MAE no more than 10% worse, where those regimes occur.
-
-Season, hour, day type, bias, and worst-day diagnostics remain available for review. A screen cannot
-pass the gate. Even a passing full-development result is a recommendation for a separate adoption
-change; operational persistence, deterministic/member serving, and neural attribution must be
-integrated and verified before deployment. Only after adopting on development may the holdout report
-the new model. D+1 weather optimism and the lack of multi-day accuracy evidence remain unchanged.
+The [intrinsic-profile study](../data/analysis/price_profile_experiment_summary.json) is dated
+research evidence. Its former tree incumbent is historical, not an operational choice. The old `price-models` command is
+retired; its detailed workflow and prior results are in the
+[archived development record](history/model-development-before-neural-price.md). Current choices
+and the smoothness/accuracy trade-off are recorded in [model development](model-development.md).
 
 ## Quick inspection
 
@@ -194,9 +162,9 @@ pairwise part exposes near-duplicates (for example, `irr_solar` and `irr_solar_s
 data).
 
 Correlation is useful for orientation, but it is not evidence that a feature improves held-out MAE,
-and it looks at one feature at a time. SHAP shows how a model actually uses a feature given the
+and it looks at one feature at a time. Model attribution shows how a model uses a feature given the
 others: the week-earlier price is the price model's strongest correlate (+0.55) yet only the ninth
-of its SHAP feature families, because load, sunshine, and wind already carry most of that
+of its attribution feature families, because load, sunshine, and wind already carry most of that
 information.
 
 ## Aggregation
@@ -276,7 +244,7 @@ cached under `data/weather_cache/neighbour_anchors/`; the report is
 
 The first run (2026-10-02) found three or more points per country about 0.3 EUR/MWh better on the
 development days; the change passed the end-to-end gate but not the holdout and was reverted. See
-the 2026-10-02 decision in the [development record](model-development.md#decision-history).
+the 2026-10-02 decision in the [development record](history/model-development-before-neural-price.md#decision-history).
 
 ## Residual load
 
@@ -292,7 +260,7 @@ bootstrap of the difference from production. For production and the best variant
 the hourly predictions and reports the bias by price regime and hour, to show whether the
 under-forecast in tight hours shrank. The report is `data/analysis/residual_load_experiment.json`.
 The first run (2026-10-02) found no reliable gain and no change in the bias; see the 2026-10-02
-decision in the [development record](model-development.md#decision-history).
+decision in the [development record](history/model-development-before-neural-price.md#decision-history).
 
 ## Ablation
 
@@ -307,7 +275,7 @@ eex analyze ablation --target price --drop nuclear_available_mw --seeds 5
 Run without `--drop` for the interactive picker. A positive MAE delta means the removed features helped;
 a negative delta means the model improved without them.
 
-Use multiple seeds for small effects. Gradient boosting has real run-to-run variance, and the command
+Use multiple seeds for small effects. Both trees and neural networks have run-to-run variance, and the command
 reports the mean, spread, and a "clears / within seed noise" verdict. Also remember:
 
 - a sub-model ablation scores that sub-model's own MAE, not downstream price;
@@ -324,6 +292,7 @@ eex analyze eval --seeds 5
 eex analyze eval --holdout                  # holdout days: report an adopted configuration
 eex analyze eval --holdout --plot           # ...and draw each day's actual vs forecast price
 eex analyze eval --breakdown                # ...and break the error down (see below)
+eex analyze eval --plot --breakdown --oracle # write matched oracle results from the same fits
 ```
 
 Each fold forecasts wind, solar, and load before price. The reports at
@@ -345,34 +314,22 @@ error would remain if every day's average level were exact. It reuses the eval's
 costs nothing extra; rerun it after a model change to see whether a systematic error shrank. Its
 errors are hour-weighted, so they can differ from the day-averaged headline in the third decimal.
 
-The adopted configuration on the 18 holdout days, the out-of-sample headline, is:
+<!-- evaluation-benchmarks:start -->
+Regenerated on **15 October 2026**, using seed 42 and the operational model chain.
 
-| Model | MAE | RMSE |
-|---|---:|---:|
-| Wind | 1,803.702 MW | 2,203.244 MW |
-| Solar | 808.642 MW | 1,407.867 MW |
-| Load | 2,013.292 MW | 2,303.413 MW |
-| Price | 25.248 EUR/MWh | 37.676 EUR/MWh |
+| Model | Development MAE (92 days) | Holdout MAE (18 days) | Holdout RMSE |
+|---|---:|---:|---:|
+| Wind | 1,431.56 MW | 1,793.42 MW | 2,179.38 MW |
+| Solar | 645.53 MW | 817.07 MW | 1,423.09 MW |
+| Load | 1,746.90 MW | 2,018.92 MW | 2,304.68 MW |
+| Price | 17.07 EUR/MWh | 27.22 EUR/MWh | 41.67 EUR/MWh |
+<!-- evaluation-benchmarks:end -->
 
-Its price error is concentrated in three extreme days (26 April, 1 May, and 24 June 2026, with
-prices from -499 to 666 EUR/MWh): they carry 43% of it, and the MAE without them is 17.326 EUR/MWh.
-See the 2026-10-01 entry in the [development record](model-development.md#decision-history).
-
-The development result over the 92 development days - the reference for comparing model changes -
-is:
-
-| Model | MAE | RMSE |
-|---|---:|---:|
-| Wind | 1,426.052 MW | 1,803.784 MW |
-| Solar | 640.463 MW | 1,154.805 MW |
-| Load | 1,745.413 MW | 1,999.043 MW |
-| Price | 14.867 EUR/MWh | 19.828 EUR/MWh |
-
-Reports made before the 2026-10-01 expansion used only the original 22 days (price 11.327 EUR/MWh);
-compare a new run with them on `DEV_CORE_CUTOFFS`, not on the full 52.
-
-These development figures are partly in-sample and drawn from calmer days; the holdout is the honest
-estimate. Neither is a guarantee of live 14-day accuracy.
+Current reports identify each model's backend and recorded seed list. The figures show the first
+seed; `std_mae = 0` for a one-seed run does not establish zero model uncertainty. The 92 development
+days include selection data; the 18 holdout days report an already adopted configuration. Neither
+result guarantees live 14-day accuracy. Earlier price benchmarks and their frozen evidence are
+[archived](history/model-development-before-neural-price.md).
 
 ## Oracle substitutions
 
@@ -399,32 +356,33 @@ cancellation, not evidence that a forecast is generally better than truth.
 Reports are written to `data/evaluation/oracle_substitution.json`, or
 `oracle_substitution_holdout.json` with `--holdout`.
 
-## SHAP explanations
+## Model explanations
 
 ```bash
 eex analyze shap                            # all four production models, last 365 days
 eex analyze shap --target price --days 90
 ```
 
-Explains the **saved production models** - run `eex model train` first - with XGBoost's built-in
-exact TreeSHAP, over recent history with measured fundamentals. Each `shap_<model>.png` in
-`data/analysis/` has two panels. The first ranks feature families by mean |SHAP|: all wind points
-are summed into "wind speed", the solar statistics into "GHI", and so on, which is exact because
-SHAP values add up. The second is a beeswarm of the top individual features, one dot per hour
-stacked by density, coloured by the feature's value from low to high so the direction of each effect
-is visible; the remaining features are folded into one "Sum of N other features" row. Both panels
-are drawn by the `shap` library; the values themselves come from XGBoost. Wind and solar values are
-converted from capacity factor to MW; price stays in EUR/MWh.
+Explains saved production artifacts over recent history with measured fundamentals. The command
+retains its `shap` name, but uses **integrated gradients for price** and **TreeSHAP for fundamentals**.
+It writes `data/analysis/ig_price.png` and `shap_wind.png`, `shap_solar.png`, `shap_load.png`.
 
-Read them as what each model *relies on*, not as causes:
+For the NN, a standardized zero vector (training means, all missingness flags cleared) is the
+reference. Gauss-Legendre integration follows the fitted network from that reference to each input;
+physical-value and missingness contributions are combined per original feature. The default is 64
+quadrature points, retried at 128 if the maximum completeness residual exceeds 0.01 EUR/MWh. The
+maximum residual is logged. These are approximate neural attributions, not SHAP values, and no
+residual is redistributed to make the sums appear exact. Fundamental TreeSHAP remains exact in
+model output units; wind/solar contributions are converted from capacity factor to MW.
 
-- SHAP describes the model's associations. In the price model, for example, high DK1 import
-  capacity pushes the prediction up, because DK1's 1,875 MW level began in April 2026 and coincides
-  with a period of higher prices, not because capacity raises prices.
-- The history includes the 168 h price lag on every row, but it is absent for the far horizon at
-  serve time, so the lag's importance describes the first forecast week.
-- The non-negative clip and the solar-darkness override are applied after the model and are not part
-  of the explanation.
+Both methods use the same two-panel presentation: feature-family mean absolute contribution on the
+left and individual-feature contributions coloured by raw feature value on the right. The `shap`
+library renders these panels; it does not compute the neural attributions. Price axes are labelled
+IG and fundamental axes SHAP. The figures describe associations learned by the models, not causes.
+
+The window includes the weekly lag on historical rows, so lag importance describes its available
+regime rather than the second forecast week. Fundamental non-negative clamps and the solar-darkness
+override remain outside the additive explanation. See [RESULTS](../RESULTS.md) for current figures.
 
 ## Solar diagnostics
 
@@ -463,7 +421,8 @@ development cutoffs. Retune after changing features, feature semantics, or ancho
 | `data/tuning/` | Optuna trials and selected parameters |
 | `data/aggregation/` | feature-representation comparisons |
 | `data/ablation/` | feature-removal comparisons |
-| `data/analysis/` | correlations, error slices, feature and anchor experiments, SHAP plots |
+| `data/analysis/` | correlations, error slices, feature/anchor studies, IG and SHAP plots |
+| `data/history/pre_nn_20261015/` | pre-migration benchmark evidence; not current outputs |
 | `data/rank/` | saved point rankings |
 
 Generated reports are the detailed source of truth. The

@@ -74,9 +74,7 @@ def backfill_entsoe(
     return counts
 
 
-def backfill_nuclear(
-    db_path: str | Path, *, start: DateLike, end: DateLike | None = None
-) -> int:
+def backfill_nuclear(db_path: str | Path, *, start: DateLike, end: DateLike | None = None) -> int:
     """Backfill cross-border nuclear availability (``nuclear_available_mw``) over ``[start, end]``.
 
     Outages publish ahead, so the default end reaches D+2; the forecast step extends it to the full

@@ -21,7 +21,6 @@ Command groups:
 - eex analyze solar-irradiance: A/B GTI/direct/diffuse/DNI/cloud solar inputs.
 - eex analyze eval: end-to-end backtest the sub-models -> price chain on the frozen cutoffs.
 - eex analyze oracle: diagnose each sub-model's downstream price effect with actual substitutions.
-- eex analyze price-models: optional price-only neural screen/search on frozen development inputs.
 - eex model train: train the generation sub-models and the price model.
 - eex model tune: Optuna walk-forward hyperparameter tuning for one model.
 - eex forecast: run the pipeline and write the 14-day price forecast (--ensemble adds spread bands).
@@ -146,62 +145,6 @@ class ModelName(StrEnum):
     solar = "solar"
     load = "load"
     price = "price"
-
-
-class PriceExperimentStage(StrEnum):
-    screen = "screen"
-    search = "search"
-    development = "development"
-
-
-@analyze_app.command("price-models")
-def analyze_price_models(
-    run_id: Annotated[
-        str, typer.Option(help="Unique experiment ID; reuse to continue its frozen run.")
-    ],
-    stage: Annotated[
-        PriceExperimentStage,
-        typer.Option(help="Screen, freeze a search shortlist, or score full development."),
-    ] = PriceExperimentStage.screen,
-    screen_days: Annotated[
-        int, typer.Option(help="Development days spread across the calendar.")
-    ] = 12,
-    trials: Annotated[
-        int, typer.Option(help="Total Optuna trial budget in the search stage.")
-    ] = 12,
-) -> None:
-    """Compare a price-only neural network with XGBoost using identical forecast fundamentals.
-
-    Requires the optional nn dependency. Snapshots and checkpoints live under data/analysis/price_models;
-    this never trains operative models, writes source data, or opens the reporting holdout.
-    """
-    try:
-        from eex_forecast.analysis.price_models import run_experiment
-    except ModuleNotFoundError as exc:
-        if exc.name == "torch":
-            raise typer.BadParameter(
-                'Install the neural extra first: pip install -e ".[nn]"'
-            ) from exc
-        raise
-    try:
-        path, report = run_experiment(
-            get_settings().db_path,
-            run_id=run_id,
-            stage=stage.value,
-            screen_days=screen_days,
-            trials=trials,
-        )
-    except (ValueError, FileNotFoundError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    if "summary" in report:
-        for name in ("xgb_incumbent", "nn", "xgb_seed_mean", "blend_50_50"):
-            metrics = report["summary"][name]
-            typer.echo(f"{name}: MAE {metrics['mae']:.3f} | RMSE {metrics['rmse']:.3f} EUR/MWh")
-    elif stage == PriceExperimentStage.search:
-        typer.echo(f"Frozen {len(report['finalists'])} finalist(s).")
-    else:
-        typer.echo(f"Adoption recommended: {report['adoption_recommended']}")
-    typer.echo(f"Report: {path}")
 
 
 @app.callback()
@@ -538,11 +481,11 @@ def analyze_shap(
         int, typer.Option(help="Explain this many days of recent history.")
     ] = shap_analysis.DEFAULT_SHAP_DAYS,
 ) -> None:
-    """Explain the trained production models with SHAP (writes data/analysis/shap_<model>.png).
+    """Explain saved models: price integrated gradients and fundamental TreeSHAP.
 
-    Uses XGBoost's exact TreeSHAP on the saved models (run `eex model train` first) over the last
+    Uses integrated gradients for the price NN and exact TreeSHAP for fundamentals (run `eex model train` first) over the last
     --days of history, with measured fundamentals. Wind and solar are converted to MW. Each figure ranks
-    feature families by mean |SHAP| and shows a beeswarm of the top individual features.
+    feature families by mean absolute attribution and shows a beeswarm of the top individual features.
     """
     if days < 1:
         raise typer.BadParameter("--days must be at least 1.")
@@ -562,7 +505,9 @@ def analyze_shap(
         top = result.family_importance().head(4)
         unit = result.unit
         summary = ", ".join(f"{family} {value:,.1f}" for family, value in top.items())
-        typer.echo(f"SHAP {name:<5} ({len(result.values):,} h, mean |SHAP| {unit}): {summary}")
+        typer.echo(
+            f"{result.method} {name:<5} ({len(result.values):,} h, mean absolute attribution {unit}): {summary}"
+        )
         typer.echo(f"  plot -> {path}")
 
 
@@ -630,7 +575,7 @@ def _strategies_default(fundamental: str) -> str:
 # the only horizon this backtest scores faithfully. Only eval and oracle may score the holdout days
 # instead (--holdout), and only to report; the selection tools have no cutoff option at all.
 _SeedsOpt = Annotated[
-    int, typer.Option(help="XGBoost seeds to average over; >1 reports mean +/- spread.")
+    int, typer.Option(help="Model seeds to average over; >1 reports mean +/- spread.")
 ]
 _HoldoutOpt = Annotated[
     bool,
@@ -995,7 +940,7 @@ def analyze_ablation(
 
     Scored over the frozen backtest cutoffs at the day-ahead 24 h horizon. With no --drop, lists the features
     numbered and prompts for which to remove; pass --drop for a non-interactive run. Works for any model -
-    price lags/aggregates, or raw per-point sub-model columns. Pass --seeds >1 to average over XGBoost
+    price lags/aggregates, or raw per-point sub-model columns. Pass --seeds >1 to average over model
     seeds and judge the delta against run-to-run noise.
     """
     if target is ModelName.all:
@@ -1255,6 +1200,9 @@ def analyze_eval(
             "(for price) price regime and level vs shape (model_eval_breakdown*.json)."
         ),
     ] = False,
+    oracle: Annotated[
+        bool, typer.Option(help="Also write matched oracle diagnostics from the same fitted folds.")
+    ] = False,
 ) -> None:
     """Backtest the complete sub-models -> price pipeline and report per-model 24h MAE.
 
@@ -1263,7 +1211,7 @@ def analyze_eval(
     directly. --holdout scores the untouched holdout days instead, for an honest out-of-sample report of
     the adopted configuration. Errors are in each model's natural unit (EUR/MWh for price, MW for the
     fundamentals) - only same-model runs compare, not price against a sub-model. Pass --seeds >1 to average
-    over XGBoost seeds. Every fold forecasts wind, solar, and load first, then supplies those forecasts -
+    over model seeds. Every fold forecasts wind, solar, and load first, then supplies those forecasts -
     never the held-out actuals - to the price model.
     """
     with connect(get_settings().db_path) as conn:
@@ -1272,9 +1220,16 @@ def analyze_eval(
         raise typer.BadParameter("No data in the database. Run the backfills first.")
 
     try:
-        result = evaluation.run_evaluation(
-            frame, seeds=seeds, cutoff_set=HOLDOUT if holdout else DEVELOPMENT
-        )
+        if oracle:
+            result, oracle_result = evaluation.run_evaluation_and_oracle(
+                frame, seeds=seeds, cutoff_set=HOLDOUT if holdout else DEVELOPMENT
+            )
+            oracle_path = evaluation.save_oracle_report(oracle_result)
+            typer.echo(f"  oracle report -> {oracle_path}")
+        else:
+            result = evaluation.run_evaluation(
+                frame, seeds=seeds, cutoff_set=HOLDOUT if holdout else DEVELOPMENT
+            )
     except ValueError as error:
         raise typer.BadParameter(str(error)) from error
     path = evaluation.save_evaluation_report(result)

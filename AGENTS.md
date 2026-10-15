@@ -6,8 +6,8 @@ continues in `docs/`; this file is the orientation and the rules an agent needs 
 ## What this project is
 
 Short-term forecasting of the **German day-ahead electricity price** (EEX / EPEX SPOT DE-LU zone) out
-to a 14-day horizon. A Python 3.11+ package exposing an `eex` Typer CLI, XGBoost models, and a SQLite
-store. External APIs (ENTSO-E, Open-Meteo) are **mocked in tests** — no network or API key is needed to
+to a 14-day horizon. A Python 3.11+ package exposing an `eex` Typer CLI, XGBoost fundamentals, a neural
+DE price model, and a SQLite store. External APIs (ENTSO-E, Open-Meteo) are **mocked in tests** — no network or API key is needed to
 run `pytest`.
 
 ## The model chain (the one thing to understand first)
@@ -15,8 +15,8 @@ run `pytest`.
 Forecasting is two-stage: **weather → three generation sub-models → price model**.
 
 1. Sub-models `wind`, `solar`, `load` each learn a fundamental from weather + calendar features.
-2. The `price` model learns the day-ahead price from calendar + the 168 h price lag + weather
-   aggregates + the three fundamentals. The lag is NaN past D+7 at serve (the look-back lands after the
+2. The `price` model is the mandatory two-layer SiLU NN, learning day-ahead price from calendar,
+   the 168 h price lag, weather aggregates and the three fundamentals. The lag is NaN past D+7 at serve (the look-back lands after the
    issue date), so training reproduces that gap - see `model.apply_train_nan_lag_mask` (and the
    walk-forward backtest does the same, so ablation/tuning see live behaviour, not a leak).
 3. The fundamentals reach the price model through an **actual-or-forecast coalesce**
@@ -43,8 +43,8 @@ src/eex_forecast/
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # offline `eex analyze ...` implementations; depends on core, never vice versa
     correlation.py     # per-model correlations on each model's own features (+ CSV)
-    plots.py           # analysis plots: point maps, correlations, eval day panels, SHAP
-    shap.py            # TreeSHAP of the saved production models, grouped into feature families
+    plots.py           # analysis plots: point maps, correlations, eval day panels, IG/TreeSHAP
+    shap.py            # price integrated gradients + fundamental TreeSHAP, grouped into families
     ablation.py        # remove chosen features and measure the loss, any model
     aggregation.py     # A/B weather aggregation per fundamental + neighbour
     anchors.py         # wind/load/solar anchor spacing/count/redundancy/coverage experiments
@@ -52,7 +52,8 @@ src/eex_forecast/
     residual_load.py   # residual-load feature variants for price, with the regime-bias check
     comparison.py      # shared per-day errors and day-level bootstrap for experiments
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
-    price_models.py    # optional price-only NN screen/search on frozen forecast-fundamental inputs
+    price_models.py    # historical frozen-input utilities; challenger CLI retired
+    price_profiles.py  # dated intrinsic price-shape research on frozen development inputs
     breakdown.py       # systematic-error breakdown of an eval: bias by regime/hour/season/day type
     solar.py           # solar error slices + physics/irradiance feature A/B commands
   ensemble/            # optional weather-ensemble product; depends on core, never vice versa
@@ -64,8 +65,8 @@ src/eex_forecast/
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
   quality.py           # reject gross upstream actual-data corruption before hourly resampling
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
-  model.py             # ModelSpec REGISTRY (wind/solar/load/price); train/predict/persist
-  price_nn.py          # optional single-area neural challenger; never registered for operative serving
+  model.py             # ModelSpec registry + shared NN/tree factory; train/predict/persist
+  price_nn.py          # operational DE price NN, preprocessing, numeric persistence and attribution
   backtest_cutoffs.py  # frozen development/holdout cutoffs + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB (calls plots)
@@ -129,10 +130,9 @@ docs/
 - **Serve known-ahead inputs the way their history was stored.** The NTC history is week-ahead, so the
   forecast horizon carries the last week-ahead value forward (`sources.ntc.blend_week_over_month`);
   month-ahead fills only where no week-ahead exists. Do not reintroduce a month-ahead far horizon:
-  its levels differ (DK1 500 vs 1,875 MW), and per-border inputs turn that into a ~40 EUR/MWh price
-  shift. D+1 backtests cannot catch such far-horizon mismatches, so check any new known-ahead input's
-  horizon values against its history. `ntc_imp_dk1` partly acts as a period marker (high capacity
-  pushes price up); it is kept, and a change in its published level is a known risk.
+  its levels differ (DK1 500 vs 1,875 MW), and that mismatch caused a ~40 EUR/MWh shift in the former tree price model. D+1 backtests cannot catch such far-horizon mismatches, so check any new known-ahead input's
+  horizon values against its history. `ntc_imp_dk1` can act as a period marker as well as a physical driver; its neural effect is nonlinear,
+  and a change in its published level remains a known risk.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
   are load-bearing. Changing either silently corrupts the price model's inputs.
 - **Know which backtest supplies actual versus forecast fundamentals.** Wind/solar/load actual MW values
@@ -155,9 +155,14 @@ docs/
   (`model.apply_train_nan_lag_mask`) and nulls `price_lag_168h` on far-horizon test rows that would not
   have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
   horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
-- **Production fits exactly the configured `n_estimators`.** `model._fit` does not early-stop; its
-  chronological validation slice only feeds logged metrics. Every walk-forward tool fits the tuned
-  tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
+- **Fundamentals fit exactly `n_estimators`; price fits exactly `epochs`.** Price is always neural,
+  selected by `ModelSpec.backend`, never by CLI flags or artifact fallback. Every fitting path uses
+  `model.make_estimator` and `seeded_params` (NN `seed`, tree `random_state`). Neural preprocessing
+  fits on train rows after lag masking; negative prices remain possible and outputs are never
+  temporally smoothed. `price.npz` is required; `price.json` cannot satisfy price loading.
+  `model._fit` does not early-stop; its
+  chronological validation slice only feeds logged metrics. Every walk-forward tool fits the configured
+  epoch count or tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
   has scored (it once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
 - **Selection uses development days; the holdout only reports.** `config/backtest_cutoffs.yaml`
   holds `development` (every choice: tuning, aggregation, ablation, anchors, solar tools, and the
@@ -198,12 +203,11 @@ docs/
 
 ## Commands
 
-`eex analyze price-models` is an optional price-only neural experiment (`pip install -e ".[nn]"`).
-Its runner (`analysis/price_models.py`) freezes a read-only SQLite backup and reuses eval's held-out
-fundamental forecasts with upstream seed 42. Screening/search import only `DEV_CUTOFFS`; there is no
-holdout or arbitrary-cutoff CLI option. New source/configuration semantics require a new run ID.
-Neither operative artifacts nor source data are written. Neural tests skip without PyTorch; install
-the extra to run them. See `docs/experimentation.md` for the stages and adoption criteria.
+PyTorch is required. Price configuration lives in the `price` entry of `config/hyperparams.json`;
+tree-only parameters must be rejected for price. `eex model tune --target price` searches NN parameters
+and retains the incumbent unless a trial wins. The historical `price-models` command is retired.
+`eex analyze eval --oracle` writes matched eval/oracle reports from one fitted chain per fold. Price
+attribution is integrated gradients (`ig_price.png`); fundamentals retain `shap_<model>.png`.
 
 ```bash
 pip install -e ".[dev]"          # install package + dev tools
@@ -222,7 +226,7 @@ Geometry generation and point ranking are needed only when rebuilding the commit
 
 Documentation is part of the behavior being changed. Keep these sources aligned in the same change:
 
-- `RESULTS.md` explains the holdout day plots and SHAP figures to a non-specialist reader. Keep its
+- `RESULTS.md` explains the holdout day plots and IG/TreeSHAP figures to a non-specialist reader. Keep its
   figures, numbers, and readings in step with the committed images when they are regenerated.
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.

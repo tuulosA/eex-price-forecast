@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast.analysis.anchors import WeatherAnchor
 from eex_forecast.analysis.comparison import paired_day_bootstrap
@@ -22,14 +21,7 @@ from eex_forecast.analysis.neighbours import (
 from eex_forecast.features import active_weather_columns
 from eex_forecast.weather.grid import haversine_km
 
-TINY: dict[str, Any] = {
-    "n_estimators": 10,
-    "max_depth": 3,
-    "objective": "reg:squarederror",
-    "tree_method": "hist",
-    "random_state": 0,
-    "n_jobs": 1,
-}
+TINY = dict(NN_TINY)
 
 
 def _ranking(country: str, n: int = 8) -> list[WeatherAnchor]:

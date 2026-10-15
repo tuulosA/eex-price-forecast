@@ -16,8 +16,8 @@ wind/solar/load fundamentals, and cross-border market drivers.
 1. backfills German prices, generation, load, capacity, weather, nuclear availability, and transfer
    capacity into SQLite;
 2. forecasts wind, solar, and load from ECMWF weather with three XGBoost sub-models;
-3. forecasts German day-ahead price from those fundamentals, calendar and lag features, German weather,
-   and cross-border conditions;
+3. forecasts German day-ahead price with a neural network using those fundamentals, calendar and lag
+   features, German weather, and cross-border conditions;
 4. writes a forecast CSV and optional price, fundamentals, and driver plots;
 5. optionally propagates ECMWF's 51-member weather ensemble through the same trained models to show a
    weather-driven spread around the forecast;
@@ -45,7 +45,9 @@ Solar combines irradiance components, cloud cover, deterministic solar geometry,
 capacity (so the model can tell fleet eras apart as output per unit of capacity drifts), and a physical
 zero-generation constraint in darkness.
 
-The price model uses the sub-model forecasts where future actuals are unavailable. It also sees:
+The price model is a DE-only neural network with two 64-unit SiLU layers, trained for 40 fixed epochs.
+It predicts prices directly, with no output smoothing or peak scaler. The fundamentals remain
+XGBoost models. The price model uses their forecasts where future actuals are unavailable. It also sees:
 
 - the 168-hour price lag where it exists at serve time;
 - German market-local calendar and holiday features;
@@ -100,6 +102,10 @@ eex forecast --plot                         # write data/forecast/*
 ```
 
 The database and trained model artifacts are local runtime files and are not committed.
+PyTorch is a required dependency. Price state is saved as `data/models/price.npz`; fundamentals use
+`wind.json`, `solar.json` and `load.json`. All have feature-order sidecars. Existing installations must
+reinstall the package and run `eex model train` after the neural migration: legacy price trees are
+never used as a fallback.
 
 To generate and rank your own weather candidates or tune different model configurations, follow the
 [experimentation guide](docs/experimentation.md).
@@ -195,25 +201,27 @@ The package includes frozen-cutoff, D+1 walk-forward tools:
 ```bash
 eex analyze eval                            # full weather -> fundamentals -> price chain
 eex analyze oracle                          # isolate downstream fundamental effects
-eex analyze shap                            # what each trained model relies on (SHAP)
+eex analyze shap                            # model explanations: neural IG / fundamental TreeSHAP
 eex analyze ablation --target price         # remove features and measure the change
 eex analyze aggregation wind                # compare weather representations
 eex analyze anchors wind                    # compare anchor selections (also load / solar)
 eex model tune --target wind                # Optuna tuning with incumbent protection
-eex analyze price-models --run-id price_nn_screen  # optional price-only NN experiment
-eex analyze eval --holdout --plot           # report on the untouched holdout days
+eex analyze eval --holdout --seeds 1 --plot # report the adopted configuration on holdout days
 ```
 
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
 anchors, and the end-to-end adoption gate - is made on 92 **development** days. The headline below
 is scored on 18 **holdout** days (January-September 2026) that nothing was ever tuned or chosen on:
 
+Regenerated on 15 October 2026 with the operational NN and **seed 42**. These are single-seed
+point estimates; the report does not estimate across-seed uncertainty.
+
 | Model | MAE | RMSE |
 |---|---:|---:|
-| Wind | 1,803.70 MW | 2,203.24 MW |
-| Solar | 808.64 MW | 1,407.87 MW |
-| Load | 2,013.29 MW | 2,303.41 MW |
-| Price | 25.25 EUR/MWh | 37.68 EUR/MWh |
+| Wind | 1,793.42 MW | 2,179.38 MW |
+| Solar | 817.07 MW | 1,423.09 MW |
+| Load | 2,018.92 MW | 2,304.68 MW |
+| Price | 27.22 EUR/MWh | 41.67 EUR/MWh |
 
 ![Actual vs D+1 forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
@@ -222,7 +230,7 @@ is scored on 18 **holdout** days (January-September 2026) that nothing was ever 
 
 Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
 666 EUR/MWh peak on 24 June. Those three account for 43% of the price error; without them the MAE is
-17.33 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+18.62 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
 
 A few things are worth keeping in mind when reading these figures:
 
@@ -243,15 +251,15 @@ deliberately does not maintain one.
 See [Experimentation and evaluation](docs/experimentation.md) for methodology, command options, report
 locations, and interpretation.
 
-The price-only neural experiment requires the optional `nn` extra (`pip install -e ".[nn]"`).
-It compares against XGBoost on frozen development inputs and leaves the operational model unchanged.
-See [the neural experiment workflow](docs/experimentation.md#price-only-neural-experiment).
+Price tuning uses the operational NN; there is no backend switch. The
+[model development record](docs/model-development.md) explains the adopted configuration, measured
+smoothness/accuracy trade-off and current benchmarks.
 
 ## Documentation
 
 | Document | Purpose |
 |---|---|
-| [Results explained](RESULTS.md) | Plain-language walkthrough of the holdout forecasts and SHAP plots, for non-specialists |
+| [Results explained](RESULTS.md) | Plain-language walkthrough of the holdout forecasts and attribution plots, for non-specialists |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |
 | [Model development](docs/model-development.md) | Findings, rejected alternatives, decisions, and next research priorities |

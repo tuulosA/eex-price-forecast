@@ -120,7 +120,7 @@ def run_ablation(
     """Score ``spec``'s full feature set versus the set minus ``dropped`` (walk-forward MAE/RMSE).
 
     Scored over the frozen :data:`DEV_CUTOFFS` at the day-ahead horizon (:data:`DAY_AHEAD_DAYS`) - the
-    only horizon this backtest scores faithfully. With ``seeds > 1`` each side is refit under several XGBoost
+    only horizon this backtest scores faithfully. With ``seeds > 1`` each side is refit under several model
     seeds and the delta is paired per seed, so its run-to-run spread is reported alongside the mean - a delta
     within that spread is not a result. ``cutoffs`` is an internal test seam.
     """

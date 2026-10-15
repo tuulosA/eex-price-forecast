@@ -329,21 +329,21 @@ def _format_shap(value: float, unit: str) -> str:
 
 
 def plot_shap(result: ShapResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
-    """Draw one model's global SHAP summary with the ``shap`` library's standard plots.
+    """Draw a model's attribution summary with the ``shap`` library's plotting functions.
 
-    Left: ``shap.plots.bar`` over the **feature families** - mean |SHAP| per family over every
+    Left: ``shap.plots.bar`` over the **feature families** - mean absolute attribution over every
     explained hour, the answer to "what does this model rely on" in the target's unit. Families are
-    summed per row before the absolute value, which is exact because SHAP values are additive.
+    summed per row before the absolute value, retaining the underlying attribution sum.
 
-    Right: ``shap.plots.beeswarm`` over the individual features - each dot one hour, placed at its SHAP
+    Right: ``shap.plots.beeswarm`` over individual features - each dot one hour, placed at its
     value and stacked by density, so the shape shows where most hours sit, coloured by the feature's
     own value from low to high so each effect's direction is visible (for example, high wind speed
     pushing price down). Features beyond the top ``_SHAP_TOP`` are folded into ``shap``'s "Sum of N
     other features" row rather than dropped.
 
-    The values come from :func:`eex_forecast.analysis.shap.explain_model` (XGBoost's exact TreeSHAP,
-    in MW for wind and solar); ``shap`` only draws them. Both libraries label the axis "SHAP value"
-    without a unit, so the unit is restored here. Written to ``shap_<model>.png``.
+    Values come from ``explain_model``: neural integrated gradients for price and exact TreeSHAP
+    for fundamentals. The renderer only draws them; axes identify the method and physical unit.
+    Price writes ``ig_price.png``; fundamentals write ``shap_<model>.png``.
     """
     import matplotlib
 
@@ -366,20 +366,22 @@ def plot_shap(result: ShapResult, *, reports_dir: Path = ANALYSIS_DIR) -> Path:
     )
     shap.plots.bar(families, max_display=_SHAP_TOP, ax=left, show=False)
     shap.plots.beeswarm(features, max_display=_SHAP_TOP + 1, ax=right, show=False, plot_size=None)
-    left.set_xlabel(f"mean |SHAP| ({unit})")
+    label = "IG" if result.method == "Integrated gradients" else "SHAP"
+    left.set_xlabel(f"mean |{label}| ({unit})")
     left.set_title("Feature families", loc="left", fontsize=10)
-    right.set_xlabel(f"SHAP value: effect on the prediction ({unit})")
+    right.set_xlabel(f"{label} attribution: effect on the prediction ({unit})")
     right.set_title("Individual features, one dot per hour", loc="left", fontsize=10)
 
     fig.suptitle(
-        f"SHAP: production {result.model} model over {len(result.values):,} hours "
+        f"{result.method}: production {result.model} model over {len(result.values):,} hours "
         f"({result.start:%Y-%m-%d} to {result.end:%Y-%m-%d}; "
         f"base {_format_shap(result.base_value, unit)} {unit})",
         fontsize=11,
     )
     fig.tight_layout()
     reports_dir.mkdir(parents=True, exist_ok=True)
-    path = reports_dir / f"shap_{result.model}.png"
+    prefix = "ig" if result.method == "Integrated gradients" else "shap"
+    path = reports_dir / f"{prefix}_{result.model}.png"
     fig.savefig(path, dpi=120)
     plt.close(fig)
     return path

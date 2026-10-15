@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from tests.conftest import make_timeseries
+from tests.conftest import NN_TINY, make_timeseries
 
 from eex_forecast import tuning as tuning_ops
 from eex_forecast.model import DEFAULT_PARAMS, REGISTRY
@@ -194,3 +194,27 @@ def test_save_tuning_report_writes_full_report(tmp_path: Path) -> None:
     assert payload["best_trial"]["mean_rmse"] == 22.1
     assert payload["best_trial"]["folds"][0]["rmse"] == 20.0
     assert len(payload["all_trials"]) == 1
+
+
+def test_neural_tuning_preserves_incumbent_without_tree_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = []
+
+    def score(spec, data, params, cutoffs, days):
+        seen.append(params)
+        return 0.0 if params["hidden"] == NN_TINY["hidden"] else 1.0
+
+    monkeypatch.setattr(tuning_ops, "_score", score)
+    result = tune(
+        REGISTRY["price"],
+        make_timeseries(periods=24 * 120),
+        n_trials=1,
+        incumbent_params=NN_TINY,
+        cutoffs=CUTOFFS[:1],
+    )
+    assert result.report["config"]["backend"] == "neural"
+    assert result.report["best_trial"]["trial"] == "incumbent"
+    assert result.params["hidden"] == NN_TINY["hidden"]
+    assert all("seed" in params and "random_state" not in params for params in seen)
+    assert all("n_estimators" not in params for params in seen)
