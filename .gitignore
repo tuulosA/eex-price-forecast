@@ -62,3 +62,7 @@ logs/
 
 # Local analysis notebooks
 notebooks/
+
+# Local forecast-comparison images
+data/analysis/price_profiles_20261015/live_profiles.png
+data/analysis/price_profiles_20261015/live_profile_details.png
