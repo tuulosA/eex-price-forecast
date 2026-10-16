@@ -1,19 +1,18 @@
 """ENTSO-E actuals for the German (DE-LU) bidding zone.
 
-Wraps the ``entsoe`` (entsoe-py) pandas client and returns tidy **hourly, UTC** frames keyed on a
+Wraps the ``entsoe`` (entsoe-py) pandas client and returns tidy **15-minute, UTC** frames keyed on a
 ``timestamp`` column:
 
 - :func:`fetch_prices` -> ``price_actual_eur_mwh``
 - :func:`fetch_generation` -> ``wind_actual_mw`` + ``solar_actual_mw`` (onshore+offshore / PV summed)
 - :func:`fetch_load` -> ``load_actual_mw``
-- :func:`fetch_capacity` -> ``wind_capacity_mw`` + ``solar_capacity_mw`` (yearly, forward-filled hourly)
+- :func:`fetch_capacity` -> ``wind_capacity_mw`` + ``solar_capacity_mw`` (yearly, forward-filled to delivery intervals)
 
 Requests are chunked by month with retry/backoff. Sub-hourly series (load, generation) are guarded
-against gross upstream glitches (:func:`eex_forecast.quality.clip_implausible`) **before** the hourly
-resample. The guard is not applied to price, which is legitimately volatile.
+against gross upstream glitches (:func:`eex_forecast.quality.clip_implausible`) **before** storage. The guard is not applied to price, which is legitimately volatile.
 
 The network-free parsing helpers (``_normalize_generation_columns``, ``_sum_production_types``,
-``_to_hourly_utc``, ``_to_frame``) are unit-tested directly; the ``fetch_*`` functions are thin
+``_to_delivery_utc``, ``_to_frame``) are unit-tested directly; the ``fetch_*`` functions are thin
 orchestration over them.
 """
 
@@ -32,6 +31,7 @@ from entsoe.exceptions import NoMatchingDataError
 
 from eex_forecast.config import ENTSOE_ZONE, get_settings
 from eex_forecast.quality import clip_implausible, window_scale
+from eex_forecast.resolution import FREQUENCY, STEP
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def _iter_months(
 ) -> Iterator[tuple[pd.Timestamp, pd.Timestamp]]:
     """Yield ``[month_start, next_month_start)`` windows covering ``[start, end]`` (inclusive of end)."""
     cursor = start.normalize()
-    inclusive_end = end + pd.Timedelta(hours=1)
+    inclusive_end = end + STEP
     while cursor < inclusive_end:
         next_month = cursor + pd.offsets.MonthBegin(1)
         yield cursor, min(next_month, inclusive_end)
@@ -152,8 +152,8 @@ def _sum_production_types(frame: pd.DataFrame, types: tuple[str, ...]) -> pd.Ser
     return frame[present].sum(axis=1, min_count=1)
 
 
-def _to_hourly_utc(series: pd.Series, *, guard: bool, baseline: bool = False) -> pd.Series:
-    """UTC-index, de-duplicate, optionally guard, and resample sub-hourly data to an hourly mean.
+def _to_delivery_utc(series: pd.Series, *, guard: bool, baseline: bool = False) -> pd.Series:
+    """UTC-index, de-duplicate and guard native delivery values without averaging quarters.
 
     ``baseline=True`` marks a series with a real non-zero floor (load); generation series, which reach
     zero legitimately, are guarded against large-magnitude spikes only (no low-value floor).
@@ -171,9 +171,12 @@ def _to_hourly_utc(series: pd.Series, *, guard: bool, baseline: bool = False) ->
             logger.warning("Rejected implausible value %.0f at %s", value, index)
         series = cleaned
 
-    deltas = series.index.to_series().diff().dropna()
-    if not deltas.empty and (deltas < pd.Timedelta(hours=1)).any():
-        series = series.resample("h").mean()
+    if (
+        (pd.DatetimeIndex(series.index).minute % 15 != 0)
+        | (pd.DatetimeIndex(series.index).second != 0)
+    ).any():
+        raise ValueError("ENTSO-E timestamps must align to the 15-minute delivery grid.")
+
     return series
 
 
@@ -185,7 +188,7 @@ def _to_frame(series: pd.Series, column: str) -> pd.DataFrame:
 
 # -- public fetchers ------------------------------------------------------------
 def fetch_prices(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Day-ahead prices -> frame[``timestamp``, ``price_actual_eur_mwh``] (hourly UTC)."""
+    """Day-ahead prices -> frame[``timestamp``, ``price_actual_eur_mwh``] (15-minute UTC)."""
     raw = _fetch_windowed(
         lambda c, s, e: c.query_day_ahead_prices(ENTSOE_ZONE, start=s, end=e),
         start,
@@ -194,12 +197,24 @@ def fetch_prices(start: str | date | datetime, end: str | date | datetime) -> pd
     )
     if len(raw) == 0:
         return _empty(["price_actual_eur_mwh"])
-    series = _to_hourly_utc(raw if isinstance(raw, pd.Series) else raw.iloc[:, 0], guard=False)
-    return _to_frame(series, "price_actual_eur_mwh")
+    series = _to_delivery_utc(raw if isinstance(raw, pd.Series) else raw.iloc[:, 0], guard=False)
+    # Before SDAC's transition, one hourly auction price applies unchanged to all four quarters.
+    # Never interpolate prices or extend a post-transition value into missing native quarters.
+    transition = pd.Timestamp("2025-10-01", tz="Europe/Berlin").tz_convert("UTC")
+    legacy = series[(series.index < transition) & (pd.DatetimeIndex(series.index).minute == 0)]
+    pieces = [series]
+    for minutes in (15, 30, 45):
+        expanded = legacy.copy()
+        expanded.index = expanded.index + pd.Timedelta(minutes=minutes)
+        pieces.append(expanded[expanded.index < transition])
+    series = pd.concat(pieces)
+    series = series[~series.index.duplicated(keep="first")].sort_index()
+    start_ts, end_ts = _normalize_bounds(start, end)
+    return _to_frame(series.loc[start_ts:end_ts], "price_actual_eur_mwh")
 
 
 def fetch_generation(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Generation -> frame[``timestamp``, ``wind_actual_mw``, ``solar_actual_mw``] (hourly UTC)."""
+    """Generation -> frame[``timestamp``, ``wind_actual_mw``, ``solar_actual_mw``] (15-minute UTC)."""
     raw = _fetch_windowed(
         lambda c, s, e: c.query_generation(ENTSOE_ZONE, start=s, end=e),
         start,
@@ -209,8 +224,8 @@ def fetch_generation(start: str | date | datetime, end: str | date | datetime) -
     if len(raw) == 0:
         return _empty(["wind_actual_mw", "solar_actual_mw"])
     frame = _normalize_generation_columns(raw if isinstance(raw, pd.DataFrame) else raw.to_frame())
-    wind = _to_hourly_utc(_sum_production_types(frame, WIND_PRODUCTION_TYPES), guard=True)
-    solar = _to_hourly_utc(_sum_production_types(frame, SOLAR_PRODUCTION_TYPES), guard=True)
+    wind = _to_delivery_utc(_sum_production_types(frame, WIND_PRODUCTION_TYPES), guard=True)
+    solar = _to_delivery_utc(_sum_production_types(frame, SOLAR_PRODUCTION_TYPES), guard=True)
     combined = pd.DataFrame({"wind_actual_mw": wind, "solar_actual_mw": solar})
     combined = combined.dropna(how="all").reset_index()
     combined.columns = ["timestamp", "wind_actual_mw", "solar_actual_mw"]
@@ -218,7 +233,7 @@ def fetch_generation(start: str | date | datetime, end: str | date | datetime) -
 
 
 def fetch_load(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Actual load -> frame[``timestamp``, ``load_actual_mw``] (hourly UTC, glitch-guarded)."""
+    """Actual load -> frame[``timestamp``, ``load_actual_mw``] (15-minute UTC, glitch-guarded)."""
     raw = _fetch_windowed(
         lambda c, s, e: c.query_load(ENTSOE_ZONE, start=s, end=e), start, end, label="load"
     )
@@ -229,14 +244,14 @@ def fetch_load(start: str | date | datetime, end: str | date | datetime) -> pd.D
         series = raw[column] if column in raw.columns else raw.iloc[:, 0]
     else:
         series = raw
-    return _to_frame(_to_hourly_utc(series, guard=True, baseline=True), "load_actual_mw")
+    return _to_frame(_to_delivery_utc(series, guard=True, baseline=True), "load_actual_mw")
 
 
 def fetch_capacity(start: str | date | datetime, end: str | date | datetime) -> pd.DataFrame:
-    """Installed wind/solar capacity -> hourly frame[``timestamp``, ``wind_capacity_mw``, ``solar_capacity_mw``].
+    """Installed wind/solar capacity -> 15-minute frame[``timestamp``, ``wind_capacity_mw``, ``solar_capacity_mw``].
 
     ENTSO-E publishes installed capacity once a year (one row per year). We forward-fill each year's value
-    onto the hourly grid so every row carries the capacity in force at that time; the latest published year
+    onto the delivery grid so every row carries the capacity in force at that time; the latest published year
     carries forward, since next year's figure does not exist yet. Wind is onshore + offshore.
     """
     start_ts, end_ts = _normalize_bounds(start, end)
@@ -265,7 +280,9 @@ def fetch_capacity(start: str | date | datetime, end: str | date | datetime) -> 
     )
     yearly = yearly[~yearly.index.duplicated(keep="last")].sort_index()
 
-    hours = pd.date_range(start_ts.floor("h"), end_ts.floor("h"), freq="h", tz="UTC")
+    hours = pd.date_range(
+        start_ts.floor(FREQUENCY), end_ts.floor(FREQUENCY), freq=FREQUENCY, tz="UTC"
+    )
     hourly = yearly.reindex(yearly.index.union(hours)).sort_index().ffill().reindex(hours)
     frame = hourly.reset_index()
     frame.columns = ["timestamp", *CAPACITY_COLUMNS]

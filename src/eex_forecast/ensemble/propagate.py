@@ -36,6 +36,13 @@ from eex_forecast.ensemble.client import (
 from eex_forecast.ensemble.store import FORECAST_COLUMNS, TIMESTAMP
 from eex_forecast.features import active_weather_columns, preceding_hour_mean_columns
 from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
+from eex_forecast.resolution import (
+    FREQUENCY,
+    RADIATION_OFFSET,
+    STEP,
+    interpolate_hourly,
+    quarter_grid,
+)
 from eex_forecast.weather.point_search import load_points_config, point_columns
 
 logger = logging.getLogger(__name__)
@@ -120,7 +127,7 @@ def _member_frame(
     weather against the calendar. Rows the member does not cover keep the base frame's values, and the
     caller's frame is never mutated.
     """
-    out = base.copy()
+    out = quarter_grid(base.copy())
     times = pd.to_datetime(out[TIMESTAMP], utc=True)
     indexed = member_weather.set_index(
         pd.DatetimeIndex(pd.to_datetime(member_weather[TIMESTAMP], utc=True))
@@ -131,7 +138,8 @@ def _member_frame(
             continue
         aligned = indexed[column].reindex(pd.DatetimeIndex(times))
         replacement = pd.to_numeric(pd.Series(aligned.to_numpy(), index=out.index), errors="coerce")
-        out[column] = replacement.where(replacement.notna(), out[column])
+        within = (times >= indexed.index.min()) & (times <= indexed.index.max())
+        out[column] = replacement.where(within, out[column])
     return out
 
 
@@ -147,28 +155,32 @@ def member_coverage(
     frame's deterministic weather, and ~31 hours were published as ensemble output with exactly zero
     spread. An hour counts only when every member has every weather column.
 
-    When radiation columns are present, the end additionally needs the *following* hour covered:
-    radiation is a preceding-hour mean read from ``t + 1 h`` (``features._weather_role_points``), so
-    without it the final hour's irradiance would fall back to deterministic weather too. This mirrors
-    the deterministic forecast's own coverage guard (``forecast._weather_coverage_end``).
+    The quarter-hour interpolation contract is shared with feature construction. Radiation requires
+    hourly samples bracketing the quarter's midpoint, while instantaneous weather brackets its start.
+    The result is the range of the intersection; propagation also masks any internal coverage gaps.
     """
-    times = pd.to_datetime(member_weather[TIMESTAMP], utc=True).to_numpy()
-    complete = member_weather[weather_columns].notna().all(axis=1)
-    complete_by_hour = complete.groupby(times).all()
-    # Every member must be present at the hour, not only complete where it appears.
-    members_by_hour = member_weather[MEMBER_COLUMN].groupby(times).nunique()
-    complete_by_hour &= members_by_hour == member_weather[MEMBER_COLUMN].nunique()
-    hours = pd.DatetimeIndex(complete_by_hour.index[complete_by_hour.to_numpy()], tz="UTC")
-    if hours.empty:
-        return None
-    ends = hours
-    if preceding_hour_mean_columns(weather_columns):
-        ends = hours[
-            hours.isin(hours - pd.Timedelta(hours=1))
-        ]  # keep t only when t + 1 h is covered
-        if ends.empty:
-            return None
-    return hours.min(), ends.max()
+    covered = member_delivery_times(member_weather, weather_columns)
+    return (covered.min(), covered.max()) if len(covered) else None
+
+
+def member_delivery_times(
+    member_weather: pd.DataFrame, weather_columns: list[str]
+) -> pd.DatetimeIndex:
+    """Intersect valid interpolation coverage across members, including internal gaps and radiation."""
+    common: pd.DatetimeIndex | None = None
+    radiation = preceding_hour_mean_columns(weather_columns)
+    for _, group in member_weather.groupby(MEMBER_COLUMN):
+        indexed = group.set_index(pd.DatetimeIndex(pd.to_datetime(group[TIMESTAMP], utc=True)))
+        grid = pd.date_range(indexed.index.min(), indexed.index.max(), freq=FREQUENCY, tz="UTC")
+        instant = [column for column in weather_columns if column not in radiation]
+        present = pd.Series(True, index=grid)
+        for columns, requested in [(instant, grid), (radiation, grid + RADIATION_OFFSET)]:
+            if columns:
+                aligned = interpolate_hourly(indexed[columns], requested)
+                present &= aligned.notna().all(axis=1).to_numpy()
+        covered = grid[present.to_numpy()]
+        common = covered if common is None else common.intersection(covered)
+    return common if common is not None else pd.DatetimeIndex([], tz="UTC")
 
 
 def propagate_members(
@@ -181,14 +193,14 @@ def propagate_members(
 ) -> pd.DataFrame:
     """Run the full chain for every member; returns frame[``member``, ``timestamp``, *forecast columns].
 
-    ``forward_from`` is the earliest requested hour across the four targets. Each target also starts
+    ``forward_from`` is the earliest requested interval across the four targets. Each target also starts
     strictly after its own last observation: day-ahead prices can already be settled for tomorrow while
     wind, solar and load measurements end today. Earlier cells stay missing for that target, rather
     than delaying every fundamental until the price boundary. ``models`` is an injection seam for
     tests; production loads the persisted artifacts.
 
-    Output is additionally clipped to the hours the member weather actually covers, **at both ends**, and
-    to ``forward_until`` when given.
+    Output is additionally clipped to delivery intervals with supported member weather, at both ends
+    and across internal gaps, and to ``forward_until`` when given.
 
     The start matters whenever ``forward_from`` precedes the members' first hour - for instance when
     ENTSO-E prices lag, so the last settled hour falls before the ensemble run's start. The end matters
@@ -216,6 +228,7 @@ def propagate_members(
     if coverage is None:
         raise ValueError("No hour has complete ensemble weather for every member.")
     covered_start, covered_end = coverage
+    base = quarter_grid(base)
     base_times = pd.to_datetime(base[TIMESTAMP], utc=True)
     starts: dict[str, pd.Timestamp] = {}
     for name in _CHAIN:
@@ -225,9 +238,7 @@ def propagate_members(
             if target in base
             else pd.Series(False, index=base.index)
         )
-        first_unknown = (
-            base_times[measured].max() + pd.Timedelta(hours=1) if measured.any() else forward_from
-        )
+        first_unknown = base_times[measured].max() + STEP if measured.any() else forward_from
         starts[name] = max(forward_from, first_unknown)
     start = max(min(starts.values()), covered_start)
     end = covered_end
@@ -236,7 +247,7 @@ def propagate_members(
             "Ensemble bands end at %s: member weather is incomplete after that hour", covered_end
         )
     if forward_until is not None:
-        end = min(end, forward_until - pd.Timedelta(hours=1))
+        end = min(end, forward_until - STEP)
     if start > forward_from:
         logger.info(
             "Ensemble bands start at %s rather than %s: members do not cover the earlier hours",
@@ -244,6 +255,7 @@ def propagate_members(
             forward_from,
         )
 
+    valid_times = member_delivery_times(member_weather, weather_columns)
     member_ids = sorted(int(value) for value in pd.unique(member_weather[MEMBER_COLUMN]))
     logger.info("Propagating %d members through %d models", len(member_ids), len(_CHAIN))
     results: list[pd.DataFrame] = []
@@ -256,7 +268,7 @@ def propagate_members(
             spec = REGISTRY[name]
             frame[spec.forecast_column] = loaded[name].predict(frame)
         times = pd.to_datetime(frame[TIMESTAMP], utc=True)
-        forward = frame[((times >= start) & (times <= end)).to_numpy()]
+        forward = frame[((times >= start) & (times <= end) & times.isin(valid_times)).to_numpy()]
         out = forward[[TIMESTAMP, *FORECAST_COLUMNS]].copy()
         for name in _CHAIN:
             column = REGISTRY[name].forecast_column
@@ -270,7 +282,7 @@ def propagate_members(
         raise ValueError("Ensemble weather contained no members to propagate.")
     propagated = pd.concat(results, ignore_index=True)
     logger.info(
-        "Propagated %d members x %d forward hours through %d models",
+        "Propagated %d members x %d forward intervals through %d models",
         propagated[MEMBER_COLUMN].nunique(),
         int(len(propagated) / max(propagated[MEMBER_COLUMN].nunique(), 1)),
         len(_CHAIN),

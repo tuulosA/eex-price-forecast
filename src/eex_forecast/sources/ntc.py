@@ -19,7 +19,7 @@ model never trained on: with per-border inputs that moved the price forecast by 
 switch. The per-border columns are stored; the price model reads the per-border imports
 (:func:`eex_forecast.features.ntc_features`).
 
-The pure helpers :func:`series_to_hourly` and :func:`blend_week_over_month` are unit-tested; the
+The pure helpers :func:`series_to_grid` and :func:`blend_week_over_month` are unit-tested; the
 ``fetch_*`` functions are thin orchestration over the entsoe-py client.
 """
 
@@ -41,6 +41,7 @@ from eex_forecast.config import (
     NTC_EXPORT_PREFIX,
     NTC_IMPORT_PREFIX,
 )
+from eex_forecast.resolution import FREQUENCY
 from eex_forecast.sources.entsoe import (
     _call_with_retry,
     _client,
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 # -- pure helper (unit-tested) --------------------------------------------------
-def series_to_hourly(series: pd.Series, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
+def series_to_grid(series: pd.Series, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
     """Forward-fill a change-point NTC series onto ``hours`` (each value holds until the next change)."""
     if series.empty or len(hours) == 0:
         return np.full(len(hours), np.nan)
@@ -80,14 +81,14 @@ def blend_week_over_month(
     """Best-available NTC per hour: **week-ahead**, its last value carried over the far horizon, and
     **month-ahead** only where no week-ahead has been published (see the module docstring for why).
 
-    Each contract is reduced to a daily value and the blend is expanded onto the hourly grid. A border
+    Each contract is reduced to a daily value and the blend is held on the quarter-hour grid. A border
     that stops publishing week-ahead keeps its last week-ahead value.
     """
     if len(hours) == 0:
         return np.full(0, np.nan)
     days = pd.date_range(hours.min().floor("D"), hours.max().floor("D"), freq="D", tz="UTC")
     blended = _daily(week, days).combine_first(_daily(month, days))
-    return series_to_hourly(blended, hours)
+    return series_to_grid(blended, hours)
 
 
 # -- network fetch --------------------------------------------------------------
@@ -141,11 +142,13 @@ def fetch_ntc(
 
     For each border we fetch capacity *into* DE (neighbour -> DE) and *out of* DE (DE -> neighbour),
     take week-ahead per day (carried forward, month-ahead only where it is absent), and expand onto the
-    hourly grid. Borders that publish
+    quarter-hour grid. Borders that publish
     nothing are simply omitted.
     """
     start_ts, end_ts = _normalize_bounds(start, end)
-    hours = pd.date_range(start_ts.floor("h"), end_ts.floor("h"), freq="h", tz="UTC")
+    hours = pd.date_range(
+        start_ts.floor(FREQUENCY), end_ts.floor(FREQUENCY), freq=FREQUENCY, tz="UTC"
+    )
     columns: dict[str, npt.NDArray[np.float64]] = {}
     client = _client()
     for label, zone in borders.items():
@@ -160,5 +163,5 @@ def fetch_ntc(
         logger.warning("No week/month-ahead NTC returned for any border")
         return _empty([])
     frame = pd.DataFrame({"timestamp": hours, **columns})
-    logger.info("Fetched NTC for %d border-directions over %d hours", len(columns), len(hours))
+    logger.info("Fetched NTC for %d border-directions over %d intervals", len(columns), len(hours))
     return frame

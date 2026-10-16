@@ -1,6 +1,6 @@
 """Database schema for the single-area (DE) time-series table.
 
-One row per UTC hour, keyed on an ISO-8601 ``timestamp``. Measured **actuals** and model
+One row per UTC quarter-hour (weather columns retain hourly source samples), keyed on an ISO-8601 ``timestamp``. Measured **actuals** and model
 **forecasts** are deliberately kept in separate columns for every series, so a forecast run can never
 overwrite measured history. Weather feature columns (``ws_*``, ``t_*``, ``ghi_*``) are not declared
 here - they are added on demand by :func:`ensure_columns` once the weather-point search has chosen
@@ -33,6 +33,8 @@ def create_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         f'CREATE TABLE IF NOT EXISTS "{TABLE}" ("{TIMESTAMP}" TEXT PRIMARY KEY, {columns_sql})'
     )
+    conn.execute("CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    conn.execute("INSERT OR IGNORE INTO metadata VALUES ('interval_minutes', '15')")
     conn.commit()
 
 

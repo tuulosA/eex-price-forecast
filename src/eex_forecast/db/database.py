@@ -22,7 +22,17 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     """Open (creating parent dirs as needed) a WAL-mode connection to the database."""
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=60.0)
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if TABLE in tables and conn.execute(f'SELECT 1 FROM "{TABLE}" LIMIT 1').fetchone():
+        resolution = (
+            conn.execute("SELECT value FROM metadata WHERE key='interval_minutes'").fetchone()
+            if "metadata" in tables
+            else None
+        )
+        if resolution != ("15",):
+            conn.close()
+            raise ValueError("Hourly or unversioned database: use a separate 15-minute database.")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -46,6 +56,13 @@ def _normalize_timestamps(values: pd.Series) -> pd.Series:
     parsed = pd.to_datetime(values, utc=True, errors="coerce")
     if parsed.isna().any():
         raise ValueError("Encountered unparseable timestamp(s) during upsert.")
+    if (
+        (parsed.dt.minute % 15 != 0)
+        | (parsed.dt.second != 0)
+        | (parsed.dt.microsecond != 0)
+        | (parsed.dt.nanosecond != 0)
+    ).any():
+        raise ValueError("Database timestamps must align to the 15-minute UTC grid.")
     return parsed.map(lambda ts: ts.isoformat())
 
 

@@ -31,13 +31,13 @@ def test_sum_production_types_missing_columns() -> None:
     assert summed.isna().all()
 
 
-def test_to_hourly_utc_resamples_and_converts_timezone() -> None:
+def test_to_delivery_utc_preserves_quarters_and_converts_timezone() -> None:
     index = pd.date_range("2025-01-01 00:00", periods=8, freq="15min", tz="Europe/Berlin")
     series = pd.Series(np.arange(8.0), index=index)
-    hourly = entsoe._to_hourly_utc(series, guard=False)
+    hourly = entsoe._to_delivery_utc(series, guard=False)
     assert str(hourly.index.tz) == "UTC"
-    assert len(hourly) == 2  # 8 quarter-hours → 2 hours
-    assert hourly.iloc[0] == pytest.approx(1.5)  # mean(0,1,2,3)
+    assert len(hourly) == 8  # 8 quarter-hours → 2 hours
+    assert hourly.iloc[0] == pytest.approx(0.0)  # mean(0,1,2,3)
 
 
 def test_fetch_load_guards_spike_and_resamples(monkeypatch: pytest.MonkeyPatch) -> None:

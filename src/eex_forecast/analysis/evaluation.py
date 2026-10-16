@@ -61,6 +61,7 @@ from eex_forecast.model import (
     make_estimator,
     seeded_params,
 )
+from eex_forecast.resolution import INTERVAL_MINUTES
 from eex_forecast.tuning import seed_list
 
 logger = logging.getLogger(__name__)
@@ -588,6 +589,7 @@ def _evaluation_result(
         },
         "config": {
             "cutoff_set": cutoff_set,
+            "interval_minutes": INTERVAL_MINUTES,
             "model_backends": {name: REGISTRY[name].backend for name in ALL_MODELS},
             "seeds": seed_values,
             "n_cutoffs": len(cutoffs),
@@ -606,6 +608,27 @@ def _evaluation_result(
             for evaluation in results
         ],
     }
+    price_resolution_summary: dict[str, Any] = {}
+    for label, native in [("legacy_hourly_prices", False), ("native_15min_prices", True)]:
+        groups = [
+            [
+                fold
+                for fold in evaluated["price"]["folds"]
+                if (fold["delivery_day"] >= "2025-10-01") == native
+            ]
+            for evaluated in by_seed
+        ]
+        if groups and all(groups):
+            price_resolution_summary[label] = {
+                "n_days": len(groups[0]),
+                "mean_mae": float(
+                    np.mean([np.mean([f["mae"] for f in folds]) for folds in groups])
+                ),
+                "mean_rmse": float(
+                    np.mean([np.mean([f["rmse"] for f in folds]) for folds in groups])
+                ),
+            }
+    report["price_resolution_summary"] = price_resolution_summary
     assert first_hourly is not None  # seed_list always yields at least one seed
     return EvaluationResult(results, report, first_hourly)
 
@@ -729,6 +752,7 @@ def _oracle_result(
         },
         "config": {
             "cutoff_set": cutoff_set,
+            "interval_minutes": INTERVAL_MINUTES,
             "model_backends": {name: REGISTRY[name].backend for name in ALL_MODELS},
             "seeds": seed_values,
             "n_cutoffs": len(cutoffs),

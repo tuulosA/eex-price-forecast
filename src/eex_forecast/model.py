@@ -29,6 +29,7 @@ from xgboost import XGBRegressor
 
 from eex_forecast import features
 from eex_forecast.config import HYPERPARAMS_PATH, MODELS_DIR
+from eex_forecast.resolution import INTERVAL_MINUTES
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,12 @@ class TrainedModel:
         meta_path = models_dir / f"{self.spec.name}.meta.json"
         meta_path.write_text(
             json.dumps(
-                {"backend": self.spec.backend, "feature_names": self.feature_names}, indent=2
+                {
+                    "backend": self.spec.backend,
+                    "feature_names": self.feature_names,
+                    "interval_minutes": INTERVAL_MINUTES,
+                },
+                indent=2,
             )
             + "\n",
             encoding="utf-8",
@@ -219,6 +225,8 @@ class TrainedModel:
                 "Run `eex model train`. Legacy price trees are not loaded."
             )
         meta = json.loads((models_dir / f"{spec.name}.meta.json").read_text(encoding="utf-8"))
+        if meta.get("interval_minutes") != INTERVAL_MINUTES:
+            raise ValueError("Model resolution differs; retrain on the 15-minute database.")
         if meta.get("backend", "xgboost") != spec.backend:
             raise ValueError(f"Wrong backend for '{spec.name}'; run `eex model train`.")
         if spec.backend == "neural":
@@ -440,7 +448,7 @@ def apply_serve_unavailable_lag_mask(
     """
     if _PRICE_LAG_COLUMN not in matrix.columns:
         return matrix
-    unavailable = pd.to_datetime(times, utc=True) > (cutoff + pd.Timedelta(hours=_PRICE_LAG_HOURS))
+    unavailable = pd.to_datetime(times, utc=True) >= (cutoff + pd.Timedelta(hours=_PRICE_LAG_HOURS))
     if not bool(unavailable.any()):
         return matrix
     out = matrix.copy()

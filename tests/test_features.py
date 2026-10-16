@@ -119,7 +119,9 @@ def test_solar_azimuth_follows_the_sun_and_enters_only_production_solar(
     # Interval midpoints 04:00Z, 11:00Z and 17:00Z on midsummer at the reference point: north-east
     # shortly after sunrise, near south at midday, west in the evening.
     times = pd.Series(
-        pd.to_datetime(["2026-06-21T03:30Z", "2026-06-21T10:30Z", "2026-06-21T16:30Z"], utc=True)
+        pd.to_datetime(
+            ["2026-06-21T03:52:30Z", "2026-06-21T10:52:30Z", "2026-06-21T16:52:30Z"], utc=True
+        )
     )
     azimuth = solar_azimuth_features(times)
     degrees = (
@@ -158,9 +160,11 @@ def test_weather_means_average_and_prefix_exclusivity(timeseries_frame: pd.DataF
     # wind_speed is the mean of ws_de01 and ws_de02; t_ws_de / t_de stay distinct features.
     expected = timeseries_frame[["ws_de01", "ws_de02"]].mean(axis=1)
     pd.testing.assert_series_equal(means["wind_speed"], expected, check_names=False)
-    # Radiation stamped at t + 1 describes the delivery interval beginning at t.
+    # Interpolate hourly radiation means at the quarter-hour interval midpoint.
     pd.testing.assert_series_equal(
-        means["irr_solar"], timeseries_frame["ghi_de01"].shift(-1), check_names=False
+        means["irr_solar"],
+        (0.375 * timeseries_frame["ghi_de01"] + 0.625 * timeseries_frame["ghi_de01"].shift(-1)),
+        check_names=False,
     )
     assert weather_means(timeseries_frame, ["wind_speed"]).columns.tolist() == ["wind_speed"]
 
@@ -203,10 +207,10 @@ def test_radiation_alignment_uses_timestamps_not_row_positions() -> None:
 
     means = weather_means(frame, ["irr_solar", "irr_load"])
 
-    assert means["irr_solar"].iloc[0] == 20.0  # 00:00 delivery uses GHI stamped 01:00
+    assert means["irr_solar"].iloc[0] == 16.25  # 00:07:30 midpoint between hourly-mean centres
     assert np.isnan(means["irr_solar"].iloc[1])  # no 03:00 row; do not borrow adjacent row 01:00
-    assert means["irr_solar"].iloc[2] == 30.0  # 01:00 delivery uses GHI stamped 02:00
-    assert np.allclose(means["irr_load"], [2.0, np.nan, 3.0], equal_nan=True)
+    assert means["irr_solar"].iloc[2] == 26.25  # 01:07:30 midpoint uses source 01:00 and 02:00
+    assert np.allclose(means["irr_load"], [1.625, np.nan, 2.625], equal_nan=True)
 
 
 def test_price_lags_look_back_by_hours() -> None:
@@ -254,7 +258,9 @@ def test_default_fundamental_builders_use_adopted_strategies(
         "clear_sky_ghi",
     } <= set(solar.columns)
     assert "ghi_de01" not in solar.columns
-    solar_points = timeseries_frame[["ghi_de01", "ghi_de02"]].shift(-1)
+    solar_points = 0.375 * timeseries_frame[["ghi_de01", "ghi_de02"]] + 0.625 * timeseries_frame[
+        ["ghi_de01", "ghi_de02"]
+    ].shift(-1)
     pd.testing.assert_series_equal(solar["irr_solar"], solar_points.mean(axis=1), check_names=False)
     pd.testing.assert_series_equal(
         solar["irr_solar_max"], solar_points.max(axis=1), check_names=False
@@ -263,7 +269,9 @@ def test_default_fundamental_builders_use_adopted_strategies(
     assert {"t_de01", "ghi_t_de01"} <= set(load.columns)
     assert "temp_load" not in load.columns
     pd.testing.assert_series_equal(
-        load["ghi_t_de01"], timeseries_frame["ghi_t_de01"].shift(-1), check_names=False
+        load["ghi_t_de01"],
+        (0.375 * timeseries_frame["ghi_t_de01"] + 0.625 * timeseries_frame["ghi_t_de01"].shift(-1)),
+        check_names=False,
     )
 
 
@@ -328,7 +336,9 @@ def test_solar_auxiliary_weather_aligns_radiation_but_not_cloud(
         "cloud_solar",
     } <= set(features)
     pd.testing.assert_series_equal(
-        features["gti_solar"], frame["gti_ghi_de01"].shift(-1), check_names=False
+        features["gti_solar"],
+        (0.375 * frame["gti_ghi_de01"] + 0.625 * frame["gti_ghi_de01"].shift(-1)),
+        check_names=False,
     )
     pd.testing.assert_series_equal(
         features["cloud_solar"], frame["cloud_ghi_de01"], check_names=False

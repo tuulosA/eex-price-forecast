@@ -13,7 +13,7 @@ from eex_forecast import forecast as forecast_ops
 from eex_forecast.db import write_frame
 from eex_forecast.features import set_active_weather_columns
 from eex_forecast.forecast import (
-    _first_forward_hour,
+    _first_forward_interval,
     _first_market_day_start,
     _forecast_split,
     _forecast_window_end,
@@ -46,7 +46,7 @@ def test_run_forecast_fills_fundamentals_then_price(
 ) -> None:
     now = pd.Timestamp.now(tz="UTC").floor("h")
     # Include a two-day serving buffer beyond the requested horizon.
-    frame = make_timeseries(periods=24 * 45 + 1, start=now - pd.Timedelta(days=40))
+    frame = make_timeseries(periods=96 * 45 + 1, freq="15min", start=now - pd.Timedelta(days=40))
     times = pd.to_datetime(frame["timestamp"], utc=True)
     future = times >= now
 
@@ -92,7 +92,7 @@ def test_run_forecast_fills_fundamentals_then_price(
     berlin = result_times.dt.tz_convert("Europe/Berlin")
     assert berlin.iloc[0].hour == 0 and berlin.iloc[0].minute == 0
     unknown_times = result_times[result["price_actual_eur_mwh"].isna()]
-    assert len(unknown_times) == 3 * 24
+    assert len(unknown_times) == 3 * 96
     for column in (
         "price_forecast_eur_mwh",
         "wind_forecast_mw",
@@ -169,7 +169,7 @@ def test_features_plot_is_bare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 def test_last_complete_market_day_cut_drops_partial_day() -> None:
     # Europe/Berlin summer = UTC+2. The Aug 2 market day is [Aug 1 22:00, Aug 2 22:00) UTC.
     # Coverage to the last hour (21:00 UTC = 23:00 CEST) keeps Aug 2; the cut is the next midnight.
-    full = pd.Timestamp("2026-08-02 21:00", tz="UTC")
+    full = pd.Timestamp("2026-08-02 21:45", tz="UTC")
     assert _last_complete_market_day_cut(full) == pd.Timestamp("2026-08-02 22:00", tz="UTC")
     # Coverage only to mid-day drops the partial Aug 2 whole; the cut is the start of Aug 2.
     partial = pd.Timestamp("2026-08-02 12:00", tz="UTC")
@@ -245,7 +245,7 @@ def test_weather_limited_end_drops_incomplete_final_market_day() -> None:
     )
     # Coverage through the requested final hour leaves the full horizon intact.
     assert (
-        _weather_limited_forecast_end(requested, pd.Timestamp("2026-08-11 21:00", tz="UTC"))
+        _weather_limited_forecast_end(requested, pd.Timestamp("2026-08-11 21:45", tz="UTC"))
         == requested
     )
 
@@ -283,32 +283,32 @@ def test_forecast_split_is_last_actual_not_now() -> None:
     assert _forecast_split(pd.Series([np.nan] * 6), times, now) == now
 
 
-def test_first_forward_hour_is_the_hour_after_the_last_actual() -> None:
+def test_first_forward_interval_is_the_hour_after_the_last_actual() -> None:
     """The ensemble starts on the first *unsettled* hour, not on the plot's hand-off hour."""
     times = pd.Series(pd.date_range("2026-08-01 00:00", periods=6, freq="h", tz="UTC"))
     now = pd.Timestamp("2026-08-01 02:00", tz="UTC")
     actual = pd.Series([10.0, 11, 12, 13, np.nan, np.nan])
-    assert _first_forward_hour(actual, times, now) == times.iloc[4]
+    assert _first_forward_interval(actual, times, now) == times.iloc[3] + pd.Timedelta(minutes=15)
     # With no actual, `now` is already unsettled, so it is not shifted an hour later.
-    assert _first_forward_hour(pd.Series([np.nan] * 6), times, now) == now
+    assert _first_forward_interval(pd.Series([np.nan] * 6), times, now) == now
 
 
 def test_forecast_window_end_anchors_after_last_actual() -> None:
-    times = pd.Series(pd.date_range("2026-07-27 00:00", periods=72, freq="h", tz="UTC"))
+    times = pd.Series(pd.date_range("2026-07-27 00:00", periods=288, freq="15min", tz="UTC"))
     now = pd.Timestamp("2026-07-27 10:00", tz="UTC")
     actual = pd.Series(np.nan, index=times.index)
     # 21:00 UTC is 23:00 CEST: the next unknown hour is Berlin midnight.
-    actual[times <= pd.Timestamp("2026-07-27 21:00", tz="UTC")] = 50.0
+    actual[times <= pd.Timestamp("2026-07-27 21:45", tz="UTC")] = 50.0
     assert _forecast_window_end(actual, times, now, 14) == pd.Timestamp(
         "2026-08-10 22:00", tz="UTC"
     )
 
 
 def test_forecast_window_end_is_dst_aware() -> None:
-    times = pd.Series(pd.date_range("2026-10-23 00:00", periods=72, freq="h", tz="UTC"))
+    times = pd.Series(pd.date_range("2026-10-23 00:00", periods=288, freq="15min", tz="UTC"))
     now = pd.Timestamp("2026-10-23 10:00", tz="UTC")
     actual = pd.Series(np.nan, index=times.index)
-    actual[times <= pd.Timestamp("2026-10-23 21:00", tz="UTC")] = 50.0
+    actual[times <= pd.Timestamp("2026-10-23 21:45", tz="UTC")] = 50.0
     end = _forecast_window_end(actual, times, now, 3)
     # Three Berlin delivery days include the 25-hour DST-ending Sunday.
     assert end - pd.Timestamp("2026-10-23 22:00", tz="UTC") == pd.Timedelta(hours=73)
@@ -327,7 +327,7 @@ def test_history_days_defaults_to_the_config_value_and_governs_every_output(
     assert default == config.FORECAST_HISTORY_DAYS
 
     now = pd.Timestamp.now(tz="UTC").floor("h")
-    frame = make_timeseries(periods=24 * 45 + 1, start=now - pd.Timedelta(days=40))
+    frame = make_timeseries(periods=96 * 45 + 1, freq="15min", start=now - pd.Timedelta(days=40))
     times = pd.to_datetime(frame["timestamp"], utc=True)
     frame.loc[times >= now, _ACTUAL_COLUMNS] = np.nan
     db_path = tmp_path / "eex.db"

@@ -31,6 +31,7 @@ from eex_forecast.config import (
     NEIGHBOUR_POINTS_PER_COUNTRY,
     WEATHER_POINTS_PATH,
 )
+from eex_forecast.resolution import FREQUENCY, RADIATION_OFFSET, interpolate_hourly
 from eex_forecast.weather.grid import ALL_SURFACES, LAND, Candidate, haversine_km
 from eex_forecast.weather.openmeteo import (
     CLOUD_COVER,
@@ -135,15 +136,23 @@ def best_lagged_correlation(
 ) -> tuple[int, float]:
     """Return ``(lag_hours, pearson)`` maximising ``|pearson|`` over feature lags ``0..max_lag_hours``.
 
-    Both series are timestamp-indexed; they are aligned on a common hourly grid so that shifting by
-    rows equals shifting by hours. Returns ``(0, nan)`` when there is too little overlap.
+    Both series are timestamp-indexed; they are aligned on a common 15-minute grid so that shifting by
+    four rows equals one elapsed hour. Returns ``(0, nan)`` when there is too little overlap.
     """
-    joined = pd.DataFrame({"feature": feature, "target": target}).sort_index()
-    joined = joined.resample("h").mean()
+    if feature.empty or target.empty:
+        return 0, float("nan")
+    grid = pd.date_range(
+        min(feature.index.min(), target.index.min()).floor(FREQUENCY),
+        max(feature.index.max(), target.index.max()).ceil(FREQUENCY),
+        freq=FREQUENCY,
+        tz="UTC",
+    )
+    weather = interpolate_hourly(feature.rename("feature").to_frame(), grid)
+    joined = weather.assign(target=target.reindex(grid))
     best_lag, best_r = 0, float("nan")
     for lag in range(max_lag_hours + 1):
         pair = pd.DataFrame(
-            {"feature": joined["feature"].shift(lag), "target": joined["target"]}
+            {"feature": joined["feature"].shift(lag * 4), "target": joined["target"]}
         ).dropna()
         if len(pair) < min_samples:
             continue
@@ -175,8 +184,8 @@ def rank_candidates(
             if variable == SHORTWAVE_RADIATION:
                 # Open-Meteo stamps radiation at the end of its preceding-hour averaging interval,
                 # whereas the ENTSO-E target is stamped at the start of its delivery interval. Relabel
-                # 21:00 radiation (the 20:00-21:00 mean) to 20:00 before comparing candidates.
-                feature.index = pd.to_datetime(feature.index, utc=True) - pd.Timedelta(hours=1)
+                # the mean to its quarter-hour delivery alignment before interpolating candidates.
+                feature.index = pd.to_datetime(feature.index, utc=True) - RADIATION_OFFSET
             lag, pearson = best_lagged_correlation(feature, target, max_lag_hours=max_lag_hours)
             if pd.notna(pearson):
                 scores.append(PointScore(candidate, lag, pearson, int(feature.notna().sum())))
@@ -269,15 +278,25 @@ def best_wind_price_correlation(
     min_samples: int = 720,
 ) -> tuple[int, str, float]:
     """Return ``(lag_hours, transform, pearson)`` maximising ``|pearson|`` of a wind transform (lagged
-    ``0..max_lag_hours``) against ``price``. Both series are aligned on a common hourly grid. Returns
+    ``0..max_lag_hours``) against ``price``. Both series are aligned on a common 15-minute grid. Returns
     ``(0, "ws", nan)`` when overlap is too small. The correlation is typically negative (wind depresses
     price); we rank by magnitude so sign does not matter."""
-    joined = pd.DataFrame({"wind": wind, "price": price}).sort_index().resample("h").mean()
+    if wind.empty or price.empty:
+        return 0, "ws", float("nan")
+    grid = pd.date_range(
+        min(wind.index.min(), price.index.min()).floor(FREQUENCY),
+        max(wind.index.max(), price.index.max()).ceil(FREQUENCY),
+        freq=FREQUENCY,
+        tz="UTC",
+    )
+    joined = interpolate_hourly(wind.rename("wind").to_frame(), grid).assign(
+        price=price.reindex(grid)
+    )
     best = (0, "ws", float("nan"))
     for transform in transforms:
         base = _transform(joined["wind"], transform)
         for lag in range(max_lag_hours + 1):
-            pair = pd.DataFrame({"wind": base.shift(lag), "price": joined["price"]}).dropna()
+            pair = pd.DataFrame({"wind": base.shift(lag * 4), "price": joined["price"]}).dropna()
             if len(pair) < min_samples:
                 continue
             r = pair["wind"].corr(pair["price"])

@@ -31,6 +31,13 @@ data/**
 !data/tuning/*.json
 !data/aggregation/*.json
 !data/ablation/*.json
+!data/evaluation_15min/*.json
+!data/tuning_15min/*.json
+!data/aggregation_15min/*.json
+!data/ablation_15min/*.json
+!data/analysis_15min/*_experiment.json
+!data/analysis_15min/correlation_*.csv
+!data/analysis_15min/quarter_validation.json
 !data/rank/*.csv
 # the bidding-zone candidate grids (`eex points grid`)
 !data/candidates/grid_*.csv

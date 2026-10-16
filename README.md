@@ -1,15 +1,16 @@
 # eex-price-forecast
 
+> **15-minute development branch.** Wind, solar, load and price forecasts now use quarter-hour delivery intervals. Follow [the migration guide](QUARTER_HOURLY.md) for the isolated database, retraining and historical price-resolution transition. Published hourly benchmarks below are historical reference scores, not validation of this branch.
+
 Short-term **German day-ahead electricity price forecasting** for the EEX / EPEX SPOT DE-LU bidding
 zone. The package forecasts up to 14 unknown German delivery days from ECMWF weather, German
 wind/solar/load fundamentals, and cross-border market drivers.
 
-![Example German day-ahead price forecast](data/forecast/forecast.png)
+![Example German day-ahead price forecast](data/forecast_15min/forecast.png)
 
-![German wind, solar generation and load: recent actuals and forecasts](data/forecast/fundamentals.png)
+![German wind, solar generation and load: recent actuals and forecasts](data/forecast_15min/fundamentals.png)
 
-> Example outputs from `eex forecast --plot`. The committed images are static snapshots and
-> may lag the latest code and data.
+> Quarter-hour example outputs from the migrated pipeline. Parameters are initial values pending a dedicated quarter-hour retune.
 
 ## What it does
 
@@ -100,11 +101,11 @@ eex backfill nuclear --start 2023-01-01     # French nuclear availability
 eex backfill ntc --start 2023-01-01         # cross-border transfer capacity
 eex update                                  # refresh the most recent actuals and weather
 eex model train                             # train wind, solar, load, and price
-eex forecast --plot                         # write data/forecast/*
+eex forecast --plot                         # write data/forecast_15min/*
 ```
 
 The database and trained model artifacts are local runtime files and are not committed.
-PyTorch is a required dependency. Price state is saved as `data/models/price.npz`; fundamentals use
+PyTorch is a required dependency. Price state is saved as `data/models_15min/price.npz`; fundamentals use
 `wind.json`, `solar.json` and `load.json`. All have feature-order sidecars. Existing installations must
 reinstall the package and run `eex model train` after the neural migration: legacy price trees are
 never used as a fallback.
@@ -147,7 +148,7 @@ eex run --train --plot --ensemble
 
 ## Forecast output
 
-`eex forecast` writes `data/forecast/forecast.csv` containing:
+`eex forecast` writes `data/forecast_15min/forecast.csv` containing:
 
 - `price_actual_eur_mwh` and `price_forecast_eur_mwh`;
 - `wind_actual_mw` and `wind_forecast_mw`;
@@ -164,14 +165,14 @@ eex run --train --plot --ensemble
 
 `--write-db` also stores forecasts in SQLite without touching actual columns.
 
-The forward window begins one hour after the final published day-ahead price and targets the next 14
+The forward window begins 15 minutes after the final published day-ahead price and targets the next 14
 unknown German delivery days. If ECMWF ends partway through the final delivery day, the incomplete day
 is discarded rather than padded with missing weather.
 
-In practice that depends on when you run. The window's anchor jumps forward a day once the day-ahead
-auction clears around midday, while the weather fetch window stays anchored to today's midnight — so a
-**morning run publishes 14 unknown days, and an evening run publishes 13**. Seeing 13 after the auction
-is expected, not a fault.
+The available horizon depends on auction settlement, the current ECMWF run and German day
+boundaries. Settling another day moves the unknown window forward without extending weather
+coverage. The run logs its actual coverage and drops an incomplete final delivery day; inspect the
+CSV's last timestamp rather than assuming that every run publishes all 14 days.
 
 ### Weather ensemble (optional)
 

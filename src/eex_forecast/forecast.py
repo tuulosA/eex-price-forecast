@@ -33,8 +33,14 @@ from eex_forecast.config import (
     MARKET_TIMEZONE,
 )
 from eex_forecast.db import connect, read_frame, upsert
-from eex_forecast.db.schema import create_schema
-from eex_forecast.features import TIMESTAMP, active_weather_columns
+from eex_forecast.db.schema import create_schema, ensure_columns
+from eex_forecast.features import (
+    TIMESTAMP,
+    WEATHER_AGGREGATES,
+    _neighbour_wind_columns,
+    _weather_role_points,
+    active_weather_columns,
+)
 from eex_forecast.model import REGISTRY, SUBMODELS, TrainedModel
 from eex_forecast.plots import (
     numeric_column,
@@ -44,6 +50,7 @@ from eex_forecast.plots import (
     plot_forecast,
     plot_fundamentals,
 )
+from eex_forecast.resolution import FREQUENCY, STEP, interpolate_hourly, quarter_grid
 from eex_forecast.sources import ntc, nuclear
 from eex_forecast.weather.openmeteo import fetch_forecast
 from eex_forecast.weather.point_search import load_points_config, point_columns
@@ -89,6 +96,13 @@ def fetch_forecast_weather(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
                 point.lat, point.lon, variables=list(columns), forecast_days=forecast_days
             )
             logger.info("  forward weather %d/%d %s", index, total, point.column)
+            ensure_columns(conn, list(columns.values()))
+            assignments = ", ".join(f'"{column}" = NULL' for column in columns.values())
+            conn.execute(
+                f"UPDATE timeseries SET {assignments} WHERE timestamp >= ?",
+                (pd.Timestamp.now(tz="UTC").floor("h").isoformat(),),
+            )
+            conn.commit()
             if forecast.empty:
                 continue
             frame = forecast[["timestamp", *columns]].rename(columns=columns)
@@ -108,7 +122,7 @@ def fetch_forecast_nuclear(db_path: str, *, horizon_days: int = HORIZON_DAYS) ->
     re-fetched by ``update`` (unlike weather, which has a distinct history vs forecast source). A no-op if
     no nuclear zone returns data.
     """
-    now = pd.Timestamp.now(tz="UTC").floor("h")
+    now = pd.Timestamp.now(tz="UTC").floor(FREQUENCY)
     buffered_days = horizon_days + 2
     frame = nuclear.fetch_nuclear_available(
         now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=buffered_days)
@@ -129,7 +143,7 @@ def fetch_forecast_ntc(db_path: str, *, horizon_days: int = HORIZON_DAYS) -> int
     the window also spans the recent refresh period, so - like nuclear - NTC is fetched once here and not
     again by ``update``. A no-op if no border returns data.
     """
-    now = pd.Timestamp.now(tz="UTC").floor("h")
+    now = pd.Timestamp.now(tz="UTC").floor(FREQUENCY)
     buffered_days = horizon_days + 2
     frame = ntc.fetch_ntc(
         now - pd.Timedelta(days=DEFAULT_REFRESH_DAYS), now + pd.Timedelta(days=buffered_days)
@@ -170,12 +184,18 @@ _DOMESTIC_WEATHER_PREFIXES = (
 def _weather_coverage_end(
     frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp
 ) -> pd.Timestamp | None:
-    """Last future delivery hour whose required domestic weather is genuinely present.
+    """Last future delivery quarter with complete bounded weather interpolation.
 
-    Radiation stamped at ``t + 1 h`` describes delivery interval ``t``, so a row is usable only when the
-    following timestamp's GHI is also present. This prevents retaining a final hour whose aligned solar
-    feature would be NaN even though the raw weather row at that hour exists.
+    Uses the same role builders as the models so instantaneous and radiation coverage cannot diverge
+    from feature interpolation. Missing source hours and unsupported endpoints remain uncovered.
     """
+    present = _weather_coverage_mask(frame)
+    covered = times[(times >= now) & present.to_numpy()]
+    return covered.max() if len(covered) else None
+
+
+def _weather_coverage_mask(frame: pd.DataFrame) -> pd.Series:
+    """Check actual model weather coverage at each row, including neighbour price drivers."""
     active = active_weather_columns(frame)
     weather = [
         column
@@ -183,40 +203,33 @@ def _weather_coverage_end(
         if column.startswith(_DOMESTIC_WEATHER_PREFIXES) and column in active
     ]
     if not weather:
-        return None
-    present = frame[weather].notna().all(axis=1)
-    radiation = [
-        c
-        for c in weather
-        if c.startswith(("ghi_de", "ghi_t_de", "direct_ghi_de", "diffuse_ghi_de", "dni_ghi_de"))
-    ]
-    if radiation:
-        radiation_present = pd.Series(
-            frame[radiation].notna().all(axis=1).to_numpy(),
-            index=pd.DatetimeIndex(times),
-        )
-        radiation_present = radiation_present[~radiation_present.index.duplicated(keep="last")]
-        next_hour_present = radiation_present.reindex(
-            pd.DatetimeIndex(times + pd.Timedelta(hours=1)), fill_value=False
-        )
-        present &= next_hour_present.to_numpy()
-    covered = times[(times >= now) & present.to_numpy()]
-    return covered.max() if len(covered) else None
+        return pd.Series(False, index=frame.index)
+    aligned = pd.concat([_weather_role_points(frame, name) for name in WEATHER_AGGREGATES], axis=1)
+    aligned = aligned[[c for c in aligned if c in weather]]
+    neighbours = [column for group in _neighbour_wind_columns(frame).values() for column in group]
+    if neighbours:
+        raw = frame[neighbours].apply(pd.to_numeric, errors="coerce")
+        raw.index = pd.DatetimeIndex(pd.to_datetime(frame[TIMESTAMP], utc=True))
+        neighbour_features = interpolate_hourly(raw, raw.index)
+        neighbour_features.index = frame.index
+        aligned = pd.concat([aligned, neighbour_features], axis=1)
+    present = aligned.notna().all(axis=1)
+    return present
 
 
 def _last_complete_market_day_cut(coverage_end: pd.Timestamp | None) -> pd.Timestamp | None:
     """Exclusive UTC cut at the end of the last fully-covered market (Europe/Berlin) day.
 
-    A day-ahead forecast day missing any of its 24 hours is worthless, so a partial final day is dropped
-    whole; a day whose coverage reaches its last hour is kept.
+    Publish whole delivery days: a partial final day is dropped, while coverage through its last
+    quarter retains the day. Calendar boundaries preserve the 92/96/100-interval DST day lengths.
     """
     if coverage_end is None:
         return None
     market_ts = coverage_end.tz_convert(MARKET_TIMEZONE)
     day_start = market_ts.normalize()
-    next_midnight = day_start + pd.Timedelta(days=1)
-    last_hour = next_midnight - pd.Timedelta(hours=1)
-    cut_market = next_midnight if market_ts >= last_hour else day_start
+    next_midnight = day_start + pd.DateOffset(days=1)
+    last_interval = next_midnight - STEP
+    cut_market = next_midnight if market_ts >= last_interval else day_start
     return cut_market.tz_convert("UTC")
 
 
@@ -226,14 +239,14 @@ def _first_market_day_start(times: pd.Series) -> pd.Timestamp:
     The read window begins at ``now - history_days``, i.e. an arbitrary hour of day, so a plot drawn from
     it starts mid-day. Snapping to the first delivery-day boundary (Berlin midnight = 22:00 UTC in summer,
     23:00 UTC in winter) makes plots begin on a whole market day, mirroring the trailing
-    ``_last_complete_market_day_cut``. Returns a UTC timestamp present in the hourly window.
+    ``_last_complete_market_day_cut``. Returns a UTC timestamp present in the delivery window.
     """
     start_market = times.min().tz_convert(MARKET_TIMEZONE)
     day_start = start_market.normalize()
     if (
         day_start < start_market
     ):  # window opened after midnight -> the next delivery day is the first whole one
-        day_start = day_start + pd.Timedelta(days=1)
+        day_start = day_start + pd.DateOffset(days=1)
     first_start: pd.Timestamp = day_start.tz_convert("UTC")
     return first_start
 
@@ -243,18 +256,18 @@ def _forecast_window_end(
 ) -> pd.Timestamp:
     """Exclusive end of ``horizon_days`` unknown German delivery days.
 
-    Day-ahead prices normally end at 23:00 market time. The following hour is therefore a Berlin
-    midnight and the first genuinely unknown delivery hour. Anchoring the horizon there, rather than at
+    Day-ahead prices normally end at 23:45 market time. The following quarter-hour is therefore a Berlin
+    midnight and the first genuinely unknown delivery quarter. Anchoring the horizon there, rather than at
     the arbitrary command run hour, keeps the unknown forecast at the requested number of delivery days
     both before and after tomorrow's auction prices appear. Calendar-day arithmetic in the market
     timezone also preserves the 23/25-hour DST delivery days.
 
-    If the latest actual is unexpectedly not a day's 23:00 hour, retain the exact next-hour anchor. This
+    If the latest actual is unexpectedly not a day's 23:45 interval, retain the exact next-quarter anchor. This
     avoids silently skipping an unpublished part-day while still producing a deterministic elapsed
     fallback for incomplete source data.
     """
     split = _forecast_split(actual, times, now)
-    start_market = (split + pd.Timedelta(hours=1)).tz_convert(MARKET_TIMEZONE)
+    start_market = (split + STEP).tz_convert(MARKET_TIMEZONE)
     end_market = start_market + pd.DateOffset(days=horizon_days)
     end: pd.Timestamp = end_market.tz_convert("UTC")
     return end
@@ -265,11 +278,11 @@ def _weather_limited_forecast_end(
 ) -> pd.Timestamp:
     """Keep ``requested_end`` when weather covers it; otherwise drop the incomplete final market day.
 
-    ``requested_end`` is exclusive, while ``coverage_end`` is the last covered hourly row. Missing
+    ``requested_end`` is exclusive, while ``coverage_end`` is the last covered quarter-hour row. Missing
     weather makes the models return technically valid but economically nonsensical tail predictions, so a
     partly covered delivery day must not be published. The existing market-day cut is DST-aware.
     """
-    required_last_hour = requested_end - pd.Timedelta(hours=1)
+    required_last_hour = requested_end - STEP
     if coverage_end is None or coverage_end >= required_last_hour:
         return requested_end
     complete_day_end = _last_complete_market_day_cut(coverage_end)
@@ -286,7 +299,7 @@ def run_forecast(
     fetch_inputs: bool = True,
     ensemble: bool = False,
 ) -> pd.DataFrame:
-    """Produce the 14-day hourly price forecast and write it to CSV (and optionally the DB / a plot).
+    """Produce the 14-day quarter-hour price forecast and write it to CSV (and optionally the DB / a plot).
 
     ``fetch_inputs`` fetches the forward-looking inputs first (the standalone ``eex forecast`` default);
     ``eex run`` sets it False because it has already fetched them up front, so prediction does no I/O.
@@ -299,7 +312,7 @@ def run_forecast(
     if fetch_inputs:
         fetch_forecast_inputs(db_path, horizon_days=horizon_days)
 
-    now = pd.Timestamp.now(tz="UTC").floor("h")
+    now = pd.Timestamp.now(tz="UTC").floor(FREQUENCY)
     input_buffer_days = horizon_days + 2
     with connect(db_path) as conn:
         frame = read_frame(
@@ -312,6 +325,7 @@ def run_forecast(
             "No data in the forecast window - run the backfills and `eex model train`."
         )
 
+    frame = quarter_grid(frame)
     times = pd.to_datetime(frame[TIMESTAMP], utc=True)
     future = times >= now
     if not future.any():
@@ -335,20 +349,25 @@ def run_forecast(
     )
     coverage_end = _weather_coverage_end(frame, times, now)
     end = _weather_limited_forecast_end(requested_end, coverage_end)
+    incomplete = (times >= now) & (times < end) & ~_weather_coverage_mask(frame)
+    if incomplete.any():
+        raise RuntimeError(
+            f"Missing bracketing weather for {int(incomplete.sum())} forecast intervals; refresh weather."
+        )
     if end < requested_end:
-        requested_hours = int(((times >= now) & (times < requested_end)).sum())
-        retained_hours = int(((times >= now) & (times < end)).sum())
+        requested_intervals = int(((times >= now) & (times < requested_end)).sum())
+        retained_intervals = int(((times >= now) & (times < end)).sum())
         logger.warning(
             "Weather ends at %s; dropped incomplete final delivery day "
-            "(requested %d forward hours, retained %d)",
+            "(requested %d forward intervals, retained %d)",
             coverage_end,
-            requested_hours,
-            retained_hours,
+            requested_intervals,
+            retained_intervals,
         )
     # Keep the untrimmed, buffered frame for the ensemble. Trimming drops the row *after* the last
-    # published hour, and radiation is stamped at the end of its averaging interval - so a feature build
-    # over the trimmed frame has no `t + 1 h` row to read and silently yields NaN irradiance on the final
-    # hour, corrupting that hour's price. The deterministic path never hits this because it predicts
+    # published quarter, and radiation is stamped at the end of its averaging interval - so a feature build
+    # over the trimmed frame loses the bracketing hourly radiation samples needed on the final
+    # quarter, corrupting that quarter's price. The deterministic path never hits this because it predicts
     # before trimming; the ensemble must be given the same buffered frame and trimmed afterwards.
     full_frame = frame
     keep = ((times >= start) & (times < end)).to_numpy()
@@ -380,7 +399,9 @@ def run_forecast(
         summary = run_ensemble_forecast(
             full_frame,
             forward_from=min(
-                _first_forward_hour(numeric_column(frame, REGISTRY[name].target_column), times, now)
+                _first_forward_interval(
+                    numeric_column(frame, REGISTRY[name].target_column), times, now
+                )
                 for name in (*SUBMODELS, "price")
             ),
             forward_until=end,  # the same published window the deterministic result was trimmed to
@@ -412,8 +433,8 @@ def _forecast_split(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> p
     return times[has_actual.to_numpy()].max() if bool(has_actual.any()) else now
 
 
-def _first_forward_hour(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> pd.Timestamp:
-    """The first hour after this target's last observation, falling back to ``now`` if none exists.
+def _first_forward_interval(actual: pd.Series, times: pd.Series, now: pd.Timestamp) -> pd.Timestamp:
+    """The first quarter-hour after this target's last observation, falling back to ``now`` if none exists.
 
     The ensemble uses this separately for price and every fundamental. Plotting may retain the last
     observed hour to join actual and forecast lines; the ensemble starts one hour later so known
@@ -421,4 +442,4 @@ def _first_forward_hour(actual: pd.Series, times: pd.Series, now: pd.Timestamp) 
     """
     if not bool(actual.notna().any()):
         return now
-    return _forecast_split(actual, times, now) + pd.Timedelta(hours=1)
+    return _forecast_split(actual, times, now) + STEP

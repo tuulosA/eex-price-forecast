@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for LLM coding agents working in this repo. Human-facing usage starts in `README.md` and
+Guidance for LLM coding agents working in this repo. Human-facing usage starts in `README.md` and `QUARTER_HOURLY.md` and
 continues in `docs/`; this file is the orientation and the rules an agent needs before changing code.
 
 ## What this project is
@@ -29,7 +29,7 @@ Forecasting is two-stage: **weather → three generation sub-models → price mo
 
 ```
 src/eex_forecast/
-  config.py            # paths, DE constants (HORIZON_DAYS=14, FORECAST_HISTORY_DAYS=21), env Settings
+  config.py            # paths, DE constants (HORIZON_DAYS=14, FORECAST_HISTORY_DAYS=14), env Settings
   db/
     schema.py          # `timeseries` table; separate actual/forecast columns; ensure_columns adds weather cols
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
@@ -63,10 +63,12 @@ src/eex_forecast/
     summary.py         # mean + p10/p25/p50/p75/p90 across members
     pipeline.py        # fetch -> propagate -> store -> summarise -> CSV (best-effort)
   backfill.py          # orchestrate ENTSO-E + weather fetch -> upsert; refresh_recent (rolling update)
-  quality.py           # reject gross upstream actual-data corruption before hourly resampling
+  quality.py           # reject gross upstream actual-data corruption before native-interval storage
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec registry + shared NN/tree factory; train/predict/persist
   price_nn.py          # operational DE price NN, preprocessing, numeric persistence and attribution
+  resolution.py        # 15-minute grid and bounded hourly-weather interpolation
+  migration.py         # read-only hourly input seeding, excluding all old targets/forecasts
   backtest_cutoffs.py  # frozen development/holdout cutoffs + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB (calls plots)
@@ -75,7 +77,7 @@ src/eex_forecast/
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
 tests/                 # focused unit/regression tests; external APIs mocked
 config/
-  hyperparams.json     # adopted tuned parameters
+  hyperparams_15min.json # starting parameters; quarter-hour development retune required
   weather_points.json  # adopted German and neighbour weather anchors
   backtest_cutoffs.yaml  # frozen delivery days: development (selection) + holdout (reporting)
 data/                  # runtime data is ignored; selected plots/reports are re-included as evidence
@@ -95,12 +97,18 @@ docs/
   converts its temporary timestamp view to `Europe/Berlin` before extracting hour, day, month, weekend,
   and public-holiday fields. Do not move database timestamps away from UTC or regress the feature block
   to UTC calendar semantics; local-midnight and DST boundaries would be mislabeled.
-- **Align preceding-hour radiation to delivery intervals.** Open-Meteo stamps GHI, GTI, direct,
-  diffuse, and DNI at the end of their averaging interval, while ENTSO-E targets are stamped at the
-  interval start. `features._weather_role_points` therefore gives target row `t` the radiation stored at
-  `t + 1 h`, using a timestamp lookup rather than a row shift. Keep the raw DB source timestamps
-  unchanged, preserve this alignment in production/analysis builders and point ranking, and reserve the
-  following weather hour when deciding forecast coverage.
+- **Interpolate source weather with interval semantics.** Raw Open-Meteo samples stay hourly in
+  SQLite. `resolution.interpolate_hourly` uses finite bracketing samples at most one hour apart,
+  without extrapolation or bridging missing hourly samples. Instantaneous weather is queried at t;
+  preceding-hour radiation means are centred 30 minutes before their source stamps and queried at
+  t+37.5min for a target midpoint t+7.5min. Preserve this in features, ranking and every member's
+  coverage checks. Solar geometry uses the quarter-hour midpoint too.
+- **Isolate the resolution migration.** Use `data/eex_15min.db`, `*_15min` artifact/report directories
+  and `DB_PATH_15MIN`; old `DB_PATH` is ignored. Reject hourly models and nonempty unversioned
+  databases. `eex db seed-hourly` reads the source only, excluding all old targets and forecasts.
+  Keep native wind/solar/load quarters. Before 2025-10-01 Berlin delivery midnight, repeat each
+  hourly day-ahead price over its four quarters; never interpolate prices or fill missing native
+  quarters after the transition. Price features include the known `price_native_15min` regime.
 - **Solar's auxiliary weather contract is part of production.** The adopted builder uses diffuse and
   direct-normal irradiance plus cloud-cover statistics at the existing ranked solar points,
   alongside GHI, deterministic geometry, solar azimuth (sin/cos), and the forward-filled installed
@@ -207,7 +215,7 @@ docs/
 
 ## Commands
 
-PyTorch is required. Price configuration lives in the `price` entry of `config/hyperparams.json`;
+PyTorch is required. Price configuration lives in the `price` entry of `config/hyperparams_15min.json`;
 tree-only parameters must be rejected for price. `eex model tune --target price` searches NN parameters
 and retains the incumbent unless a trial wins. The historical `price-models` command is retired.
 `eex analyze eval --oracle` writes matched eval/oracle reports from one fitted chain per fold. Price
@@ -224,7 +232,7 @@ Runtime pipeline (needs an ENTSO-E key in `.env.local`; see README for the full 
 `eex db init` → `eex backfill ...` → `eex update` → `eex model train` → `eex forecast --plot`.
 Geometry generation and point ranking are needed only when rebuilding the committed selections.
 `eex run` chains update → optional retrain → forecast. `eex model tune` writes tuned params to
-`config/hyperparams.json`.
+`config/hyperparams_15min.json`.
 
 ## Documentation ownership and synchronization
 
@@ -235,6 +243,7 @@ Documentation is part of the behavior being changed. Keep these sources aligned 
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
 - `ENSEMBLE.md` owns the ensemble figure walkthrough, user commands and interpretation limits.
+- `QUARTER_HOURLY.md` owns this branch's resolution migration, isolated artifacts and validation status.
 - `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
   radiation alignment, cross-border inputs, and the weather-ensemble contract (members, retention,
   API weighting, and the ensemble databases).
@@ -259,7 +268,7 @@ results, and update all repository links when a document is renamed or moved.
 - Prefer pure, unit-tested helpers (see `features.py`, `backtest_cutoffs.load_cutoff_sets`) over
   logic buried in I/O or CLI code. Add focused tests beside behavioral changes, following the
   existing `tests/test_*.py` organization.
-- All timestamps are **UTC**, hourly, ISO-8601; the DB primary key is the `timestamp` string.
+- All delivery timestamps are **UTC**, 15-minute interval starts, ISO-8601; the DB primary key is the `timestamp` string.
 - Add a test alongside any behavioral change and keep `ruff`/`mypy`/`pytest` green before finishing.
 
 ## Where to make common changes

@@ -47,6 +47,7 @@ from eex_forecast.ensemble.store import (
     write_member_weather,
 )
 from eex_forecast.ensemble.summary import log_spread_summary, summarise_members
+from eex_forecast.resolution import FREQUENCY
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +64,7 @@ def run_ensemble_forecast(
     retention_runs: int = ENSEMBLE_RETENTION_RUNS,
     member_weather: pd.DataFrame | None = None,
 ) -> pd.DataFrame | None:
-    """Run the ensemble over ``base`` and write its outputs; returns the per-hour summary, or ``None``.
+    """Run the ensemble over ``base`` and write its outputs; returns the per-interval summary, or ``None``.
 
     ``base`` must be the **untrimmed, buffered** forecast frame - the same one the deterministic models
     predict on. It carries the history the price lag needs *and* the row after the last published hour,
@@ -99,7 +100,7 @@ def run_ensemble_forecast(
 
 def _store_member_forecasts(forecasts: pd.DataFrame, *, horizon_days: int) -> int | None:
     """Record the run and its per-member predictions; returns the run id, or ``None`` on failure."""
-    issued_at = pd.Timestamp.now(tz="UTC").floor("h")
+    issued_at = pd.Timestamp.now(tz="UTC").floor(FREQUENCY)
     try:
         with connect_ensemble(ENSEMBLE_DB_PATH) as conn:
             create_ensemble_schema(conn)
@@ -111,13 +112,13 @@ def _store_member_forecasts(forecasts: pd.DataFrame, *, horizon_days: int) -> in
                 model=ENSEMBLE_MODEL,
                 n_members=int(forecasts[MEMBER_COLUMN].nunique()),
                 horizon_days=horizon_days,
-                n_hours=int(forecasts[TIMESTAMP].nunique()),
+                n_intervals=int(forecasts[TIMESTAMP].nunique()),
             )
             rows = write_member_forecasts(conn, run_id, forecasts)
     except Exception:  # noqa: BLE001 - a storage failure must not cost the bands or the CSV
         logger.exception("Storing ensemble member forecasts failed; bands and CSV are unaffected")
         return None
-    logger.info("Stored ensemble run %d: %d member-hour predictions", run_id, rows)
+    logger.info("Stored ensemble run %d: %d member-interval predictions", run_id, rows)
     return run_id
 
 
@@ -140,7 +141,7 @@ def _archive_member_weather(weather: pd.DataFrame, run_id: int, *, retention_run
 
 
 def _write_summary_csv(summary: pd.DataFrame) -> None:
-    """Write the per-hour band summary next to the deterministic forecast CSV."""
+    """Write the per-interval band summary next to the deterministic forecast CSV."""
     csv_path = FORECAST_DIR / ENSEMBLE_CSV
     try:
         FORECAST_DIR.mkdir(parents=True, exist_ok=True)

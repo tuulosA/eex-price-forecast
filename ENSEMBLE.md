@@ -1,10 +1,12 @@
 # Weather ensemble forecasts
 
+> This branch propagates each member on a 15-minute delivery grid. The figure below shows quarter-hour output from the migrated pipeline. See [the resolution migration](QUARTER_HOURLY.md) for interpolation and isolated paths.
+
 The weather ensemble shows how the German price, wind, solar and load forecasts change under
 51 ECMWF weather scenarios. Each member passes through the same trained model chain: weather to
 wind, solar and load, then to the German price NN. The outputs are combined after prediction.
 
-![German price, wind, solar and load weather-ensemble forecasts](data/forecast/forecast_ensemble.png)
+![German price, wind, solar and load weather-ensemble forecasts](data/forecast_15min/forecast_ensemble.png)
 
 This committed image is a static example and may lag the latest code and data.
 
@@ -17,7 +19,7 @@ This committed image is a static example and may lag the latest code and data.
 
 Wider bands indicate greater disagreement between weather scenarios. Price is in EUR/MWh; wind,
 solar and load are in MW. Time is UTC. The deterministic forecast has its own
-[price](data/forecast/forecast.png) and [fundamentals](data/forecast/fundamentals.png) figures.
+[price](data/forecast_15min/forecast.png) and [fundamentals](data/forecast_15min/fundamentals.png) figures.
 
 Each series begins after its own last actual, subject to complete member-weather coverage. Wind,
 solar and load can therefore start before price, whose day-ahead auction may already have settled
@@ -49,7 +51,7 @@ To refresh inputs and retrain before generating both forecast products:
 eex run --train --plot --write-db --ensemble
 ```
 
-The ensemble adds `data/forecast/forecast_ensemble.png` and `forecast_ensemble.csv`. The CSV contains
+The ensemble adds `data/forecast_15min/forecast_ensemble.png` and `forecast_ensemble.csv`. The CSV contains
 each model's mean and p10/p25/p50/p75/p90, plus member counts. A target's columns remain empty until
 its own forecast starts. Fetching the member weather takes a few minutes because requests are paced.
 

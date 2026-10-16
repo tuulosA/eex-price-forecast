@@ -83,7 +83,7 @@ def test_serve_unavailable_lag_mask_nulls_only_beyond_the_lag_horizon() -> None:
         {_PRICE_LAG_COLUMN: np.arange(336.0), "other": np.arange(336.0)}, index=times.index
     )
     out = apply_serve_unavailable_lag_mask(matrix, times, cutoff)
-    within = times <= cutoff + pd.Timedelta(hours=168)  # D+1..D+7 keep the lag
+    within = times < cutoff + pd.Timedelta(hours=168)  # D+1..D+7 keep the lag
     assert out.loc[within.to_numpy(), _PRICE_LAG_COLUMN].notna().all()
     assert out.loc[(~within).to_numpy(), _PRICE_LAG_COLUMN].isna().all()  # D+8..D+14 nulled
     assert out["other"].equals(matrix["other"])  # only the lag column is touched

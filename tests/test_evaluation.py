@@ -41,9 +41,9 @@ FAST_PARAMS = {
 FAST_PARAMS["price"] = dict(NN_TINY)
 
 
-def _hourly_frame(start: str, end: str) -> pd.DataFrame:
+def _hourly_frame(start: str, end: str, *, freq: str = "h") -> pd.DataFrame:
     """Contiguous deterministic targets with enough structure for all four registered builders."""
-    times = pd.date_range(start, end, freq="h", tz="UTC", inclusive="left")
+    times = pd.date_range(start, end, freq=freq, tz="UTC", inclusive="left")
     hour = times.hour.to_numpy()
     day = np.arange(len(times), dtype=float) / 24.0
     wind = 25_000.0 + 4_000.0 * np.sin(day / 3.0)
@@ -67,6 +67,17 @@ def test_eval_horizon_is_one_day() -> None:
     assert EVAL_HORIZON_DAYS == 1
 
 
+def test_quarter_hour_chain_scores_dst_day_and_reports_price_eras() -> None:
+    frame = _hourly_frame("2025-09-01", "2025-11-02", freq="15min")
+    cutoffs = ("2025-09-29", "2025-10-02", "2025-10-26")
+    result = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
+    for evaluated in result.models:
+        assert [fold["test_rows"] for fold in evaluated.folds] == [96, 96, 100]
+    assert result.report["config"]["interval_minutes"] == 15
+    assert result.report["price_resolution_summary"]["legacy_hourly_prices"]["n_days"] == 1
+    assert result.report["price_resolution_summary"]["native_15min_prices"]["n_days"] == 2
+
+
 def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -79,7 +90,14 @@ def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
         )
 
     assert [evaluation.model for evaluation in result.models] == list(ALL_MODELS)
-    assert list(result.report) == ["horizon", "days", "summary", "config", "models"]
+    assert list(result.report) == [
+        "horizon",
+        "days",
+        "summary",
+        "config",
+        "models",
+        "price_resolution_summary",
+    ]
     assert list(result.report["summary"]) == list(ALL_MODELS)
     assert result.report["config"]["n_cutoffs"] == 2
     for evaluation in result.models:

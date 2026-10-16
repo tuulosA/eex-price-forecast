@@ -444,6 +444,7 @@ def plot_features(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
     import matplotlib.pyplot as plt
 
     panels = raw_feature_panels(frame)
+    weather = active_weather_columns(frame)
     if not panels:
         return path
     fig, axes = plt.subplots(
@@ -451,7 +452,14 @@ def plot_features(frame: pd.DataFrame, times: pd.Series, now: pd.Timestamp, path
     )
     for ax, (title, columns) in zip(axes[:, 0], panels, strict=True):
         for column in columns:
-            ax.plot(times, pd.to_numeric(frame[column], errors="coerce"), linewidth=0.6)
+            source_rows = (
+                (times.dt.minute == 0) if column in weather else pd.Series(True, index=times.index)
+            )
+            ax.plot(
+                times[source_rows],
+                pd.to_numeric(frame[column], errors="coerce")[source_rows.to_numpy()],
+                linewidth=0.6,
+            )
         ax.axvline(now, color="0.6", linewidth=0.8)
         ax.set_title(f"{title} - {len(columns)} series", loc="left", fontsize=8)
         ax.tick_params(labelsize=7)

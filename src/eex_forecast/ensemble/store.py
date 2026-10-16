@@ -1,12 +1,12 @@
 """SQLite storage for ensemble runs, split across two files by retention policy.
 
-``eex_ensemble.db`` is **permanent and small**: one row per run plus one row per
-``(run, member, hour)`` of model output - about 0.9 MB per run. This is what a future interval
+``eex_ensemble_15min.db`` is **permanent and small**: one row per run plus one row per
+``(run, member, delivery interval)`` of model output. This is what a future interval
 calibration needs, because answering "was the p10-p90 band honest?" requires the per-member
 *predictions* and the realised actual, not the weather that produced them.
 
-``eex_ensemble_weather.db`` is **large and prunable**: the raw member weather, about 86 MB per run
-measured. It is kept on a bounded rolling window (:data:`eex_forecast.config.ENSEMBLE_RETENTION_RUNS`)
+``eex_ensemble_weather_15min.db`` is **large and prunable**: the raw hourly member weather.
+It is kept on a bounded rolling window (:data:`eex_forecast.config.ENSEMBLE_RETENTION_RUNS`)
 because its value is optional - re-propagating an old ensemble through retrained models, or one day
 training on ensemble spread as a feature - while its cost is not. Open-Meteo discards members after
 roughly three days, so this archive is the only way such a history can ever exist; a bounded window
@@ -63,7 +63,7 @@ def create_ensemble_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         f'CREATE TABLE IF NOT EXISTS "{RUN_TABLE}" ('
         f'"{RUN_COLUMN}" INTEGER PRIMARY KEY, "issued_at" TEXT NOT NULL, "model" TEXT NOT NULL, '
-        '"n_members" INTEGER NOT NULL, "horizon_days" INTEGER NOT NULL, "n_hours" INTEGER NOT NULL)'
+        '"n_members" INTEGER NOT NULL, "horizon_days" INTEGER NOT NULL, "n_intervals" INTEGER NOT NULL)'
     )
     conn.execute(
         f'CREATE TABLE IF NOT EXISTS "{FORECAST_TABLE}" ('
@@ -104,12 +104,12 @@ def record_run(
     model: str,
     n_members: int,
     horizon_days: int,
-    n_hours: int,
+    n_intervals: int,
 ) -> None:
     """Insert (or replace) this run's provenance row."""
     conn.execute(
         f'INSERT OR REPLACE INTO "{RUN_TABLE}" VALUES (?, ?, ?, ?, ?, ?)',
-        (run_id, issued_at.isoformat(), model, n_members, horizon_days, n_hours),
+        (run_id, issued_at.isoformat(), model, n_members, horizon_days, n_intervals),
     )
     conn.commit()
 

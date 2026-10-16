@@ -1,18 +1,63 @@
 # Model development and current decisions
 
+> **15-minute development branch.** The adopted architecture is retained, with fractional-hour calendars, interpolated hourly weather and a price-resolution regime input. Existing research and benchmark values on this page describe the hourly baseline. Quarter-hour calibration and validation are separate; see [the migration guide](../QUARTER_HOURLY.md).
+
 Last updated: **2026-10-16**.
 
 The operational price model is a **single-area neural network for Germany**. Wind, solar and load
 remain XGBoost models. There is no price-backend option, tree fallback, output smoothing or peak-price
 scaler. Public commands and forecast columns retain their existing meanings.
 
+## Quarter-hour price-shape screen (16 October 2026)
+
+The initial quarter-hour forecast is too smooth within many hours. This is model behaviour, not
+interpolated price output: saved prices match direct NN predictions. About 72.5% of the latest training
+labels are legacy hourly prices repeated across their four quarters. The fractional calendar and
+interpolated weather provide gradual inputs, but do not directly encode position within each hour.
+Native development data also shows systematic within-hour patterns, so the missing variation cannot
+all be dismissed as unpredictable noise.
+
+The price-only screen uses 22 frozen development days with at least 90 days of native-price history
+before each cutoff. It compares the current model, four quarter indicators, native-only price history,
+their combination, and explicit quarter/hour interactions gated to the known native market regime.
+All retain the single DE SiLU NN and the initial parameters. Fundamentals are actual in this screen;
+these are conditional price-model diagnostics, not end-to-end forecast scores. Reserved holdout days
+are untouched. Training, clipping, preprocessing and lag masks use the shared walk-forward engine.
+
+The [full report](../data/analysis_15min/quarter_price_shape_experiment.json) and
+[comparison figure](../data/analysis_15min/quarter_price_shape.png) record price MAE, quarter-to-quarter
+change error and hour-centred shape error. Visual roughness alone is not an adoption criterion.
+This is a one-seed exploratory screen. Native-only fits also have fewer optimizer updates at the same
+40 epochs, so it does not settle the best history window after a matched retune. Any adoption needs
+multiple seeds and a comparison with freshly forecast fundamentals.
+
+All values below are EUR/MWh; lower errors are better. Observed mean absolute changes inside an hour
+are **8.36**, averaged equally across the 22 delivery days.
+
+| Price variant | Price MAE | Predicted absolute change inside hour | Within-hour change MAE | Hour-centred shape MAE |
+|---|---:|---:|---:|---:|
+| Current NN | 15.45 | 3.92 | 5.74 | 5.28 |
+| Quarter indicators | 16.78 | 5.37 | 5.78 | 5.24 |
+| Native history only | 15.34 | 3.71 | 5.94 | 5.52 |
+| Native history + quarter indicators | 16.24 | 6.16 | 5.70 | 5.07 |
+| Native quarter/hour interactions | 15.05 | 8.39 | 5.99 | 5.25 |
+
+The interaction features restore average movement amplitude and reduce mean price MAE by 0.40, but
+the paired day-bootstrap 90% interval for that price difference is **[-1.62, +0.84]**. Individual
+within-hour change error rises by 0.26; its interval is **[-0.16, +0.70]**. Matching roughness therefore
+does not establish better prediction of the actual movements. Native history alone does not recover
+the missing detail at this training budget either. **No price feature or training-window change is
+adopted from this screen.** Further work should test native-quarter feature/loss tuning jointly, with
+several seeds and forecast fundamentals, before claiming an improvement.
+
 ## Adopted price model
 
 The network has two 64-unit SiLU hidden layers and a linear output. It fits exactly 40 epochs with
 AdamW/MAE, batch size 512, learning rate 0.0015317709628184257, weight decay
 0.0000011527987128232402, no dropout, seed 42 and four CPU threads. The authoritative parameters are
-the `price` entry in [hyperparams.json](../config/hyperparams.json), with provenance in the
-[adoption record](../data/tuning/price_adoption.json).
+the `price` entry in [hyperparams_15min.json](../config/hyperparams_15min.json). These are initial
+quarter-hour parameters copied from the hourly [adoption record](../data/tuning/price_adoption.json),
+not the result of quarter-hour tuning.
 
 Inputs retain the raw/cyclic calendar, weekly price lag, German weather aggregates, wind/solar/load,
 neighbour wind, French nuclear availability and per-border import capacity. This is one DE target
@@ -26,7 +71,7 @@ may be negative. There is no early stopping or temporal operation on predicted p
 
 Training, tuning, ablation, aggregation, evaluation, oracle diagnostics and weather-ensemble members
 share the estimator factory and prediction contract. Price state is numeric arrays plus versioned
-metadata in `data/models/price.npz`; `price.meta.json` checks feature order and backend. Legacy
+metadata in `data/models_15min/price.npz`; `price.meta.json` checks feature order, backend and resolution. Legacy
 `price.json` is never loaded. Fundamentals retain native XGBoost JSON. Retrain after feature or
 parameter changes.
 
@@ -81,7 +126,7 @@ stochastic fits also change with thread count. See the
 ## Current benchmarks
 
 <!-- current-benchmarks:start -->
-Regenerated on **15 October 2026**, using seed 42 and the operational model chain.
+Historical hourly baseline, regenerated on **15 October 2026** using seed 42. Quarter-hour validation is separate.
 
 | Model | Development MAE (92 days) | Holdout MAE (18 days) | Holdout RMSE |
 |---|---:|---:|---:|

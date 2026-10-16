@@ -1,9 +1,11 @@
 # Data pipeline and sources
 
+> On the 15-minute branch, targets and outputs use quarter-hour intervals; weather remains raw hourly data. See [the migration guide](../QUARTER_HOURLY.md) for the complete time-grid and price-history contract.
+
 The model handoff is weather -> XGBoost wind/solar/load -> the operational DE price NN. Price uses
 the existing actual-or-forecast fundamental coalesce and regional drivers; timestamps and CSV/DB
-columns are unchanged. It returns raw hourly prices with no temporal output filter or peak scaler.
-PyTorch is required. Training writes numeric state and preprocessing to `data/models/price.npz`, with
+columns are unchanged. It returns raw 15-minute prices with no temporal output filter or peak scaler.
+PyTorch is required. Training writes numeric state and preprocessing to `data/models_15min/price.npz`, with
 a backend/feature-order sidecar `price.meta.json`; legacy price trees are not loaded. Fundamentals
 retain native XGBoost JSON and their capacity/clipping/darkness contracts. Weather-ensemble members
 call this same saved NN after forecasting their own fundamentals, then aggregate member outputs.
@@ -62,7 +64,7 @@ The relevant ENTSO-E publications include:
 
 ## Timestamps and German delivery days
 
-Database timestamps are UTC and hourly. Calendar features are derived after conversion to
+Database timestamps are UTC and use a 15-minute delivery grid; weather samples retain their hourly source timestamps. Calendar features are derived after conversion to
 `Europe/Berlin`, so hour, weekday, weekend, month, and German public holidays follow the market's civil
 time across local midnight and daylight-saving transitions.
 
@@ -75,12 +77,11 @@ The live horizon is anchored to the last published German day-ahead price:
 If ECMWF ends partway through the last delivery day, that incomplete day is discarded rather than
 padded with missing weather.
 
-Which case you get is determined by the run time, not by chance. The horizon is anchored to the hour
-after the last settled price, so it moves forward a whole day when the auction clears; the weather
-request is anchored to today's local midnight and does not move. A run before publication therefore
-publishes **14** unknown delivery days, and a run after publication publishes **13** — the fourteenth
-would need weather one day beyond what ECMWF supplies. The preceding-hour radiation alignment is part
-of this: the final hour is only retained when the *following* hour's radiation is also present.
+The horizon starts at the quarter-hour after the last settled price, so it moves forward a whole day
+when the auction clears; the weather request stays anchored to today's local midnight. The published
+length depends on fresh provider coverage and can be shorter than 14 days. Radiation interpolation
+also needs bracketing source hours beyond each delivery midpoint. Unsupported final delivery days are
+discarded in full.
 
 ## Backfill and update windows
 
@@ -110,7 +111,7 @@ eex backfill weather --start 2023-01-01 --role neighbour_wind
 ```
 
 Upserts write only non-null values, allowing different sources and weather points to compose into the
-same hourly rows.
+same quarter-hour rows.
 
 ## Weather points and variables
 
@@ -149,13 +150,12 @@ avoiding a train/serve mismatch.
 
 ## Radiation interval alignment
 
-Open-Meteo hourly radiation is a preceding-hour mean: a value stamped 21:00 describes 20:00-21:00.
-ENTSO-E targets use the delivery interval's start, so generation at 20:00 must use radiation stamped
-21:00.
-
-Raw weather stays stored under Open-Meteo's original timestamp. Feature construction performs a
-timestamp lookup at `t + 1 h`; it is not a row shift or database rewrite. Forecast fetching reserves the
-following weather hour so this alignment remains available at the horizon boundary.
+Open-Meteo radiation is an hourly mean stamped at its interval end. Quarter-hour targets use
+interval-start timestamps. The feature layer interpolates the hourly mean samples at each target's
+midpoint, querying raw source timestamps at `t + 37.5 minutes`. Instantaneous weather is interpolated
+at `t`. Both require finite bracketing samples no more than one hour apart, with no extrapolation.
+Raw SQLite weather timestamps and values remain unchanged. See the [resolution contract](../QUARTER_HOURLY.md#weather-and-known-ahead-inputs)
+for the approximation and coverage limits.
 
 ## Historical weather limitation
 
@@ -261,8 +261,8 @@ Storage is split by retention policy, and neither file is the production databas
 
 | File | Contents | Retention |
 |---|---|---|
-| `data/eex_ensemble.db` | run metadata + per-member predictions (~2 MB/run) | permanent |
-| `data/eex_ensemble_weather.db` | raw member weather (~30 MB/run measured) | rolling `ENSEMBLE_RETENTION_RUNS` (30) |
+| `data/eex_ensemble_15min.db` | run metadata + per-member predictions (~2 MB/run) | permanent |
+| `data/eex_ensemble_weather_15min.db` | raw member weather (~30 MB/run measured) | rolling `ENSEMBLE_RETENTION_RUNS` (30) |
 
 The per-member predictions are what a future interval calibration needs, so they are never pruned. The
 raw weather is optional — it exists to allow re-propagating old ensembles through retrained models, or
@@ -270,7 +270,7 @@ one day training on ensemble spread — so it is bounded and can be deleted outr
 
 ## Forecast outputs
 
-`eex forecast` writes `data/forecast/forecast.csv` with actual/forecast pairs for price, wind, solar, and
+`eex forecast` writes `data/forecast_15min/forecast.csv` with actual/forecast pairs for price, wind, solar, and
 load. Actual columns are populated only where measurements exist.
 
 `--plot` adds:
@@ -285,7 +285,7 @@ load. Actual columns are populated only where measurements exist.
 
 `--write-db` additionally stores forecasts in the separate forecast columns of SQLite.
 
-`--ensemble` adds `data/forecast/forecast_ensemble.csv`: one row per forward hour with `timestamp`,
+`--ensemble` adds `data/forecast_15min/forecast_ensemble.csv`: one row per forward quarter-hour with `timestamp`,
 `n_members`, and `<model>_mean` plus `<model>_p10/p25/p50/p75/p90` for `wind`, `solar`, `load`, and
 `price` (26 columns). With `--plot` it also writes `forecast_ensemble.png`, with one panel each for price,
 wind, solar, and load: measured history, p10-p90 and p25-p75 bands, and the ensemble mean.
@@ -295,16 +295,15 @@ The plot is captioned to say that only the weather varies between members. `fore
 `fundamentals.png` never carry ensemble bands, and no ensemble plot is written when the ensemble step
 fails.
 
-The ensemble CSV covers the union of each target's unknown hours, clipped to complete member-weather
-coverage. Each target starts one hour after its own last actual: wind, solar and load can begin before
+The ensemble CSV covers the union of each target's unknown intervals, clipped to complete member-weather
+coverage. Each target starts 15 minutes after its own last actual: wind, solar and load can begin before
 tomorrow's already-settled prices. Mean and quantile columns remain empty until that target starts;
 `n_members` counts the available members for the row. `forecast.csv` also includes earlier measured
 history; the ensemble CSV excludes hours before any target needs a forecast or before member weather
 is complete.
 
 The same coverage check sets the end; the ensemble can stop before the deterministic forecast. The ECMWF ensemble runs about 15 days from its own initialisation, and
-Open-Meteo pads the requested window with timestamps whose values are null, so an hour counts as
-covered only when every member has every weather column - and, for radiation, the following hour
-too, since radiation is read from `t + 1 h`. Hours past that are left out of
-`forecast_ensemble.csv` and the bands rather than filled with deterministic weather, which would
+Open-Meteo pads the requested window with null timestamps. A delivery quarter is covered only when
+all members provide every required bracketing weather sample, including radiation alignment. Internal
+gaps and unsupported tails are excluded rather than filled with deterministic weather, which would
 publish them with zero spread.

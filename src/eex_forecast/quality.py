@@ -2,9 +2,10 @@
 
 Upstream APIs occasionally return a value that is wrong by orders of magnitude - e.g. ENTSO-E once
 reported a single 15-minute German load reading of ~4,300,000 MW against a normal ~60,000 MW. Averaging
-such a value into the hour silently corrupts it. :func:`clip_implausible` rejects values outside a
+such a value into the hour silently corrupted it in the earlier hourly pipeline. :func:`clip_implausible`
+rejects values outside a
 plausibility band derived from the series' own scale, so clean data is left untouched and only gross
-corruption is dropped to NaN (then excluded from the resample).
+corruption is dropped to NaN before storing the native delivery intervals.
 
 This is a guard against gross corruption, not a smoother - the band is deliberately wide. Series that
 legitimately reach zero (wind and solar generation) are guarded only against large-magnitude spikes of

@@ -12,9 +12,9 @@ psrType B14 = nuclear), fetched via entsoe-py - which handles the ZIP-of-XML pag
 carries the unit's installed capacity (``nominal_power``) and an available-capacity step profile
 (``avail_qty`` over ``[start, end)`` points); unavailable = nominal - available, summed over the zone's
 units. Planned outages publish **years ahead**, so the forecast horizon gets real availability rather than
-a forward-filled guess. *Installed capacity* comes from A68 (yearly, forward-filled onto the hourly grid).
+a forward-filled guess. Installed capacity comes from A68 (yearly, held on the quarter-hour grid).
 
-The pure helpers (:func:`latest_revision`, :func:`hourly_unavailable`, :func:`yearly_to_hourly`) are
+The pure helpers (:func:`latest_revision`, :func:`interval_unavailable`, :func:`yearly_to_grid`) are
 unit-tested; the ``fetch_*`` functions are thin orchestration over the entsoe-py client.
 """
 
@@ -29,6 +29,7 @@ import pandas as pd
 from entsoe.exceptions import NoMatchingDataError
 
 from eex_forecast.config import NUCLEAR_COLUMN, NUCLEAR_ZONES
+from eex_forecast.resolution import FREQUENCY
 from eex_forecast.sources.entsoe import (
     _call_with_retry,
     _client,
@@ -55,7 +56,7 @@ def latest_revision(outages: pd.DataFrame) -> pd.DataFrame:
     return kept
 
 
-def hourly_unavailable(outages: pd.DataFrame, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
+def interval_unavailable(outages: pd.DataFrame, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
     """Unavailable nuclear MW on ``hours``, summed over the zone's units (0 where nothing is out).
 
     Per unit, the available capacity at an hour is the **minimum** across its overlapping outage points
@@ -91,7 +92,7 @@ def hourly_unavailable(outages: pd.DataFrame, hours: pd.DatetimeIndex) -> npt.ND
     return total
 
 
-def yearly_to_hourly(yearly: pd.Series, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
+def yearly_to_grid(yearly: pd.Series, hours: pd.DatetimeIndex) -> npt.NDArray[np.float64]:
     """Forward-fill a yearly-indexed series onto ``hours`` (each hour gets the value in force then)."""
     if yearly.empty or len(hours) == 0:
         return np.full(len(hours), np.nan)
@@ -164,7 +165,7 @@ def _fetch_zone_nuclear_capacity(
         pd.to_numeric(raw[NUCLEAR_PLANT_TYPE], errors="coerce").to_numpy(),
         index=pd.to_datetime([f"{year}-01-01" for year in years], utc=True),
     )
-    return yearly_to_hourly(yearly, hours)
+    return yearly_to_grid(yearly, hours)
 
 
 def fetch_nuclear_available(
@@ -175,12 +176,14 @@ def fetch_nuclear_available(
 ) -> pd.DataFrame:
     """Summed available nuclear capacity across ``zones`` -> frame[``timestamp``, ``nuclear_available_mw``].
 
-    Per zone: ``available = clip(installed_capacity - unavailable(outages), 0)`` on the hourly grid; the
+    Per zone: ``available = clip(installed_capacity - unavailable(outages), 0)`` on the delivery grid; the
     clip guards the phase-out case where outage docs still report closed units at their old nominal MW.
     A zone with no installed-capacity data contributes nothing (rather than a spurious 0).
     """
     start_ts, end_ts = _normalize_bounds(start, end)
-    hours = pd.date_range(start_ts.floor("h"), end_ts.floor("h"), freq="h", tz="UTC")
+    hours = pd.date_range(
+        start_ts.floor(FREQUENCY), end_ts.floor(FREQUENCY), freq=FREQUENCY, tz="UTC"
+    )
     total = np.zeros(len(hours), dtype="float64")
     any_zone = False
     for zone in zones:
@@ -189,12 +192,12 @@ def fetch_nuclear_available(
             logger.warning("No installed nuclear capacity for %s; skipping its availability", zone)
             continue
         outages = _fetch_zone_unavailability(zone, start_ts, end_ts)
-        unavailable = hourly_unavailable(outages, hours)
+        unavailable = interval_unavailable(outages, hours)
         available = np.clip(np.nan_to_num(capacity, nan=0.0) - unavailable, 0.0, None)
         total += available
         any_zone = True
         logger.info(
-            "Nuclear %s: capacity ~%.0f MW, mean available %.0f MW over %d hours",
+            "Nuclear %s: capacity ~%.0f MW, mean available %.0f MW over %d intervals",
             zone,
             float(np.nanmax(capacity)),
             float(np.mean(available)),

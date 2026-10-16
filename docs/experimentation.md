@@ -1,15 +1,22 @@
 # Experimentation and evaluation
 
+> This branch scores quarter-hour forecasts. Older experiment findings and benchmark tables below describe the hourly baseline. Parameters in `config/hyperparams_15min.json` start from that baseline and need development tuning; see [the migration guide](../QUARTER_HOURLY.md).
+
 This guide is the command and methodology reference for developing `eex-price-forecast`. For the
 shortest path to a working forecast, start with the [README](../README.md). For the record of completed
 experiments, rejected ideas, and current priorities, see the
 [model-development record](model-development.md).
 
+The branch's initial [quarter-hour price-shape screen](model-development.md#quarter-hour-price-shape-screen-16-october-2026)
+is a price-only, one-seed development experiment. Its reports distinguish error in predicted prices,
+within-hour changes and hour-centred shape from movement amplitude. These metrics prevent a visually
+more jagged curve from being treated as an accuracy gain by itself.
+
 ## Rebuilding the modelling choices
 
-The repository commits a working set of weather points and tuned hyperparameters. You do not need this
-section merely to run the forecast. Use it when you want to regenerate candidates, choose different
-anchors, or tune the models yourself.
+The repository commits a working set of weather points and initial quarter-hour parameters copied
+from the tuned hourly baseline. You do not need this section merely to run the forecast. Use it when
+you want to regenerate candidates, choose different anchors, or tune the models yourself.
 
 Building from empty is ordered because each stage feeds the next:
 
@@ -44,7 +51,7 @@ point rather than a restriction.
 
 Every backtest tool scores frozen delivery days from `config/backtest_cutoffs.yaml`. At every
 cutoff, the model trains strictly on earlier rows and scores the next German delivery day. The
-window is DST-aware and may contain 23, 24, or 25 hours.
+window is DST-aware and may contain 23, 24, or 25 hours (92, 96, or 100 quarter-hour intervals).
 
 Freezing the days makes runs comparable: a score changes because the model changed, not because a new
 sample of dates was generated. There is deliberately no general `--cutoffs` or `--horizon` option. The
@@ -117,7 +124,7 @@ Train-only median imputation and standardization are paired with missingness ind
 uses training median/IQR scaling. The existing weekly-lag mask runs before preprocessing. Negative
 prices are allowed; neither temporal smoothing nor price scaling is applied to predictions.
 
-State, preprocessing, parameters and feature order are stored numerically in `data/models/price.npz`.
+State, preprocessing, parameters and feature order are stored numerically in `data/models_15min/price.npz`.
 `price.meta.json` checks its backend and feature order. A stale `price.json` is not a usable price
 artifact. Existing installations must reinstall the package and retrain; changing parameters or
 features also requires retraining.
@@ -141,7 +148,7 @@ and the smoothness/accuracy trade-off are recorded in [model development](model-
 
 ## Quick inspection
 
-These commands produce maps and correlations under `data/analysis/`:
+These commands produce maps and correlations under `data/analysis_15min/`:
 
 ```bash
 eex points map
@@ -313,7 +320,7 @@ eex analyze eval --plot --breakdown --oracle # write matched oracle results from
 ```
 
 Each fold forecasts wind, solar, and load before price. The reports at
-`data/evaluation/model_eval.json` (development) and `model_eval_holdout.json` (holdout) contain
+`data/evaluation_15min/model_eval.json` (development) and `model_eval_holdout.json` (holdout) contain
 per-cutoff details and headline MAE/RMSE, and record which set they scored. `--plot` adds one figure
 per model - `<price|wind|solar|load>_eval_days[_holdout].png`: one panel per scored day, actual against the D+1 forecast, each on its own
 y-scale, so a reader can see whether the daily profile is caught and which days are missed
@@ -332,7 +339,7 @@ costs nothing extra; rerun it after a model change to see whether a systematic e
 errors are hour-weighted, so they can differ from the day-averaged headline in the third decimal.
 
 <!-- evaluation-benchmarks:start -->
-Regenerated on **15 October 2026**, using seed 42 and the operational model chain.
+Historical hourly baseline, regenerated on **15 October 2026** using seed 42. Quarter-hour validation is separate.
 
 | Model | Development MAE (92 days) | Holdout MAE (18 days) | Holdout RMSE |
 |---|---:|---:|---:|
@@ -370,7 +377,7 @@ The signed MAE delta from `all_actual` measures isolated downstream impact. Delt
 because the price model is nonlinear and errors interact. A negative delta is finite-sample error
 cancellation, not evidence that a forecast is generally better than truth.
 
-Reports are written to `data/evaluation/oracle_substitution.json`, or
+Reports are written to `data/evaluation_15min/oracle_substitution.json`, or
 `oracle_substitution_holdout.json` with `--holdout`.
 
 ## Model explanations
@@ -382,7 +389,7 @@ eex analyze shap --target price --days 90
 
 Explains saved production artifacts over recent history with measured fundamentals. The command
 retains its `shap` name, but uses **integrated gradients for price** and **TreeSHAP for fundamentals**.
-It writes `data/analysis/ig_price.png` and `shap_wind.png`, `shap_solar.png`, `shap_load.png`.
+It writes `data/analysis_15min/ig_price.png` and `shap_wind.png`, `shap_solar.png`, `shap_load.png`.
 
 For the NN, a standardized zero vector (training means, all missingness flags cleared) is the
 reference. Gauss-Legendre integration follows the fitted network from that reference to each input;
@@ -423,8 +430,8 @@ eex model tune --target price --trials 12
 ```
 
 Tune one target at a time: `wind`, `solar`, `load`, or `price`. The default is 20 Optuna trials. Results
-merge into `config/hyperparams.json` without changing the other models, while the full trial provenance
-is written under `data/tuning/`.
+merge into `config/hyperparams_15min.json` without changing the other models, while the full trial provenance
+is written under `data/tuning_15min/`.
 
 Every study is independently seeded and reproducible, but not resumed. The currently configured
 parameters are scored as an incumbent and retained unless a fresh trial beats them on the identical
@@ -434,11 +441,11 @@ development cutoffs. Retune after changing features, feature semantics, or ancho
 
 | Directory | Contents |
 |---|---|
-| `data/evaluation/` | end-to-end and oracle reports |
-| `data/tuning/` | Optuna trials and selected parameters |
-| `data/aggregation/` | feature-representation comparisons |
-| `data/ablation/` | feature-removal comparisons |
-| `data/analysis/` | correlations, error slices, feature/anchor studies, IG and SHAP plots |
+| `data/evaluation_15min/` | end-to-end and oracle reports |
+| `data/tuning_15min/` | Optuna trials and selected parameters |
+| `data/aggregation_15min/` | feature-representation comparisons |
+| `data/ablation_15min/` | feature-removal comparisons |
+| `data/analysis_15min/` | correlations, error slices, feature/anchor studies, IG and SHAP plots |
 | `data/history/pre_nn_20261015/` | pre-migration benchmark evidence; not current outputs |
 | `data/rank/` | saved point rankings |
 

@@ -42,7 +42,7 @@ def tmp_db(tmp_path: Path) -> Path:
 
 
 def make_timeseries(
-    periods: int = 24 * 200, *, start: pd.Timestamp | str = "2024-01-01"
+    periods: int = 24 * 200, *, start: pd.Timestamp | str = "2024-01-01", freq: str = "h"
 ) -> pd.DataFrame:
     """A synthetic hourly DB frame: weather columns that genuinely drive generation/load and a price.
 
@@ -50,7 +50,7 @@ def make_timeseries(
     minus renewables) are loose but real, so the models learn something and errors stay finite.
     """
     rng = np.random.default_rng(0)
-    index = pd.date_range(start, periods=periods, freq="h", tz="UTC")
+    index = pd.date_range(start, periods=periods, freq=freq, tz="UTC")
     n = len(index)
     hour = index.hour.to_numpy()
     preceding_hour = (index - pd.Timedelta(hours=1)).hour.to_numpy()

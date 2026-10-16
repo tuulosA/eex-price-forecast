@@ -135,7 +135,7 @@ def test_member_forecasts_round_trip(tmp_path: Path) -> None:
             model="ecmwf_ifs025",
             n_members=3,
             horizon_days=14,
-            n_hours=4,
+            n_intervals=4,
         )
         write_member_forecasts(conn, run_id, _forecast_frame())
         stored = read_member_forecasts(conn, run_id)
@@ -156,7 +156,7 @@ def test_run_ids_increment(tmp_path: Path) -> None:
             model="m",
             n_members=1,
             horizon_days=1,
-            n_hours=1,
+            n_intervals=1,
         )
         assert next_run_id(conn) == first + 1
 
@@ -246,7 +246,7 @@ def test_summarise_rejects_empty() -> None:
 # -- propagation ----------------------------------------------------------------
 def _base_and_models() -> tuple[pd.DataFrame, dict[str, Any], pd.Timestamp]:
     now = pd.Timestamp.now(tz="UTC").floor("h")
-    frame = make_timeseries(periods=24 * 30, start=now - pd.Timedelta(days=25))
+    frame = make_timeseries(periods=96 * 30, freq="15min", start=now - pd.Timedelta(days=25))
     times = pd.to_datetime(frame["timestamp"], utc=True)
     future = times >= now
     history = frame.loc[~future]
@@ -395,7 +395,7 @@ def _stub_forecast_env(
     from eex_forecast import forecast as forecast_ops
 
     now = pd.Timestamp.now(tz="UTC").floor("h")
-    frame = make_timeseries(periods=24 * 45 + 1, start=now - pd.Timedelta(days=40))
+    frame = make_timeseries(periods=96 * 45 + 1, freq="15min", start=now - pd.Timedelta(days=40))
     times = pd.to_datetime(frame["timestamp"], utc=True)
     future = times >= now
     frame.loc[
@@ -569,7 +569,7 @@ def test_ensemble_bands_start_on_the_first_unsettled_hour(
         db_path,
         pd.DataFrame(
             {
-                TIMESTAMP: pd.date_range(now, periods=12, freq="h", tz="UTC"),
+                TIMESTAMP: pd.date_range(now, periods=48, freq="15min", tz="UTC"),
                 "price_actual_eur_mwh": 100.0,
             }
         ),
@@ -848,7 +848,10 @@ def test_member_coverage_needs_every_member_and_the_next_radiation_hour() -> Non
     # Wind alone: the last hour every member covers.
     assert member_coverage(weather, ["ws_de01"]) == (hours[0], hours[-2])
     # With radiation, hour t also needs t + 1 h, so the end moves back one more hour.
-    assert member_coverage(weather, ["ws_de01", "ghi_de01"]) == (hours[0], hours[-3])
+    assert member_coverage(weather, ["ws_de01", "ghi_de01"]) == (
+        hours[0],
+        hours[-3] + pd.Timedelta(minutes=15),
+    )
     assert member_coverage(weather.assign(ws_de01=np.nan), ["ws_de01"]) is None
 
 
@@ -863,7 +866,7 @@ def test_forward_until_clips_to_the_published_window() -> None:
     )
 
     emitted = pd.to_datetime(out[TIMESTAMP], utc=True)
-    assert emitted.max() == published_end - pd.Timedelta(hours=1)
+    assert emitted.max() == published_end - pd.Timedelta(minutes=15)
 
 
 def test_final_hour_is_not_corrupted_by_a_trimmed_frame() -> None:
@@ -914,7 +917,7 @@ def test_run_ensemble_forwards_the_window_bound_to_propagation() -> None:
     )
 
     assert pd.to_datetime(forecasts[TIMESTAMP], utc=True).max() == published_end - pd.Timedelta(
-        hours=1
+        minutes=15
     )
 
 

@@ -34,6 +34,7 @@ from eex_forecast.config import (
     NTC_IMPORT_PREFIX,
     NUCLEAR_COLUMN,
 )
+from eex_forecast.resolution import RADIATION_OFFSET, STEP, interpolate_hourly
 
 TIMESTAMP = "timestamp"
 PRICE_ACTUAL = "price_actual_eur_mwh"
@@ -199,7 +200,7 @@ def calendar_features(timestamps: pd.Series) -> pd.DataFrame:
     """
     utc = pd.to_datetime(timestamps, utc=True)
     market = utc.dt.tz_convert(MARKET_TIMEZONE)
-    hour = market.dt.hour
+    hour = market.dt.hour + market.dt.minute / 60.0
     day_of_week = market.dt.dayofweek
     month = market.dt.month
     return pd.DataFrame(
@@ -228,7 +229,7 @@ def _solar_position(
     Returns ``(declination, hour_angle, latitude_radians, cosine_zenith)``; the hour angle is
     negative in the morning and positive in the afternoon.
     """
-    utc = pd.to_datetime(timestamps, utc=True) + pd.Timedelta(minutes=30)
+    utc = pd.to_datetime(timestamps, utc=True) + STEP / 2
     day_of_year = utc.dt.dayofyear.astype(float)
     fractional_hour = (
         utc.dt.hour.astype(float)
@@ -270,7 +271,7 @@ def solar_geometry_features(
 ) -> pd.DataFrame:
     """Solar elevation and a clear-sky GHI proxy for each delivery interval.
 
-    Radiation and generation are hourly interval means, so geometry is evaluated at the interval
+    Radiation is an hourly mean and generation is a 15-minute interval mean, so geometry is evaluated at the interval
     midpoint rather than its start label. Solar position follows NOAA's compact fractional-year
     approximation. The Haurwitz clear-sky model then converts positive cosine-of-zenith into surface GHI.
     Both are deterministic from UTC timestamp and location, avoiding a history/live data contract.
@@ -346,10 +347,9 @@ def installed_capacity_feature(frame: pd.DataFrame, column: str) -> pd.DataFrame
 def _weather_role_points(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     """Numeric point columns for one weather role, aligned to the target delivery interval.
 
-    Most Open-Meteo variables are instantaneous at their timestamp. Radiation is a preceding-hour mean,
-    however, while this project's ENTSO-E targets use interval-start timestamps. For those roles, look up
-    values at ``timestamp + 1 h`` using timestamps rather than row positions so gaps cannot silently shift
-    the data. The raw database remains an exact representation of the source response.
+    Instantaneous variables are interpolated at the delivery start, radiation mean samples at the
+    15-minute interval midpoint. See resolution.interpolate_hourly for the bounded interpolation
+    contract: no extrapolation or bridging a missing hourly sample. SQLite keeps raw source stamps.
     """
     prefix = WEATHER_AGGREGATES[name]
     active = active_weather_columns(frame)
@@ -357,15 +357,11 @@ def _weather_role_points(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     if not columns:
         return pd.DataFrame(index=frame.index)
 
-    numeric: pd.DataFrame = frame[columns].apply(pd.to_numeric, errors="coerce")
-    if name not in _PRECEDING_HOUR_MEAN_ROLES:
-        return numeric
-
-    times = pd.to_datetime(frame[TIMESTAMP], utc=True)
-    indexed = numeric.copy()
-    indexed.index = pd.DatetimeIndex(times)
-    indexed = indexed[~indexed.index.duplicated(keep="last")]
-    aligned = indexed.reindex(pd.DatetimeIndex(times + pd.Timedelta(hours=1)))
+    times = pd.DatetimeIndex(pd.to_datetime(frame[TIMESTAMP], utc=True))
+    numeric = frame[columns].apply(pd.to_numeric, errors="coerce")
+    numeric.index = times
+    requested = times + RADIATION_OFFSET if name in _PRECEDING_HOUR_MEAN_ROLES else times
+    aligned = interpolate_hourly(numeric, requested)
     aligned.index = frame.index
     return aligned
 
@@ -746,6 +742,15 @@ def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
         [
             calendar_features(frame[TIMESTAMP]),
             price_lags(frame),
+            pd.DataFrame(
+                {
+                    "price_native_15min": (
+                        pd.to_datetime(frame[TIMESTAMP], utc=True)
+                        >= pd.Timestamp("2025-10-01", tz=MARKET_TIMEZONE).tz_convert("UTC")
+                    ).astype(float)
+                },
+                index=frame.index,
+            ),
             weather_means(frame, PRICE_WEATHER_ROLES),
             fundamentals(frame),
             nuclear_feature(frame),
@@ -798,6 +803,12 @@ def neighbour_wind_block(frame: pd.DataFrame, strategy: str = "country_mean") ->
     groups = _neighbour_wind_columns(frame)
     if strategy == "none" or not groups:
         return pd.DataFrame(index=frame.index)
+    columns = [column for cols in groups.values() for column in cols]
+    original_index = frame.index
+    indexed = frame[columns].apply(pd.to_numeric, errors="coerce")
+    indexed.index = pd.DatetimeIndex(pd.to_datetime(frame[TIMESTAMP], utc=True))
+    frame = interpolate_hourly(indexed, indexed.index)
+    frame.index = original_index
     if strategy == "raw":
         columns = [column for cols in groups.values() for column in cols]
         raw: pd.DataFrame = frame[columns].apply(pd.to_numeric, errors="coerce")
