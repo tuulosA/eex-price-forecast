@@ -203,7 +203,7 @@ eex analyze eval --holdout --seeds 1 --plot # report the adopted configuration o
 ```
 
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
-anchors, and the end-to-end adoption gate - uses **development** days. The base set has 92 days;
+anchors, and the end-to-end adoption gate - uses **development** days. This set has 92 days;
 price tuning uses its fixed 22-day native-market subset with at least 90 days of native training
 history. The current quarter-hour evaluation is in [RESULTS.md](RESULTS.md), including
 matched development comparisons and the 18-day reporting holdout.

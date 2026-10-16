@@ -180,8 +180,9 @@ docs/
   epoch count or tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
   has scored (it once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
 - **Selection uses development days; the holdout only reports.** `config/backtest_cutoffs.yaml`
-  holds `development` (every choice: tuning, aggregation, ablation, anchors, solar tools, and the
-  eval/oracle adoption gate) and `holdout` (only `eex analyze eval --holdout` / `oracle --holdout`,
+  has exactly two lists: `development` (92 dates; every choice: tuning, aggregation, ablation, anchors,
+  solar tools, and the eval/oracle adoption gate) and `holdout` (18 dates; only
+  `eex analyze eval --holdout` / `oracle --holdout`,
   writing `*_holdout.json`). Selection tools import only `DEV_CUTOFFS` and must never gain a cutoff
   option; `eex points rank` refuses a window containing a holdout day; the loader keeps holdout days
   more than `HOLDOUT_BUFFER_DAYS` from development days. Run the holdout after adopting a change,

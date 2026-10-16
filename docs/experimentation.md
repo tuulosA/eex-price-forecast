@@ -57,8 +57,9 @@ tools score D+1 because that is the horizon historical weather can represent rea
 
 ### Development and holdout days
 
-The YAML holds two sets, because no single set can both choose a configuration and report its error
-honestly:
+The YAML has exactly two top-level lists, `development` and `holdout`, because no single set can both
+choose a configuration and report its error honestly. All 92 development dates are stored together
+in chronological order:
 
 | Set | Days | Used by | Purpose |
 |---|---|---|---|

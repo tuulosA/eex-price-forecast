@@ -8,7 +8,7 @@ deliberately no runtime option to override it.
 
 There are two sets, because one set cannot do both jobs:
 
-- :data:`DEV_CUTOFFS` (``development`` plus ``development_extra``) serve every **selection** decision - tuning, aggregation,
+- :data:`DEV_CUTOFFS` (``development``) serve every **selection** decision - tuning, aggregation,
   ablation, anchor and solar experiments, and the end-to-end eval/oracle *adoption gate*. Reusing one
   validation set across those choices is normal; what it cannot do is report an honest error, because
   every adopted configuration was chosen for doing well on exactly these days.
@@ -23,7 +23,8 @@ barely out-of-sample. :func:`holdout_days_within` lets the weather-point ranking
 would select anchors on holdout data.
 
 Each entry is the first forecast delivery day (``D+1``) in German market-local time (Europe/Berlin; a
-delivery day runs 00:00..23:00 local). :func:`cutoff_utc` / :func:`horizon_end_utc` convert these dates to
+delivery day runs from local midnight to the next local midnight). :func:`cutoff_utc` /
+:func:`horizon_end_utc` convert these dates to
 UTC boundaries **DST-correctly** (00:00 CET/CEST -> 23:00/22:00 UTC; a delivery day is 23/24/25 hours), so
 a fold trains on rows strictly before the local midnight and scores the delivery-day window from it.
 """
@@ -41,10 +42,6 @@ import yaml
 from eex_forecast.config import BACKTEST_CUTOFFS_PATH, MARKET_TIMEZONE
 
 DEVELOPMENT = "development"
-DEVELOPMENT_EXTRA = "development_extra"
-DEVELOPMENT_CONFIRMATION = "development_confirmation"
-# Optional lists that extend the core development set; each records where its days came from.
-_DEVELOPMENT_ADDITIONS = (DEVELOPMENT_EXTRA, DEVELOPMENT_CONFIRMATION)
 HOLDOUT = "holdout"
 # A holdout day must be more than this many days from every development day.
 HOLDOUT_BUFFER_DAYS = 3
@@ -52,15 +49,10 @@ HOLDOUT_BUFFER_DAYS = 3
 
 @dataclass(frozen=True, slots=True)
 class CutoffSets:
-    """The validated development (selection) and holdout (reporting) delivery days.
-
-    ``development`` is the union every selection tool scores; ``development_core`` is its original,
-    hand-picked part, kept so new runs can still be compared with reports made before the expansion.
-    """
+    """The validated development (selection) and holdout (reporting) delivery days."""
 
     development: tuple[str, ...]
     holdout: tuple[str, ...]
-    development_core: tuple[str, ...] = ()
 
 
 def _parse_days(raw: dict[str, Any], key: str, path: Path) -> tuple[str, ...]:
@@ -87,19 +79,15 @@ def load_cutoff_sets(
     (which includes the two sets sharing a day) - so a bad edit is caught at import rather than
     midway through a long backtest, or worse, silently scored as "out-of-sample".
     """
-    raw = yaml.safe_load(path.read_text())
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ValueError(f"{path} must map '{DEVELOPMENT}' and '{HOLDOUT}' to lists of dates.")
-    core = _parse_days(raw, DEVELOPMENT, path)
-    seen: dict[str, str] = dict.fromkeys(core, DEVELOPMENT)
-    for key in _DEVELOPMENT_ADDITIONS:
-        for day in _parse_days(raw, key, path) if raw.get(key) else ():
-            if day in seen:
-                raise ValueError(
-                    f"Cutoff {day} appears in both '{seen[day]}' and '{key}' in {path}."
-                )
-            seen[day] = key
-    development = tuple(sorted(seen, key=dt.date.fromisoformat))
+    unknown = set(raw) - {DEVELOPMENT, HOLDOUT}
+    if unknown:
+        raise ValueError(
+            f"Unknown cutoff set(s) in {path}: {', '.join(sorted(map(str, unknown)))}."
+        )
+    development = _parse_days(raw, DEVELOPMENT, path)
     holdout = _parse_days(raw, HOLDOUT, path)
     dev_dates = [dt.date.fromisoformat(day) for day in development]
     too_close = [
@@ -112,13 +100,12 @@ def load_cutoff_sets(
             f"Holdout cutoff(s) {', '.join(too_close)} in {path} are within {buffer_days} days of a "
             "development cutoff; the holdout must stay clear of every selection day."
         )
-    return CutoffSets(development, holdout, development_core=core)
+    return CutoffSets(development, holdout)
 
 
 # Loaded once at import - the single source of truth every backtest tool defaults to.
 _SETS = load_cutoff_sets()
 DEV_CUTOFFS: tuple[str, ...] = _SETS.development
-DEV_CORE_CUTOFFS: tuple[str, ...] = _SETS.development_core  # the original 22, before the expansion
 HOLDOUT_CUTOFFS: tuple[str, ...] = _SETS.holdout
 CUTOFF_SETS: dict[str, tuple[str, ...]] = {DEVELOPMENT: DEV_CUTOFFS, HOLDOUT: HOLDOUT_CUTOFFS}
 

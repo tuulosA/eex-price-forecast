@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 from pathlib import Path
 
 import holidays
@@ -11,10 +12,8 @@ import pytest
 
 from eex_forecast.backtest_cutoffs import (
     CUTOFF_SETS,
-    DEV_CORE_CUTOFFS,
     DEV_CUTOFFS,
     DEVELOPMENT,
-    DEVELOPMENT_EXTRA,
     HOLDOUT,
     HOLDOUT_BUFFER_DAYS,
     HOLDOUT_CUTOFFS,
@@ -55,37 +54,32 @@ def test_native_price_selection_days_are_development_only_with_sufficient_native
     )
 
 
-def test_development_is_the_core_set_plus_the_systematic_extra_days() -> None:
-    """The original 22 stay identifiable inside the expanded development set."""
-    assert len(DEV_CORE_CUTOFFS) == 22
-    assert set(DEV_CORE_CUTOFFS) < set(DEV_CUTOFFS)
-    assert len(DEV_CUTOFFS) >= 2 * len(DEV_CORE_CUTOFFS)
-    # No extra day sits on or right next to a core day: adjacent days share weather.
-    core = [dt.date.fromisoformat(day) for day in DEV_CORE_CUTOFFS]
-    for day in sorted(set(DEV_CUTOFFS) - set(DEV_CORE_CUTOFFS)):
-        assert min(abs((dt.date.fromisoformat(day) - c).days) for c in core) > 1
+def test_consolidated_sets_preserve_the_frozen_delivery_days() -> None:
+    """Flattening the former blocks must not silently change any benchmark's scored dates.
 
-
-def test_extra_development_days_are_optional_validated_and_buffered(tmp_path: Path) -> None:
-    def write(extra: list[str], holdout: list[str]) -> Path:
-        path = tmp_path / "cutoffs.yaml"
-        lines = [f"{DEVELOPMENT}:", '  - "2025-03-01"', f"{DEVELOPMENT_EXTRA}:"]
-        lines += [f'  - "{day}"' for day in extra]
-        lines += [f"{HOLDOUT}:"] + [f'  - "{day}"' for day in holdout]
-        path.write_text("\n".join(lines) + "\n")
-        return path
-
-    loaded = load_cutoff_sets(write(["2025-06-01"], ["2026-01-01"]))
-    assert loaded.development == ("2025-03-01", "2025-06-01")  # the union, chronological
-    assert loaded.development_core == ("2025-03-01",)
-    with pytest.raises(ValueError, match="appears in both"):
-        load_cutoff_sets(write(["2025-03-01"], ["2026-01-01"]))
-    with pytest.raises(ValueError, match="2026-01-02"):  # the buffer applies to extra days too
-        load_cutoff_sets(write(["2026-01-01"], ["2026-01-02"]))
-    # Without the extra list the core set is the whole development set.
-    assert load_cutoff_sets(_yaml(tmp_path, ["2025-03-01"], ["2026-01-01"])).development == (
-        "2025-03-01",
+    These fingerprints were recorded from the merged sets before consolidation. An intentional
+    change to the frozen calendar must update them explicitly along with the benchmark scope.
+    """
+    assert len(DEV_CUTOFFS) == 92
+    assert len(HOLDOUT_CUTOFFS) == 18
+    assert len(native_price_development_cutoffs()) == 22
+    assert hashlib.sha256("\n".join(DEV_CUTOFFS).encode()).hexdigest() == (
+        "bdfba81df87aed5619e1c2ca16f47d06000af4f97d80067bde630d289df13761"
     )
+    assert hashlib.sha256("\n".join(HOLDOUT_CUTOFFS).encode()).hexdigest() == (
+        "c5294e264521f432dffef0f47c6a6cddbcee2da43c427bccce3737553beeec52"
+    )
+
+
+@pytest.mark.parametrize("key", ["development_extra", "development_confirmation", "typo"])
+def test_loader_rejects_unrecognised_sets_instead_of_silently_dropping_days(
+    tmp_path: Path, key: str
+) -> None:
+    path = _yaml(tmp_path, ["2025-03-01"], ["2026-01-01"])
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(f'{key}:\n  - "2025-06-01"\n')
+    with pytest.raises(ValueError, match=key):
+        load_cutoff_sets(path)
 
 
 def test_load_cutoff_sets_rejects_a_bad_yaml(tmp_path: Path) -> None:

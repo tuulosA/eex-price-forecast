@@ -1426,9 +1426,9 @@ every 17th day from 2024-10-01 to 2026-09-30, skipping the holdout buffer and da
 existing cutoff - and then forty randomly drawn days as `development_confirmation`, after they had
 been used once to confirm the neighbour-wind experiment, for 92 development days in all. The aim is
 less day-sampling noise in development comparisons: with 22 days, close variants such as
-neighbouring anchor spacings could not be told apart. The original 22 remain available as
-`DEV_CORE_CUTOFFS`; results reported before the expansion used only them and are not directly
-comparable with runs on the full set.
+neighbouring anchor spacings could not be told apart. Results reported before the expansion used
+only the original 22 and are not directly comparable with runs on the full set. The current YAML
+stores all 92 dates in a single `development` list; these former block names describe their provenance.
 
 ### Development versus holdout cutoffs
 
