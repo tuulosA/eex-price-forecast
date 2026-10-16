@@ -1,11 +1,8 @@
 # Data pipeline and sources
 
-> On the 15-minute branch, targets and outputs use quarter-hour intervals; weather remains raw hourly data. See [the migration guide](../QUARTER_HOURLY.md) for the complete time-grid and price-history contract.
-
 The model handoff is weather -> XGBoost wind/solar/load -> the operational DE price NN. Price uses
-the existing actual-or-forecast fundamental coalesce and regional drivers; timestamps and CSV/DB
-columns are unchanged. It returns raw 15-minute prices with no temporal output filter or peak scaler.
-PyTorch is required. Training writes numeric state and preprocessing to `data/models_15min/price.npz`, with
+the actual-or-forecast fundamental coalesce and regional drivers. It returns raw 15-minute prices with no temporal output filter or peak scaler.
+PyTorch is required. Training writes numeric state and preprocessing to `data/models/price.npz`, with
 a backend/feature-order sidecar `price.meta.json`; legacy price trees are not loaded. Fundamentals
 retain native XGBoost JSON and their capacity/clipping/darkness contracts. Weather-ensemble members
 call this same saved NN after forecasting their own fundamentals, then aggregate member outputs.
@@ -70,8 +67,8 @@ time across local midnight and daylight-saving transitions.
 Price also receives explicit quarter-within-hour inputs and daily-clock interactions, gated at the
 known transition to native quarter-hour prices. These are deterministic calendar features, not
 interpolated price outputs. The [model-development record](model-development.md#quarter-hour-price-shape-adoption-16-october-2026)
-owns their training objective and adoption evidence. Price feature version 2 requires retraining
-even when an older snapshot already has a 15-minute resolution tag.
+owns their training objective and adoption evidence. Saved models declare `interval_minutes=15`;
+price also declares feature version 2. Loading checks this metadata and the persisted feature order.
 
 The live horizon is anchored to the last published German day-ahead price:
 
@@ -87,6 +84,27 @@ when the auction clears; the weather request stays anchored to today's local mid
 length depends on fresh provider coverage and can be shorter than 14 days. Radiation interpolation
 also needs bracketing source hours beyond each delivery midpoint. Unsupported final delivery days are
 discarded in full.
+
+## Target history and interval semantics
+
+Wind, solar and load are stored at their native ENTSO-E quarter-hour resolution from 2023 onward.
+They are neither averaged to hours nor interpolated. Quality guards reject gross upstream corruption
+before storage. MW denotes average power during the interval; prices remain EUR/MWh.
+
+German day-ahead prices are native quarter-hour prices from delivery on **1 October 2025**. Earlier
+hourly auction prices apply unchanged to all four quarters of their hour. Ingestion expands those
+prices as steps and preserves native prices and missing quarters after the transition. Prices are
+never linearly interpolated. The deterministic `price_native_15min` feature distinguishes these
+historical market regimes. See [SMARD](https://www.smard.de/en/15-minute-wholesale-prices-available-218078).
+
+UTC timestamps label delivery starts. A normal German market day contains 96 intervals; the spring
+and autumn clock-change days contain 92 and 100. Calendars include fractional local hours, and
+horizons follow German calendar days. The weekly price lag is 168 elapsed hours, or 672 quarters,
+resolved by timestamp rather than row position.
+
+Installed capacity, NTC and nuclear availability are held levels or scheduled events. Their values
+are carried forward on the delivery grid; nuclear outage boundaries are evaluated at quarter-hour
+resolution. They are not interpolated like weather.
 
 ## Backfill and update windows
 
@@ -159,8 +177,13 @@ Open-Meteo radiation is an hourly mean stamped at its interval end. Quarter-hour
 interval-start timestamps. The feature layer interpolates the hourly mean samples at each target's
 midpoint, querying raw source timestamps at `t + 37.5 minutes`. Instantaneous weather is interpolated
 at `t`. Both require finite bracketing samples no more than one hour apart, with no extrapolation.
-Raw SQLite weather timestamps and values remain unchanged. See the [resolution contract](../QUARTER_HOURLY.md#weather-and-known-ahead-inputs)
-for the approximation and coverage limits.
+Raw SQLite weather timestamps and values remain unchanged. Hourly radiation means are centred
+30 minutes before their source timestamps, so this lookup aligns their centres with each delivery
+midpoint. Solar geometry also uses the midpoint. This approximates quarter-hour mean irradiance; it
+does not reconstruct observed intra-hour radiation or guarantee conservation of each hourly radiation
+integral. The same interpolation serves training, live prediction, point ranking and each ensemble
+member. Missing source hours are never bridged, and coverage checks reserve the bracketing weather
+observations needed at the horizon boundary.
 
 ## Historical weather limitation
 
@@ -266,8 +289,8 @@ Storage is split by retention policy, and neither file is the production databas
 
 | File | Contents | Retention |
 |---|---|---|
-| `data/eex_ensemble_15min.db` | run metadata + per-member predictions (~2 MB/run) | permanent |
-| `data/eex_ensemble_weather_15min.db` | raw member weather (~30 MB/run measured) | rolling `ENSEMBLE_RETENTION_RUNS` (30) |
+| `data/eex_ensemble.db` | run metadata + per-member predictions (~2 MB/run) | permanent |
+| `data/eex_ensemble_weather.db` | raw member weather (~30 MB/run measured) | rolling `ENSEMBLE_RETENTION_RUNS` (30) |
 
 The per-member predictions are what a future interval calibration needs, so they are never pruned. The
 raw weather is optional — it exists to allow re-propagating old ensembles through retrained models, or
@@ -275,7 +298,7 @@ one day training on ensemble spread — so it is bounded and can be deleted outr
 
 ## Forecast outputs
 
-`eex forecast` writes `data/forecast_15min/forecast.csv` with actual/forecast pairs for price, wind, solar, and
+`eex forecast` writes `data/forecast/forecast.csv` with actual/forecast pairs for price, wind, solar, and
 load. Actual columns are populated only where measurements exist.
 
 `--plot` adds:
@@ -290,7 +313,7 @@ load. Actual columns are populated only where measurements exist.
 
 `--write-db` additionally stores forecasts in the separate forecast columns of SQLite.
 
-`--ensemble` adds `data/forecast_15min/forecast_ensemble.csv`: one row per forward quarter-hour with `timestamp`,
+`--ensemble` adds `data/forecast/forecast_ensemble.csv`: one row per forward quarter-hour with `timestamp`,
 `n_members`, and `<model>_mean` plus `<model>_p10/p25/p50/p75/p90` for `wind`, `solar`, `load`, and
 `price` (26 columns). With `--plot` it also writes `forecast_ensemble.png`, with one panel each for price,
 wind, solar, and load: measured history, p10-p90 and p25-p75 bands, and the ensemble mean.
@@ -304,7 +327,7 @@ The ensemble CSV covers the union of each target's unknown intervals, clipped to
 coverage. Each target starts 15 minutes after its own last actual: wind, solar and load can begin before
 tomorrow's already-settled prices. Mean and quantile columns remain empty until that target starts;
 `n_members` counts the available members for the row. `forecast.csv` also includes earlier measured
-history; the ensemble CSV excludes hours before any target needs a forecast or before member weather
+history; the ensemble CSV excludes intervals before any target needs a forecast or before member weather
 is complete.
 
 The same coverage check sets the end; the ensemble can stop before the deterministic forecast. The ECMWF ensemble runs about 15 days from its own initialisation, and

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for LLM coding agents working in this repo. Human-facing usage starts in `README.md` and `QUARTER_HOURLY.md` and
+Guidance for LLM coding agents working in this repo. Human-facing usage starts in `README.md` and
 continues in `docs/`; this file is the orientation and the rules an agent needs before changing code.
 
 ## What this project is
@@ -69,7 +69,6 @@ src/eex_forecast/
   price_nn.py          # operational DE price NN, preprocessing, numeric persistence and attribution
   price_metrics.py     # native quarter-hour ramp amplitude/error and complete-hour shape diagnostics
   resolution.py        # 15-minute grid and bounded hourly-weather interpolation
-  migration.py         # read-only hourly input seeding, excluding all old targets/forecasts
   backtest_cutoffs.py  # frozen development/holdout cutoffs + DST delivery-day window helpers
   tuning.py            # Optuna walk-forward tuning + shared seeded backtest engine used by analysis
   forecast.py          # the pipeline: weather -> sub-models -> price -> CSV/DB (calls plots)
@@ -78,7 +77,7 @@ src/eex_forecast/
   logging_setup.py     # console + timestamped file logging under logs/ (pruned by LOG_RETENTION_DAYS)
 tests/                 # focused unit/regression tests; external APIs mocked
 config/
-  hyperparams_15min.json # starting parameters; quarter-hour development retune required
+  hyperparams.json     # adopted model parameters
   weather_points.json  # adopted German and neighbour weather anchors
   backtest_cutoffs.yaml  # frozen delivery days: development (selection) + holdout (reporting)
 data/                  # runtime data is ignored; selected plots/reports are re-included as evidence
@@ -104,9 +103,9 @@ docs/
   preceding-hour radiation means are centred 30 minutes before their source stamps and queried at
   t+37.5min for a target midpoint t+7.5min. Preserve this in features, ranking and every member's
   coverage checks. Solar geometry uses the quarter-hour midpoint too.
-- **Isolate the resolution migration.** Use `data/eex_15min.db`, `*_15min` artifact/report directories
-  and `DB_PATH_15MIN`; old `DB_PATH` is ignored. Reject hourly models and nonempty unversioned
-  databases. `eex db seed-hourly` reads the source only, excluding all old targets and forecasts.
+- **Quarter-hour delivery is the application contract.** Use `data/eex.db`, `data/models/`,
+  `config/hyperparams.json` and the standard artifact/report directories; `DB_PATH` overrides the
+  database location. Database/model metadata must declare 15-minute delivery intervals.
   Keep native wind/solar/load quarters. Before 2025-10-01 Berlin delivery midnight, repeat each
   hourly day-ahead price over its four quarters; never interpolate prices or fill missing native
   quarters after the transition. Price features include the known `price_native_15min` regime.
@@ -226,7 +225,7 @@ docs/
 
 ## Commands
 
-PyTorch is required. Price configuration lives in the `price` entry of `config/hyperparams_15min.json`;
+PyTorch is required. Price configuration lives in the `price` entry of `config/hyperparams.json`;
 tree-only parameters must be rejected for price. `eex model tune --target price` searches NN parameters
 and retains the incumbent unless a trial wins. The historical `price-models` command is retired.
 `eex analyze eval --oracle` writes matched eval/oracle reports from one fitted chain per fold. Price
@@ -243,19 +242,18 @@ Runtime pipeline (needs an ENTSO-E key in `.env.local`; see README for the full 
 `eex db init` → `eex backfill ...` → `eex update` → `eex model train` → `eex forecast --plot`.
 Geometry generation and point ranking are needed only when rebuilding the committed selections.
 `eex run` chains update → optional retrain → forecast. `eex model tune` writes tuned params to
-`config/hyperparams_15min.json`.
+`config/hyperparams.json`.
 
 ## Documentation ownership and synchronization
 
 Documentation is part of the behavior being changed. Keep these sources aligned in the same change:
 
-- `RESULTS.md` explains the holdout day plots and IG/TreeSHAP figures to a non-specialist reader. Keep its
-  historical hourly figures and numbers aligned. `RESULTS_15MIN.md` owns the current quarter-hour
+- `RESULTS.md` explains current holdout day plots and IG/TreeSHAP figures to a non-specialist reader.
+  Keep its figures and numbers aligned with committed reports. It owns quarter-hour
   development comparison, reporting holdout and price-shape figures.
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
 - `ENSEMBLE.md` owns the ensemble figure walkthrough, user commands and interpretation limits.
-- `QUARTER_HOURLY.md` owns this branch's resolution migration, isolated artifacts and validation status.
 - `docs/data-pipeline.md` owns source contracts, backfill/update windows, timestamps, weather variables,
   radiation alignment, cross-border inputs, and the weather-ensemble contract (members, retention,
   API weighting, and the ensemble databases).

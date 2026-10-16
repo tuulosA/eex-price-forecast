@@ -293,7 +293,7 @@
     }
   },
   "price_shape_screen": {
-    "report": "data/analysis_15min/quarter_price_shape_experiment.json",
+    "report": "data/analysis/quarter_price_shape_experiment.json",
     "development_days": 22,
     "seeds": [
       42

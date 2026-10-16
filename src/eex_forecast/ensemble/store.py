@@ -1,11 +1,11 @@
 """SQLite storage for ensemble runs, split across two files by retention policy.
 
-``eex_ensemble_15min.db`` is **permanent and small**: one row per run plus one row per
+``eex_ensemble.db`` is **permanent and small**: one row per run plus one row per
 ``(run, member, delivery interval)`` of model output. This is what a future interval
 calibration needs, because answering "was the p10-p90 band honest?" requires the per-member
 *predictions* and the realised actual, not the weather that produced them.
 
-``eex_ensemble_weather_15min.db`` is **large and prunable**: the raw hourly member weather.
+``eex_ensemble_weather.db`` is **large and prunable**: the raw hourly member weather.
 It is kept on a bounded rolling window (:data:`eex_forecast.config.ENSEMBLE_RETENTION_RUNS`)
 because its value is optional - re-propagating an old ensemble through retrained models, or one day
 training on ensemble spread as a feature - while its cost is not. Open-Meteo discards members after

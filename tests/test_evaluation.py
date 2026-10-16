@@ -41,11 +41,11 @@ FAST_PARAMS = {
 FAST_PARAMS["price"] = dict(NN_TINY)
 
 
-def _hourly_frame(start: str, end: str, *, freq: str = "h") -> pd.DataFrame:
+def _interval_frame(start: str, end: str, *, freq: str = "15min") -> pd.DataFrame:
     """Contiguous deterministic targets with enough structure for all four registered builders."""
     times = pd.date_range(start, end, freq=freq, tz="UTC", inclusive="left")
-    hour = times.hour.to_numpy()
-    day = np.arange(len(times), dtype=float) / 24.0
+    hour = times.hour.to_numpy() + times.minute.to_numpy() / 60.0
+    day = (times - times[0]).total_seconds().to_numpy() / 86_400.0
     wind = 25_000.0 + 4_000.0 * np.sin(day / 3.0)
     solar = 40_000.0 * np.maximum(np.sin((hour - 6.0) * np.pi / 12.0), 0.0)
     load = 50_000.0 + 5_000.0 * np.cos((hour - 18.0) * np.pi / 12.0)
@@ -68,7 +68,7 @@ def test_eval_horizon_is_one_day() -> None:
 
 
 def test_quarter_hour_chain_scores_dst_day_and_reports_price_eras() -> None:
-    frame = _hourly_frame("2025-09-01", "2025-11-02", freq="15min")
+    frame = _interval_frame("2025-09-01", "2025-11-02", freq="15min")
     cutoffs = ("2025-09-29", "2025-10-02", "2025-10-26")
     shape_params = {
         **FAST_PARAMS,
@@ -90,7 +90,7 @@ def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
 ) -> None:
     with caplog.at_level(logging.INFO, logger="eex_forecast.analysis.evaluation"):
         result = run_evaluation(
-            _hourly_frame("2024-01-01", "2024-05-01"),
+            _interval_frame("2024-01-01", "2024-05-01"),
             params_by_model=FAST_PARAMS,
             seeds=1,
             cutoffs=CUTOFFS,
@@ -121,7 +121,7 @@ def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
 
 def test_holdout_reports_record_their_set_and_never_overwrite_development(tmp_path: Path) -> None:
     """A reporting run on the holdout must not replace the development record decisions rest on."""
-    frame = _hourly_frame("2024-01-01", "2024-05-01")
+    frame = _interval_frame("2024-01-01", "2024-05-01")
     dev = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoffs=CUTOFFS)
     held = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoff_set=HOLDOUT, cutoffs=CUTOFFS)
     oracle = run_oracle_diagnostics(
@@ -141,29 +141,29 @@ def test_holdout_reports_record_their_set_and_never_overwrite_development(tmp_pa
     ]
 
 
-def test_evaluation_keeps_hourly_rows_and_plots_each_day(tmp_path: Path) -> None:
-    """The day plot needs the scored hours themselves, not just each day's MAE."""
+def test_evaluation_keeps_interval_rows_and_plots_each_day(tmp_path: Path) -> None:
+    """The day plot needs the scored intervals themselves, not just each day's MAE."""
     result = run_evaluation(
-        _hourly_frame("2024-01-01", "2024-05-01"),
+        _interval_frame("2024-01-01", "2024-05-01"),
         params_by_model=FAST_PARAMS,
         cutoff_set=HOLDOUT,
         cutoffs=CUTOFFS,
     )
 
-    hourly = result.hourly
-    assert list(dict.fromkeys(hourly["delivery_day"])) == list(CUTOFFS)
+    intervals = result.intervals
+    assert list(dict.fromkeys(intervals["delivery_day"])) == list(CUTOFFS)
     price = next(model for model in result.models if model.model == "price")
-    assert len(hourly) == sum(fold["test_rows"] for fold in price.folds)
+    assert len(intervals) == sum(fold["test_rows"] for fold in price.folds)
     for name in ALL_MODELS:
         spec = REGISTRY[name]
-        assert hourly[spec.target_column].notna().all()
-        assert hourly[spec.forecast_column].notna().all()
+        assert intervals[spec.target_column].notna().all()
+        assert intervals[spec.forecast_column].notna().all()
     # The plotted rows reproduce each day's reported price MAE.
     for fold in price.folds:
-        day = hourly[hourly["delivery_day"] == fold["delivery_day"]]
+        day = intervals[intervals["delivery_day"] == fold["delivery_day"]]
         error = day["price_actual_eur_mwh"] - day["price_forecast_eur_mwh"]
         assert abs(error.abs().mean() - fold["mae"]) < 1e-3
-    assert "hourly" not in result.report  # the JSON report schema is unchanged
+    assert "intervals" not in result.report  # the JSON report schema is unchanged
 
     path = plot_evaluation_days(result, reports_dir=tmp_path)
     assert path.name == "price_eval_days_holdout.png" and path.stat().st_size > 0
@@ -182,13 +182,13 @@ def test_named_cutoff_sets_resolve_to_the_frozen_days() -> None:
     assert report_filename("model_eval", DEVELOPMENT) == "model_eval.json"
     assert report_filename("model_eval", HOLDOUT) == "model_eval_holdout.json"
     with pytest.raises(ValueError, match="Unknown cutoff set"):
-        run_evaluation(_hourly_frame("2024-01-01", "2024-02-01"), cutoff_set="test")
+        run_evaluation(_interval_frame("2024-01-01", "2024-02-01"), cutoff_set="test")
 
 
 def test_price_fold_hides_actual_fundamentals_and_uses_fresh_forecasts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    frame = _hourly_frame("2024-01-01", "2024-03-03")
+    frame = _interval_frame("2024-01-01", "2024-03-03")
     # Stale persisted forecasts must be cleared rather than reused by a historical fold.
     for name in SUBMODELS:
         frame[REGISTRY[name].forecast_column] = 999_999.0
@@ -228,7 +228,7 @@ def test_price_fold_hides_actual_fundamentals_and_uses_fresh_forecasts(
 def test_oracle_scenarios_are_matched_and_forecast_all_reproduces_eval(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    frame = _hourly_frame("2024-01-01", "2024-03-03")
+    frame = _interval_frame("2024-01-01", "2024-03-03")
     cutoffs = (CUTOFFS[0],)
     standard = run_evaluation(
         frame,
@@ -263,7 +263,7 @@ def test_oracle_scenarios_are_matched_and_forecast_all_reproduces_eval(
 
 def test_run_evaluation_scores_a_dst_exact_delivery_day() -> None:
     result = run_evaluation(
-        _hourly_frame("2024-12-01", "2025-01-05"),
+        _interval_frame("2024-12-01", "2025-01-05"),
         params_by_model=FAST_PARAMS,
         seeds=1,
         cutoffs=("2025-01-02",),
@@ -271,9 +271,9 @@ def test_run_evaluation_scores_a_dst_exact_delivery_day() -> None:
 
     for evaluation in result.models:
         fold = evaluation.folds[0]
-        assert fold["test_rows"] == 24
+        assert fold["test_rows"] == 96
         assert fold["start_utc"] == "2025-01-01T23:00:00+00:00"
-        assert fold["end_utc"] == "2025-01-02T22:00:00+00:00"
+        assert fold["end_utc"] == "2025-01-02T22:45:00+00:00"
 
 
 def test_run_evaluation_rejects_zero_seeds() -> None:
@@ -286,7 +286,7 @@ def test_combined_eval_oracle_matches_standalone_reports_with_one_fit_per_day(
 ) -> None:
     from eex_forecast.analysis import evaluation as operations
 
-    frame = _hourly_frame("2024-01-01", "2024-04-01")
+    frame = _interval_frame("2024-01-01", "2024-04-01")
     cutoffs = CUTOFFS[:1]
     reference = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
     oracle_reference = run_oracle_diagnostics(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
@@ -302,4 +302,4 @@ def test_combined_eval_oracle_matches_standalone_reports_with_one_fit_per_day(
     assert calls == list(cutoffs)
     assert result.report == reference.report
     assert oracle.report == oracle_reference.report
-    pd.testing.assert_frame_equal(result.hourly, reference.hourly)
+    pd.testing.assert_frame_equal(result.intervals, reference.intervals)

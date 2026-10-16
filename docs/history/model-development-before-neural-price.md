@@ -62,8 +62,8 @@ a joint regional architecture. Retain XGBoost operationally because this candida
 material. Further neural work should aim to retain this shape while closing the level-error gap;
 calendar removal and shallower trees alone are not supported as the main remedy.
 
-Evidence: [compact report](../../data/analysis/price_profile_experiment_summary.json),
-[development-day profiles](../../data/analysis/price_profiles_20261015/development_profiles.png).
+Evidence: [compact report](../../data/history/hourly_20261016/analysis/price_profile_experiment_summary.json),
+[development-day profiles](../../data/history/hourly_20261016/analysis/price_profiles_20261015/development_profiles.png).
 The [study workflow](../experimentation.md#intrinsic-de-price-profile-study) documents the methods,
 selection limits, commands and local checkpoints.
 
@@ -93,8 +93,8 @@ recommended from this run.** This does not rule out other neural architectures, 
 training-weight choices, or richer regional inputs.
 The negative/spike slices are small (eight/four hours), so their gains cannot establish tail robustness.
 
-Evidence: [compact report](../../data/analysis/price_model_experiment_summary.json),
-[daily comparison](../../data/analysis/price_model_screen.png). The complete snapshot, per-day caches,
+Evidence: [compact report](../../data/history/hourly_20261016/analysis/price_model_experiment_summary.json),
+[daily comparison](../../data/history/hourly_20261016/analysis/price_model_screen.png). The complete snapshot, per-day caches,
 checkpoints, predictions, and curves are local under `data/analysis/price_models/price_nn_20261014/`.
 
 ## Contents
@@ -169,30 +169,30 @@ Committed reports:
 
 - [End-to-end model evaluation](../../data/history/pre_nn_20261015/evaluation/model_eval.json)
 - [Oracle substitutions](../../data/history/pre_nn_20261015/evaluation/oracle_substitution.json)
-- [Solar error slices](../../data/analysis/solar_error_slices.json)
-- [Solar geometry/clear-sky experiment](../../data/analysis/solar_feature_experiment.json)
-- [Solar irradiance/cloud experiment](../../data/analysis/solar_irradiance_experiment.json)
-- [Solar azimuth experiment](../../data/analysis/solar_azimuth_experiment.json)
-- [Solar clear-sky/regional/temperature/leave-one-out experiment](../../data/analysis/solar_ideas_experiment.json) and its
-  [combined follow-up with azimuth](../../data/analysis/solar_combined_experiment.json)
-- Aggregation: [wind](../../data/aggregation/wind_aggregation.json),
-  [solar](../../data/aggregation/solar_aggregation.json),
-  [load](../../data/aggregation/load_aggregation.json), and
-  [neighbour wind](../../data/aggregation/neighbour_aggregation.json)
-- Ablation: [wind](../../data/ablation/wind_ablation.json),
-  [solar](../../data/ablation/solar_ablation.json),
-  [load](../../data/ablation/load_ablation.json), and
-  [price](../../data/ablation/price_ablation.json)
+- [Solar error slices](../../data/history/hourly_20261016/analysis/solar_error_slices.json)
+- [Solar geometry/clear-sky experiment](../../data/history/hourly_20261016/analysis/solar_feature_experiment.json)
+- [Solar irradiance/cloud experiment](../../data/history/hourly_20261016/analysis/solar_irradiance_experiment.json)
+- [Solar azimuth experiment](../../data/history/hourly_20261016/analysis/solar_azimuth_experiment.json)
+- [Solar clear-sky/regional/temperature/leave-one-out experiment](../../data/history/hourly_20261016/analysis/solar_ideas_experiment.json) and its
+  [combined follow-up with azimuth](../../data/history/hourly_20261016/analysis/solar_combined_experiment.json)
+- Aggregation: [wind](../../data/history/hourly_20261016/aggregation/wind_aggregation.json),
+  [solar](../../data/history/hourly_20261016/aggregation/solar_aggregation.json),
+  [load](../../data/history/hourly_20261016/aggregation/load_aggregation.json), and
+  [neighbour wind](../../data/history/hourly_20261016/aggregation/neighbour_aggregation.json)
+- Ablation: [wind](../../data/history/hourly_20261016/ablation/wind_ablation.json),
+  [solar](../../data/history/hourly_20261016/ablation/solar_ablation.json),
+  [load](../../data/history/hourly_20261016/ablation/load_ablation.json), and
+  [price](../../data/history/hourly_20261016/ablation/price_ablation.json)
 - Grouped price ablation:
-  [without direct weather](../../data/ablation/price_no_weather_ablation.json),
-  [without German weather means](../../data/ablation/price_no_german_weather_ablation.json),
-  [without neighbour wind](../../data/ablation/price_no_neighbour_wind_ablation.json), and
-  [without MW fundamentals](../../data/ablation/price_no_fundamentals_ablation.json)
+  [without direct weather](../../data/history/hourly_20261016/ablation/price_no_weather_ablation.json),
+  [without German weather means](../../data/history/hourly_20261016/ablation/price_no_german_weather_ablation.json),
+  [without neighbour wind](../../data/history/hourly_20261016/ablation/price_no_neighbour_wind_ablation.json), and
+  [without MW fundamentals](../../data/history/hourly_20261016/ablation/price_no_fundamentals_ablation.json)
 - Ranked domestic points: [wind](../../data/rank/wind_rank.csv),
   [solar](../../data/rank/solar_rank.csv), and [temperature](../../data/rank/temp_rank.csv)
-- Anchor experiments: [wind](../../data/analysis/wind_anchor_experiment.json),
-  [solar](../../data/analysis/solar_anchor_experiment.json), and
-  [load](../../data/analysis/load_anchor_experiment.json)
+- Anchor experiments: [wind](../../data/history/hourly_20261016/analysis/wind_anchor_experiment.json),
+  [solar](../../data/history/hourly_20261016/analysis/solar_anchor_experiment.json), and
+  [load](../../data/history/hourly_20261016/analysis/load_anchor_experiment.json)
 
 ### Current end-to-end baseline
 
@@ -287,7 +287,7 @@ Before the wind-anchor promotion, the solar/load/price tuning progression was:
 At that milestone, the generated JSON reports were internally consistent:
 
 - each selected trial or incumbent is the minimum-MAE candidate in its tuning report;
-- `config/hyperparams.json` exactly matches the selected solar, load, and price parameters;
+- `data/history/hourly_20261016/config/hyperparams.json` exactly matches the selected solar, load, and price parameters;
 - tuning, eval, and oracle use the same 22 cutoffs and seed;
 - solar/load tuning scores exactly match their end-to-end eval sub-model scores;
 - price tuning exactly matches oracle `all_actual`;
@@ -521,7 +521,7 @@ shares the solar-position calculation with `solar_geometry_features`, whose outp
 earlier geometry experiments stay reproducible.
 
 - **Retune.** The incumbent parameters scored 781.455 MW on the new representation and beat all 20
-  fresh Optuna trials (best 796.060 MW), so `config/hyperparams.json` is unchanged.
+  fresh Optuna trials (best 796.060 MW), so `data/history/hourly_20261016/config/hyperparams.json` is unchanged.
 - **End-to-end eval** (92 development days, one seed, against the 2026-10-02 report): solar 787.849
   -> 781.455 MW (-6.4; better on 45 days, worse on 47; 90% day-bootstrap interval [-17.8, +4.4]),
   RMSE 1,313.190 -> 1,305.612. By season the solar change was -40.4 MW/day in summer, +12.7 in spring,
@@ -1055,7 +1055,7 @@ every other row and was the fallback when the TSO forecast or the `load_d1` arte
 live forecast, the ensemble members, and the end-to-end eval/oracle folds all applied the same switch.
 
 - **Retune.** `load_d1` started from the load parameters (1,622.755 MW) and a fresh trial reached
-  1,576.740 MW, so it has its own entry in `config/hyperparams.json`.
+  1,576.740 MW, so it has its own entry in `data/history/hourly_20261016/config/hyperparams.json`.
 - **End-to-end eval** (92 development days, one seed): load 1,741.388 -> 1,576.739 MW (90% day interval
   [-320, -14]; RMSE 2,014.971 -> 1,821.171); price 16.473 -> 16.238 EUR/MWh (-0.234; better on 43 days,
   worse on 49, [-0.551, +0.071]; RMSE 21.380 -> 21.287). The price gain is in winter (-0.614/day) and
@@ -1656,7 +1656,7 @@ Before changing a production feature/model:
   parameters (seed spread about 1.5 MW), better on 45 of 92 days, gain concentrated in summer. A signed
   solar hour angle reached 782.048 MW. Not wired in yet; azimuth is the candidate for a retune and
   end-to-end check. See [Add solar azimuth](#add-solar-azimuth) and the
-  [report](../../data/analysis/solar_azimuth_experiment.json).
+  [report](../../data/history/hourly_20261016/analysis/solar_azimuth_experiment.json).
 
 ### 2026-10-02
 
@@ -1724,7 +1724,7 @@ Before changing a production feature/model:
     pull of extreme hours further; it drops down the list.
   - The breakdown used the eval's hourly rows from a rerun of the production 92-day eval, which
     reproduced the committed report's 16.483 exactly. It is now reproducible as `eex analyze eval
-    --breakdown` (`data/evaluation/model_eval_breakdown.json`). Run as a report on the holdout, the
+    --breakdown` (`data/history/hourly_20261016/evaluation/model_eval_breakdown.json`). Run as a report on the holdout, the
     same pattern appears and stronger: price bias -8.30 EUR/MWh (+57.42 in negative hours, -177.35
     in spikes, daily level 12% of the error), solar +1,222.84 MW, and load -634.03 MW.
 - Tested residual load (load minus wind and solar) for the price model, the experiment the breakdown

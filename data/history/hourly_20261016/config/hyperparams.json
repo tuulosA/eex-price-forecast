@@ -4,12 +4,10 @@
     "epochs": 40,
     "batch_size": 512,
     "learning_rate": 0.0015317709628184257,
-    "weight_decay": 1.1527987128232402e-06,
+    "weight_decay": 0.0000011527987128232402,
     "dropout": 0.0,
     "seed": 42,
-    "threads": 4,
-    "native_price_weight": 1.0,
-    "intrahour_ramp_weight": 0.25
+    "threads": 4
   },
   "wind": {
     "n_estimators": 700,

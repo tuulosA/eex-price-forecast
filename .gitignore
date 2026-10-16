@@ -31,33 +31,24 @@ data/**
 !data/tuning/*.json
 !data/aggregation/*.json
 !data/ablation/*.json
-!data/evaluation_15min/*.json
-!data/tuning_15min/*.json
-!data/aggregation_15min/*.json
-!data/ablation_15min/*.json
-!data/analysis_15min/*_experiment.json
-!data/analysis_15min/correlation_*.csv
-!data/analysis_15min/quarter_validation.json
+!data/analysis/*_experiment.json
+!data/analysis/correlation_*.csv
+!data/analysis/quarter_validation.json
 !data/rank/*.csv
 # the bidding-zone candidate grids (`eex points grid`)
 !data/candidates/grid_*.csv
-!data/analysis/correlation_*.csv
 !data/analysis/solar_error_slices.json
-!data/analysis/solar_feature_experiment.json
-!data/analysis/solar_irradiance_experiment.json
-!data/analysis/solar_azimuth_experiment.json
-!data/analysis/solar_ideas_experiment.json
-!data/analysis/solar_combined_experiment.json
-!data/analysis/wind_anchor_experiment.json
-!data/analysis/wind_capacity_experiment.json
-!data/analysis/load_anchor_experiment.json
-!data/analysis/solar_anchor_experiment.json
-!data/analysis/neighbour_anchor_experiment.json
-!data/analysis/residual_load_experiment.json
-!data/analysis/price_model_experiment_summary.json
-!data/analysis/price_profile_experiment_summary.json
-!data/analysis/price_nn_operational_validation.json
 !data/history/pre_nn_20261015/**/*.json
+!data/history/hourly_20261016/ablation/*.json
+!data/history/hourly_20261016/aggregation/*.json
+!data/history/hourly_20261016/analysis/*.json
+!data/history/hourly_20261016/analysis/correlation_*.csv
+!data/history/hourly_20261016/config/*.json
+!data/history/hourly_20261016/evaluation/*.json
+!data/history/hourly_20261016/tuning/*.json
+# Fitted models and local research tools stay local, including in archived directories.
+data/history/**/models/
+data/**/local_tools/
 data/pytest_tmp/
 
 # OS / editor
@@ -74,3 +65,5 @@ notebooks/
 # Local forecast-comparison images
 data/analysis/price_profiles_20261015/live_profiles.png
 data/analysis/price_profiles_20261015/live_profile_details.png
+data/history/hourly_20261016/analysis/price_profiles_20261015/live_profiles.png
+data/history/hourly_20261016/analysis/price_profiles_20261015/live_profile_details.png

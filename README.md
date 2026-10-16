@@ -1,16 +1,13 @@
 # eex-price-forecast
 
-> **15-minute development branch.** Wind, solar, load and price forecasts use quarter-hour delivery intervals. Price learns within-hour variation through explicit calendar inputs and supervised price changes. Follow [the migration guide](QUARTER_HOURLY.md) for isolated files and retraining, and [quarter-hour results](RESULTS_15MIN.md) for the current evidence.
-
 Short-term **German day-ahead electricity price forecasting** for the EEX / EPEX SPOT DE-LU bidding
 zone. The package forecasts up to 14 unknown German delivery days from ECMWF weather, German
-wind/solar/load fundamentals, and cross-border market drivers.
+wind/solar/load fundamentals, and cross-border market drivers. Price, wind, solar and load use
+15-minute delivery intervals.
 
-![Example German day-ahead price forecast](data/forecast_15min/forecast.png)
+![Example German day-ahead price forecast](data/forecast/forecast.png)
 
-![German wind, solar generation and load: recent actuals and forecasts](data/forecast_15min/fundamentals.png)
-
-> Quarter-hour outputs from the refreshed, retrained pipeline. Price uses the adopted quarter-hour feature/loss update; fundamental parameters remain transferred from the hourly baseline.
+![German wind, solar generation and load: recent actuals and forecasts](data/forecast/fundamentals.png)
 
 ## What it does
 
@@ -92,9 +89,8 @@ Set `ENTSO_E_API_KEY` in `.env.local`. The key comes from the
 
 ### First forecast
 
-The repository contains selected weather points and adopted price parameters. Fundamental settings
-are transferred from the hourly baseline. Starting from an
-empty local database:
+The repository contains the selected weather points and model parameters. Starting from an empty
+local database:
 
 ```bash
 eex db init
@@ -104,17 +100,19 @@ eex backfill nuclear --start 2023-01-01     # French nuclear availability
 eex backfill ntc --start 2023-01-01         # cross-border transfer capacity
 eex update                                  # refresh the most recent actuals and weather
 eex model train                             # train wind, solar, load, and price
-eex forecast --plot                         # write data/forecast_15min/*
+eex forecast --plot                         # write data/forecast/*
 ```
 
 The database and trained model artifacts are local runtime files and are not committed.
-PyTorch is a required dependency. Price state is saved as `data/models_15min/price.npz`; fundamentals use
-`wind.json`, `solar.json` and `load.json`. All have feature-order sidecars. Existing installations must
-reinstall the package and run `eex model train` after the neural migration: legacy price trees are
-never used as a fallback.
+PyTorch is a required dependency. Price state is saved as `data/models/price.npz`; fundamentals use
+`wind.json`, `solar.json` and `load.json`. All have feature-order and delivery-resolution sidecars.
 
 To generate and rank your own weather candidates or tune different model configurations, follow the
 [experimentation guide](docs/experimentation.md).
+
+Runtime files use `data/eex.db`, `data/models/` and `data/forecast/`; adopted parameters live in
+`config/hyperparams.json`. Set `DB_PATH` in `.env.local` to override the database location. Model
+evaluation and analysis reports are written under `data/evaluation/` and `data/analysis/`.
 
 ## Routine operation
 
@@ -151,7 +149,7 @@ eex run --train --plot --ensemble
 
 ## Forecast output
 
-`eex forecast` writes `data/forecast_15min/forecast.csv` containing:
+`eex forecast` writes `data/forecast/forecast.csv` containing:
 
 - `price_actual_eur_mwh` and `price_forecast_eur_mwh`;
 - `wind_actual_mw` and `wind_forecast_mw`;
@@ -207,7 +205,7 @@ eex analyze eval --holdout --seeds 1 --plot # report the adopted configuration o
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
 anchors, and the end-to-end adoption gate - uses **development** days. The base set has 92 days;
 price tuning uses its fixed 22-day native-market subset with at least 90 days of native training
-history. The current quarter-hour evaluation is in [RESULTS_15MIN.md](RESULTS_15MIN.md), including
+history. The current quarter-hour evaluation is in [RESULTS.md](RESULTS.md), including
 matched development comparisons and the 18-day reporting holdout.
 
 Regenerated on **16 October 2026** with the adopted quarter-hour NN and **seed 42**. These are single-seed
@@ -220,14 +218,14 @@ point estimates; the report does not estimate across-seed uncertainty.
 | Load | 1,808.12 MW | 2,089.67 MW |
 | Price | 26.78 EUR/MWh | 41.58 EUR/MWh |
 
-![Actual vs D+1 quarter-hour price forecast on each holdout day](data/evaluation_15min/price_eval_days_holdout.png)
+![Actual vs D+1 quarter-hour price forecast on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
 > Each panel is one holdout day: the actual price in black, the D+1 forecast in blue, each on its
 > own y-scale. Written by `eex analyze eval --holdout --plot`.
 
 The day panels expose missed negative-price episodes and scarcity peaks, along with better captured
 ordinary days. With 18 days, the figure moves noticeably with the sample. The previous hourly
-benchmarks and explanations remain in [the historical results](RESULTS.md).
+benchmarks and explanations remain in [the historical results](docs/history/results-hourly.md).
 
 A few things are worth keeping in mind when reading these figures:
 
@@ -256,8 +254,8 @@ quarter-hour shape/accuracy comparisons and historical benchmarks.
 
 | Document | Purpose |
 |---|---|
-| [Quarter-hour results](RESULTS_15MIN.md) | Current development comparisons, holdout forecasts and within-hour price detail |
-| [Historical hourly results](RESULTS.md) | Earlier hourly holdout forecasts and attribution plots |
+| [Forecast results](RESULTS.md) | Current development comparisons, holdout forecasts and within-hour price detail |
+| [Historical hourly results](docs/history/results-hourly.md) | Earlier hourly holdout forecasts and attribution plots |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
 | [Weather ensemble forecasts](ENSEMBLE.md) | Ensemble figure, interpretation, commands and limitations |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |

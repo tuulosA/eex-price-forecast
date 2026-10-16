@@ -118,7 +118,7 @@ def _fetch_direction(
     end_ts: pd.Timestamp,
     hours: pd.DatetimeIndex,
 ) -> npt.NDArray[np.float64] | None:
-    """Best-available hourly NTC from ``zone_from`` to ``zone_to``: week-ahead carried forward, month-ahead
+    """Best-available delivery-interval NTC from ``zone_from`` to ``zone_to``: week-ahead carried forward, month-ahead
     only where week-ahead is absent (see :func:`blend_week_over_month`). ``None`` when the border
     publishes neither contract."""
     week = _fetch_contract(
@@ -138,7 +138,7 @@ def fetch_ntc(
     *,
     borders: dict[str, str] = NTC_BORDERS,
 ) -> pd.DataFrame:
-    """Per-border NTC -> frame[``timestamp``, ``ntc_imp_<b>``, ``ntc_exp_<b>`` ...] (hourly UTC).
+    """Per-border NTC -> frame[``timestamp``, ``ntc_imp_<b>``, ``ntc_exp_<b>`` ...] (quarter-hour UTC).
 
     For each border we fetch capacity *into* DE (neighbour -> DE) and *out of* DE (DE -> neighbour),
     take week-ahead per day (carried forward, month-ahead only where it is absent), and expand onto the

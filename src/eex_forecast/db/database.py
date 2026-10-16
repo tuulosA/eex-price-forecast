@@ -32,7 +32,7 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
         )
         if resolution != ("15",):
             conn.close()
-            raise ValueError("Hourly or unversioned database: use a separate 15-minute database.")
+            raise ValueError("Database interval metadata must declare interval_minutes=15.")
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

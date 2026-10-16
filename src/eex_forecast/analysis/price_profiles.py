@@ -32,11 +32,11 @@ from xgboost import XGBRegressor
 
 from eex_forecast.analysis.comparison import paired_day_bootstrap
 from eex_forecast.backtest_cutoffs import DEV_CUTOFFS, cutoff_utc
-from eex_forecast.config import ANALYSIS_DIR
+from eex_forecast.config import ANALYSIS_DIR, PROJECT_ROOT
 from eex_forecast.model import apply_train_nan_lag_mask
 from eex_forecast.price_nn import FeatureScaling, NNParams, TrainedPriceNN, _network
 
-SOURCE = ANALYSIS_DIR / "price_models/price_nn_20261014"
+SOURCE = PROJECT_ROOT / "data/history/hourly_20261016/analysis/price_models/price_nn_20261014"
 OUTPUT = ANALYSIS_DIR / "price_profiles_20261015"
 
 

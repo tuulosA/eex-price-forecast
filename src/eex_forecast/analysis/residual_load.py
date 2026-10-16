@@ -11,7 +11,7 @@ Scoring follows the other single-model experiments: the price model on the devel
 actual fundamentals (the tuning basis), its tuned parameters, the shared walk-forward engine, several
 seeds, and a day-level bootstrap of each variant's difference from production
 (:mod:`eex_forecast.analysis.comparison`). For the production set and the best variant it also rebuilds
-the hourly predictions and reports the systematic-error breakdown, so the result shows whether the
+the intervals predictions and reports the systematic-error breakdown, so the result shows whether the
 under-forecast in tight hours actually shrank - not only whether the mean moved.
 
 Nothing here changes the production price features; adopting a variant is a separate gate.
@@ -71,12 +71,12 @@ def _spec(variant: str) -> ModelSpec:
     return replace(price, name=f"price:{variant}", build_features=builder)
 
 
-def _hourly_breakdown(
+def _interval_breakdown(
     spec: ModelSpec, frame: pd.DataFrame, params: dict[str, Any], cutoffs: tuple[str, ...]
 ) -> dict[str, Any]:
     """The price breakdown of one seed's walk-forward predictions, in the eval's column layout."""
     rows = walk_forward_predictions(spec, frame, params, days=DAY_AHEAD_DAYS, cutoffs=cutoffs)
-    hourly = pd.DataFrame(
+    intervals = pd.DataFrame(
         {
             "delivery_day": rows["delivery_day"],
             TIMESTAMP: rows[TIMESTAMP],
@@ -84,7 +84,7 @@ def _hourly_breakdown(
             spec.forecast_column: rows["prediction"],
         }
     )
-    result = model_breakdown(hourly, "price")
+    result = model_breakdown(intervals, "price")
     keep = ("mae", "bias", "by_price_regime", "by_hour_block", "by_season", "level_vs_shape")
     return {key: result[key] for key in keep}
 
@@ -143,8 +143,10 @@ def run_residual_load_analysis(
     scored.sort(key=lambda score: float(score["mean_mae"]))
     best = next(score for score in scored if score["variant"] != BASELINE)
     for score in (baseline, best):
-        logger.info("[residual-load] hourly breakdown: %s", score["variant"])
-        score["breakdown"] = _hourly_breakdown(_spec(score["variant"]), frame, parameters, cutoffs)
+        logger.info("[residual-load] intervals breakdown: %s", score["variant"])
+        score["breakdown"] = _interval_breakdown(
+            _spec(score["variant"]), frame, parameters, cutoffs
+        )
     report = {
         "config": {
             "model": "price",
@@ -165,7 +167,7 @@ def run_residual_load_analysis(
 def save_residual_load_report(
     result: ResidualLoadResult, *, reports_dir: Path = ANALYSIS_DIR
 ) -> Path:
-    """Write the comparison, including per-day MAE and the two hourly breakdowns."""
+    """Write the comparison, including per-day MAE and the two intervals breakdowns."""
     payload = {
         "compared": "residual-load feature variants (price model)",
         "run_at": pd.Timestamp.now(tz="UTC").isoformat(),

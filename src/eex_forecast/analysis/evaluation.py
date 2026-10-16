@@ -103,14 +103,14 @@ class ModelEval:
 class EvaluationResult:
     """A completed end-to-end frozen-cutoff evaluation plus its serialisable report.
 
-    ``hourly`` holds the first seed's scored rows - ``delivery_day``, ``timestamp``, and each model's
+    ``intervals`` holds the first seed's scored rows - ``delivery_day``, ``timestamp``, and each model's
     actual and forecast column - for :func:`eex_forecast.analysis.plots.plot_evaluation_days`. It is
     kept off the JSON report so the report schema stays unchanged and compact.
     """
 
     models: list[ModelEval]
     report: dict[str, Any]
-    hourly: pd.DataFrame
+    intervals: pd.DataFrame
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,7 +275,7 @@ def _price_scenario_prediction(
     return prepared.price_model.predict(scenario_frame)
 
 
-def _fold_hourly(
+def _fold_intervals(
     prepared: _PreparedFold, original_frame: pd.DataFrame, price: pd.Series, delivery_day: str
 ) -> pd.DataFrame:
     """The held-out window's actual and forecast value per model, for plotting a delivery day.
@@ -305,8 +305,8 @@ def _pipeline_fold(
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame] | None:
     """Fit and score the standard all-forecast sub-models -> price chain for one delivery day.
 
-    Returns each model's metrics plus the window's hourly actual/forecast rows (see
-    :func:`_fold_hourly`), or ``None`` when the fold is unusable.
+    Returns each model's metrics plus the window's actual/forecast interval rows (see
+    :func:`_fold_intervals`), or ``None`` when the fold is unusable.
     """
     prepared = _prepare_fold(frame, params_by_model, delivery_day)
     if prepared is None:
@@ -318,7 +318,7 @@ def _pipeline_fold(
     if price_metrics is None:
         return None
     metrics = {**prepared.fundamental_metrics, "price": price_metrics}
-    return metrics, _fold_hourly(prepared, frame, price, delivery_day)
+    return metrics, _fold_intervals(prepared, frame, price, delivery_day)
 
 
 def _evaluate_seed(
@@ -329,9 +329,9 @@ def _evaluate_seed(
     seed_number: int,
     n_seeds: int,
 ) -> tuple[dict[str, dict[str, Any]], pd.DataFrame]:
-    """Run every cutoff for one common model seed; aggregate each model's folds and hourly rows."""
+    """Run every cutoff for one common model seed; aggregate each model's folds and interval rows."""
     folds_by_model: dict[str, list[dict[str, Any]]] = {name: [] for name in ALL_MODELS}
-    hourly: list[pd.DataFrame] = []
+    intervals: list[pd.DataFrame] = []
     for cutoff_number, delivery_day in enumerate(cutoffs, start=1):
         scored = _pipeline_fold(frame, params_by_model, delivery_day)
         if scored is None:
@@ -344,8 +344,8 @@ def _evaluate_seed(
                 delivery_day,
             )
             continue
-        fold, fold_hourly = scored
-        hourly.append(fold_hourly)
+        fold, fold_intervals = scored
+        intervals.append(fold_intervals)
         for name in ALL_MODELS:
             folds_by_model[name].append(fold[name])
         logger.info(
@@ -369,7 +369,7 @@ def _evaluate_seed(
             "mean_rmse": float(np.mean([fold["rmse"] for fold in folds])),
             "folds": folds,
         }
-    return result, pd.concat(hourly, ignore_index=True)
+    return result, pd.concat(intervals, ignore_index=True)
 
 
 def _oracle_fold(
@@ -513,12 +513,12 @@ def run_evaluation(
     )
 
     by_seed: list[dict[str, dict[str, Any]]] = []
-    first_hourly: pd.DataFrame | None = None
+    first_intervals: pd.DataFrame | None = None
     for index, seed in enumerate(seed_values):
         parameters = {
             name: seeded_params(REGISTRY[name], resolved_params[name], seed) for name in ALL_MODELS
         }
-        evaluated, hourly = _evaluate_seed(
+        evaluated, intervals = _evaluate_seed(
             frame,
             parameters,
             cutoffs,
@@ -526,8 +526,8 @@ def run_evaluation(
             n_seeds=len(seed_values),
         )
         by_seed.append(evaluated)
-        if first_hourly is None:
-            first_hourly = hourly  # plots show one coherent seed, like the report's folds
+        if first_intervals is None:
+            first_intervals = intervals  # plots show one coherent seed, like the report's folds
         if len(seed_values) > 1:
             logger.info(
                 "[eval] seed %d/%d | wind %.3f | solar %.3f | load %.3f | price %.3f",
@@ -536,13 +536,13 @@ def run_evaluation(
                 *(evaluated[name]["mean_mae"] for name in ALL_MODELS),
             )
 
-    assert first_hourly is not None
-    return _evaluation_result(by_seed, first_hourly, seed_values, cutoffs, cutoff_set)
+    assert first_intervals is not None
+    return _evaluation_result(by_seed, first_intervals, seed_values, cutoffs, cutoff_set)
 
 
 def _evaluation_result(
     by_seed: list[dict[str, dict[str, Any]]],
-    first_hourly: pd.DataFrame,
+    first_intervals: pd.DataFrame,
     seed_values: list[int],
     cutoffs: tuple[str, ...],
     cutoff_set: str,
@@ -633,7 +633,7 @@ def _evaluation_result(
     report["price_resolution_summary"] = price_resolution_summary
     shapes = {
         str(day): measured
-        for day, rows in first_hourly.groupby("delivery_day", sort=True)
+        for day, rows in first_intervals.groupby("delivery_day", sort=True)
         if (
             measured := quarter_price_metrics(
                 rows[TIMESTAMP],
@@ -651,8 +651,8 @@ def _evaluation_result(
         },
         "by_delivery_day": shapes,
     }
-    assert first_hourly is not None  # seed_list always yields at least one seed
-    return EvaluationResult(results, report, first_hourly)
+    assert first_intervals is not None  # seed_list always yields at least one seed
+    return EvaluationResult(results, report, first_intervals)
 
 
 def run_oracle_diagnostics(
@@ -821,14 +821,14 @@ def run_evaluation_and_oracle(
     resolved = _resolve_params(params_by_model)
     by_seed = []
     oracle_by_seed = []
-    first_hourly: pd.DataFrame | None = None
+    first_intervals: pd.DataFrame | None = None
     for seed in seed_values:
         parameters = {
             name: seeded_params(REGISTRY[name], resolved[name], seed) for name in ALL_MODELS
         }
         model_folds: dict[str, list[dict[str, Any]]] = {name: [] for name in ALL_MODELS}
         scenario_folds: dict[str, list[dict[str, Any]]] = {name: [] for name in ORACLE_SCENARIOS}
-        hourly = []
+        intervals = []
         for index, day in enumerate(days, 1):
             prepared = _prepare_fold(frame, parameters, day)
             if prepared is None:
@@ -843,7 +843,7 @@ def run_evaluation_and_oracle(
             scores = {**prepared.fundamental_metrics, "price": price}
             for name in ALL_MODELS:
                 model_folds[name].append(scores[name])
-            hourly.append(_fold_hourly(prepared, frame, prediction, day))
+            intervals.append(_fold_intervals(prepared, frame, prediction, day))
             scenarios = _oracle_prepared(prepared, frame, day)
             if scenarios is not None:
                 for name in ORACLE_SCENARIOS:
@@ -857,7 +857,7 @@ def run_evaluation_and_oracle(
                 day,
                 price["mae"],
             )
-        if not hourly or any(not folds for folds in scenario_folds.values()):
+        if not intervals or any(not folds for folds in scenario_folds.values()):
             raise ValueError("No usable matched evaluation/oracle folds.")
         by_seed.append(
             {
@@ -881,11 +881,11 @@ def run_evaluation_and_oracle(
                 for name, folds in scenario_folds.items()
             }
         )
-        if first_hourly is None:
-            first_hourly = pd.concat(hourly, ignore_index=True)
-    assert first_hourly is not None
+        if first_intervals is None:
+            first_intervals = pd.concat(intervals, ignore_index=True)
+    assert first_intervals is not None
     return (
-        _evaluation_result(by_seed, first_hourly, seed_values, days, cutoff_set),
+        _evaluation_result(by_seed, first_intervals, seed_values, days, cutoff_set),
         _oracle_result(oracle_by_seed, seed_values, days, cutoff_set),
     )
 

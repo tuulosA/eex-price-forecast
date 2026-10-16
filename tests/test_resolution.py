@@ -1,4 +1,4 @@
-"""Quarter-hour contracts: native targets, bounded weather, timestamps and artifact isolation."""
+"""Delivery contracts: native targets, bounded weather, timestamps and artifact metadata."""
 
 from __future__ import annotations
 
@@ -21,7 +21,6 @@ from eex_forecast.features import (
     price_market_features,
     weather_means,
 )
-from eex_forecast.migration import seed_from_hourly
 from eex_forecast.resolution import FREQUENCY, STEP, interpolate_hourly, quarter_grid
 from eex_forecast.sources import entsoe
 
@@ -147,8 +146,9 @@ def test_quarter_grid_never_synthesizes_measured_targets() -> None:
     assert result.wind_actual_mw.notna().sum() == 2
 
 
-def test_hourly_database_is_rejected_and_seed_excludes_targets(tmp_path: Path) -> None:
-    source, destination = tmp_path / "hourly.db", tmp_path / "quarters.db"
+@pytest.mark.parametrize("interval", [None, "60"])
+def test_database_requires_matching_interval_metadata(tmp_path: Path, interval: str | None) -> None:
+    source = tmp_path / "invalid.db"
     with sqlite3.connect(source) as conn:
         conn.execute(
             "CREATE TABLE timeseries (timestamp TEXT PRIMARY KEY, wind_actual_mw REAL, ws_de01 REAL, ntc_imp_fr REAL)"
@@ -160,18 +160,13 @@ def test_hourly_database_is_rejected_and_seed_excludes_targets(tmp_path: Path) -
                 ("2026-01-01T01:00:00+00:00", 200, 8, 2000),
             ],
         )
+        if interval is not None:
+            conn.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            conn.execute("INSERT INTO metadata VALUES ('interval_minutes', ?)", (interval,))
     original = source.read_bytes()
-    with pytest.raises(ValueError, match="unversioned database"):
+    with pytest.raises(ValueError, match="interval_minutes=15"):
         connect(source)
-    seed_from_hourly(source, destination)
     assert source.read_bytes() == original
-    with connect(destination) as conn:
-        frame = read_frame(conn)
-    assert frame.wind_actual_mw.isna().all()
-    assert frame.ws_de01.notna().sum() == 2
-    assert frame.ntc_imp_fr.tolist() == [1000, 1000, 1000, 1000, 2000]
-    with pytest.raises(ValueError, match="new, separate"):
-        seed_from_hourly(source, destination)
 
 
 def test_upsert_quarters_never_overwrites_actuals(tmp_path: Path) -> None:

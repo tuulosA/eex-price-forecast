@@ -1,6 +1,6 @@
-"""Where does an evaluation's error live? A systematic-error breakdown of the scored hours.
+"""Where does an evaluation's error live? A systematic-error breakdown of scored intervals.
 
-A mean MAE hides *how* a model is wrong. This breaks one evaluation run (the hourly rows of
+A mean MAE hides *how* a model is wrong. This breaks one evaluation run (the interval rows of
 :class:`~eex_forecast.analysis.evaluation.EvaluationResult`) down into the views that separate one kind
 of failure from another, so experiments can be aimed at where the error is and a later run can show
 whether a systematic problem shrank:
@@ -8,14 +8,14 @@ whether a systematic problem shrank:
 - **Bias** (mean forecast minus actual) next to MAE everywhere. A model can have a decent MAE yet be
   consistently too low in one season; MAE alone never shows the sign.
 - **When**: by hour block, season, and day type (working day, weekend, holiday), each with its share of
-  hours versus its share of the total error, so an over-represented slice stands out.
+  intervals versus its share of the total error, so an over-represented slice stands out.
 - **How concentrated**: the share of error carried by the worst tenth of days, and the worst days
   themselves - a broad problem needs a different fix from one freak day.
 - **Price only**: the actual price regime (negative to spike), which shows whether forecasts are pulled
   toward the middle, and the **level versus shape** split - how much error would remain if every day's
   average level were exact - which separates missing day-level drivers from within-day ones.
 
-Errors are taken over hours, so a 23- or 25-hour DST day weighs its true length; the eval report's
+Errors are taken over intervals, so a 23- or 25-hour DST day weighs its true length; the eval report's
 headline averages per day instead and can differ in the third decimal. Calendar fields come from
 :func:`eex_forecast.features.calendar_features`, the same German market-local calendar the models use.
 """
@@ -89,15 +89,15 @@ def _group_table(rows: pd.DataFrame, labels: pd.Series, order: list[str]) -> lis
     return table
 
 
-def model_breakdown(hourly: pd.DataFrame, model: str) -> dict[str, Any]:
+def model_breakdown(intervals: pd.DataFrame, model: str) -> dict[str, Any]:
     """The systematic-error breakdown of one model over an evaluation's scored hours."""
     spec = REGISTRY[model]
-    actual = pd.to_numeric(hourly[spec.target_column], errors="coerce")
-    forecast = pd.to_numeric(hourly[spec.forecast_column], errors="coerce")
+    actual = pd.to_numeric(intervals[spec.target_column], errors="coerce")
+    forecast = pd.to_numeric(intervals[spec.forecast_column], errors="coerce")
     keep = (actual.notna() & forecast.notna()).to_numpy()
     rows = pd.DataFrame(
         {
-            "day": hourly["delivery_day"].astype(str).to_numpy()[keep],
+            "day": intervals["delivery_day"].astype(str).to_numpy()[keep],
             "actual": actual.to_numpy()[keep],
             "err": (forecast - actual).to_numpy()[keep],
         }
@@ -105,7 +105,7 @@ def model_breakdown(hourly: pd.DataFrame, model: str) -> dict[str, Any]:
     if rows.empty:
         raise ValueError(f"No scored hours for '{model}'.")
     rows["abs"] = rows["err"].abs()
-    calendar = calendar_features(hourly[TIMESTAMP]).iloc[keep].reset_index(drop=True)
+    calendar = calendar_features(intervals[TIMESTAMP]).iloc[keep].reset_index(drop=True)
     hour_block = calendar["hour"].map(_hour_block)
     season = calendar["month"].map(_SEASONS)
     day_type = pd.Series(
@@ -170,7 +170,7 @@ def eval_breakdown(result: EvaluationResult) -> dict[str, Any]:
     return {
         "cutoff_set": result.report["config"]["cutoff_set"],
         "n_cutoffs": result.report["config"]["n_cutoffs"],
-        "models": {name: model_breakdown(result.hourly, name) for name in ALL_MODELS},
+        "models": {name: model_breakdown(result.intervals, name) for name in ALL_MODELS},
     }
 
 

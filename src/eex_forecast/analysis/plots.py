@@ -256,8 +256,8 @@ def plot_evaluation_days(
     spec = REGISTRY[model]
     unit = EVAL_UNITS[model]
     color = _EVAL_DAY_COLORS.get(model, "C0")
-    hourly = result.hourly
-    days = list(dict.fromkeys(hourly["delivery_day"]))
+    intervals = result.intervals
+    days = list(dict.fromkeys(intervals["delivery_day"]))
     folds = next(evaluated for evaluated in result.models if evaluated.model == model).folds
     day_mae = {fold["delivery_day"]: fold["mae"] for fold in folds}
     rows = -(-len(days) // _PLOT_COLUMNS)
@@ -265,7 +265,7 @@ def plot_evaluation_days(
         rows, _PLOT_COLUMNS, figsize=(12.0, 2.1 * rows + 1.2), sharex=True, squeeze=False
     )
     for ax, day in zip(axes.flat, days, strict=False):
-        rows_for_day = hourly[hourly["delivery_day"] == day]
+        rows_for_day = intervals[intervals["delivery_day"] == day]
         elapsed = (
             pd.to_datetime(rows_for_day[TIMESTAMP], utc=True) - cutoff_utc(day)
         ) / pd.Timedelta(hours=1)

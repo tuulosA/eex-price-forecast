@@ -32,7 +32,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import date
 from enum import StrEnum
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -160,16 +159,6 @@ def db_init() -> None:
     path = get_settings().db_path
     init_db(path)
     typer.echo(f"Initialised database at {path}")
-
-
-@db_app.command("seed-hourly")
-def db_seed_hourly(source: Path) -> None:
-    """Reuse hourly weather/known-ahead inputs in a NEW 15-minute DB, excluding all old targets."""
-    from eex_forecast.migration import seed_from_hourly
-
-    destination = get_settings().db_path
-    rows = seed_from_hourly(source, destination)
-    typer.echo(f"Seeded {rows} quarter-hour rows in {destination}; backfill ENTSO-E targets next.")
 
 
 # -- geo ------------------------------------------------------------------------

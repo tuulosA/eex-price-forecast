@@ -5,7 +5,7 @@ chiefly from France. This module derives, per neighbour zone, the **available** 
 
     nuclear_available_mw = installed_nuclear_capacity - unavailable(outages)
 
-and sums it across the configured :data:`eex_forecast.config.NUCLEAR_ZONES` into one hourly column.
+and sums it across the configured :data:`eex_forecast.config.NUCLEAR_ZONES` into one quarter-hour column.
 
 *Unavailability* comes from ENTSO-E "Unavailability of Generation Units" [15.1.A-D] (documentType A80,
 psrType B14 = nuclear), fetched via entsoe-py - which handles the ZIP-of-XML paging for us. Each outage

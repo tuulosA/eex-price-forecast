@@ -1,188 +1,117 @@
-# Results explained
+# Forecast results
 
-> **Historical hourly baseline.** All figures and numbers on this page describe the hourly model before the 15-minute migration. They do not measure quarter-hour forecast accuracy. Current evidence is in [quarter-hour results](RESULTS_15MIN.md); see also [the migration guide](QUARTER_HOURLY.md).
+Updated **16 October 2026** for the DE-only neural price model with explicit quarter/hour inputs and
+supervision of observed within-hour changes. Wind, solar and load remain XGBoost. All outputs use
+15-minute delivery intervals. The [earlier hourly results](docs/history/results-hourly.md) score different target
+resolution and remain historical reference evidence.
 
-Updated **15 October 2026** for the operational neural price model.
+## What changed in the price curve
 
-The project first forecasts German wind generation, solar generation and electricity use (load).
-A single-area neural network then predicts the German day-ahead price using those fundamentals,
-calendar, weather and market drivers. The three fundamental models remain XGBoost.
+The previous price feature set missed much of the variation
+inside each hour. The adopted update gives the NN the quarter's position and its interaction with
+the daily clock, and teaches it to predict the observed changes between adjacent native quarters.
+The training history still begins in 2023. No random movement or temporal price filter is applied.
 
-The price curves shown here are direct hourly NN predictions. Their continuity comes from the
-network's learned response to inputs; no moving average or other output smoothing is applied.
-Smoothness and accuracy are separate properties: the adoption study measured a smoother profile
-alongside a higher price MAE. Its matched comparison is in the
-[model development record](docs/model-development.md#adoption-evidence-and-trade-off).
+The following comparison uses the same freshly forecast fundamentals for both price models. On
+22 native-market development days, the adopted model improves both price accuracy and the accuracy
+of quarter-to-quarter changes. All figures in the table are EUR/MWh.
 
-## Reading the evaluation
+| Measure | Previous NN | Adopted NN |
+|---|---:|---:|
+| Price MAE | 16.18 | 15.19 |
+| Price RMSE | 21.57 | 19.98 |
+| Within-hour change MAE | 5.91 | 5.36 |
+| Hour-centred shape MAE | 5.48 | 4.71 |
+| Predicted mean absolute change within an hour | 3.81 | 7.70 |
 
-The figures below show **18 holdout delivery days from January to September 2026**, using seed 42.
-For each day, every model trains on preceding data. The held-out wind, solar and load actuals are
-hidden from the price model, which receives that fold's fresh fundamental forecasts. These holdout
-results report the already adopted configuration; they did not select it.
+Actual mean absolute change within an hour is **8.36 EUR/MWh**. Matching its size alone would not
+establish skill; the change-error and shape-error improvements matter too. The price-MAE difference
+has a paired-day 90% interval of **[-2.33, +0.32]**, while the within-hour change-error interval is
+**[-0.92, -0.19]**. Price accuracy remains more uncertain than the shape improvement on these 22 days.
 
-The black curve is actual and the coloured curve is forecast. The horizontal axis is German local
-time. Each panel has its own vertical scale, so compare the pattern within a day before comparing
-heights between panels. All scored days here have 24 hours.
+![Actual and matched quarter-hour forecasts on development days](data/analysis/quarter_price_adoption.png)
 
-**MAE** is the average absolute miss. **RMSE** gives more weight to large misses. MW measures power;
-1,000 MW is 1 GW. EUR/MWh is the electricity price. Neither score measures visual smoothness.
+The first three panels show the first, middle and last development day, with each day's own y-axis.
+The final panel removes each hour's mean for a shape diagnostic only; this centring is never applied
+to forecast output. The eight-day check over three price seeds also improves price MAE (14.19 to
+12.18) and within-hour change MAE (5.43 to 4.80), with identical forecast fundamentals.
+
+The [full adoption report](data/analysis/quarter_price_adoption_experiment.json) records every
+grid candidate, scope, seed and day-bootstrap interval. These are development results. The original
+width/epoch/optimizer settings and fundamental parameters are carried forward; this update tuned the
+quarter-hour feature/loss design rather than every hyperparameter.
+
+## Development and holdout plots
+
+The [development report](data/evaluation/model_eval.json) covers the **22 native-price
+development days**, not the full 92-day mixed hourly/native development set. Price tuning uses this
+fixed subset with at least 90 days of native price history before each delivery day. The historical
+training rows are retained.
+
+![Quarter-hour development price forecasts](data/evaluation/price_eval_days.png)
+
+The reporting holdout is the 18 frozen delivery days from January through September 2026. The model
+choice was recorded before it was run. Its report and figures describe the fixed adopted chain;
+they did not choose the model. Each panel compares actual prices in black with the D+1 forecast in
+blue, with a separate y-axis for each day.
 
 | Model | Holdout MAE | Holdout RMSE |
 |---|---:|---:|
-| Price | 27.22 EUR/MWh | 41.67 EUR/MWh |
-| Wind | 1,793.42 MW | 2,179.38 MW |
-| Solar | 817.07 MW | 1,423.09 MW |
-| Load | 2,018.92 MW | 2,304.68 MW |
+| Wind | 1,779.30 MW | 2,161.77 MW |
+| Solar | 773.99 MW | 1,345.86 MW |
+| Load | 1,808.12 MW | 2,089.67 MW |
+| Price | 26.78 EUR/MWh | 41.58 EUR/MWh |
 
-Source: [holdout report](data/evaluation/model_eval_holdout.json). These are single-seed point
-estimates. The zero seed spread in that report supplies no across-seed uncertainty estimate.
+These are single-seed estimates (42), with no across-seed uncertainty estimate. On the holdout,
+within-hour change MAE is **7.87 EUR/MWh**; predicted mean absolute change is **8.16** versus observed
+**11.12**. The model still misses some detail. On 1 January it predicts repeated movements through
+hours where actual prices are flat; on 26 April and 1 May it misses deep negative-price episodes;
+on 4 March and 24 June it underpredicts large peaks. These are reported limitations of the adopted
+model, not inputs to another selection round.
 
-### Price
+![Quarter-hour holdout price forecasts](data/evaluation/price_eval_days_holdout.png)
 
-![Actual and neural price forecast on the holdout days](data/evaluation/price_eval_days_holdout.png)
+The [holdout report](data/evaluation/model_eval_holdout.json) and
+[matched oracle diagnostic](data/evaluation/oracle_substitution_holdout.json) provide the
+per-day scores and isolate the effect of forecast wind, solar and load.
 
-The NN catches the broad morning/evening peaks and midday valleys on many days. Examples include
-13 January, 3 February and 15 April. It still misses the level or amplitude on difficult days:
+## Current forecast and limits
 
-- On 4 March and 24 June the evening rise is present, but much smaller than the actual spike.
-- On 26 April and 1 May it predicts negative midday prices but misses the extreme negative troughs.
-  Training caps the outer 0.1% of target values at each tail, and MAE training favours typical
-  outcomes. This does **not** impose a hard floor or ceiling on the NN's predictions.
-- On 1 January the forecast stays above the near-zero actual prices for much of the day.
-- On 26 July and 29 August the forecast goes below zero while actual midday prices remain near zero.
+The refreshed pipeline saves the adopted model under `data/models/price.npz`, writes the
+deterministic products under `data/forecast/`, and propagates the same NN through each weather
+ensemble member. The [operational audit](data/analysis/quarter_price_operational_experiment.json)
+checks its quarter-hour feature contract, direct NN prediction values and preservation of actuals.
 
-The three days 26 April, 1 May and 24 June account for **43.0%** of total price error. Excluding them
-would give **18.62 EUR/MWh** MAE; the reported headline includes them. The median day's MAE is
-**16.09 EUR/MWh**. This illustrates how strongly an 18-day score depends on its extreme days.
+![Current inputs passed through the previous and adopted fitted price networks](data/analysis/quarter_price_live.png)
 
-The [error breakdown](data/evaluation/model_eval_breakdown_holdout.json) records an overall price
-bias of **-8.55 EUR/MWh**. Negative-price hours account for 9.7% of hours and 26.9% of error; prices
-of at least 250 EUR/MWh account for 2.1% of hours and 15.3% of error. Smooth profiles therefore still
-need better extreme-regime predictions.
+This three-day view verifies the changed operational profile. It is a qualitative forecast comparison,
+not an accuracy test: both fitted models receive identical current inputs, but their training
+snapshots differ. The matched development comparisons above control the training cutoff as well.
 
-### Wind generation
+## Model explanations
 
-![Actual and forecast wind generation](data/evaluation/wind_eval_days_holdout.png)
+The following integrated-gradients figure was regenerated from the adopted saved price NN over the
+last 30 days of target-bearing history (2,880 quarter-hours). Each dot is one interval. The left panel
+sums related inputs into families; calendar includes the quarter/hour features. These are learned
+associations relative to training-mean inputs, not causal effects. Large contributions to an overall
+price level do not by themselves identify the source of its within-hour changes.
 
-The average absolute miss is **1,793 MW**. The model generally follows weather-driven rises and
-falls, while some very windy winter days have larger errors in level. A timing or strength error
-in the weather forecast passes through to generation. The model learns generation as a fraction
-of installed capacity and converts it back to MW, allowing the fleet size to change over time.
+![Integrated gradients for the adopted quarter-hour price model](data/analysis/ig_price.png)
 
-### Solar generation
+The same run regenerated TreeSHAP figures for [wind](data/analysis/shap_wind.png),
+[solar](data/analysis/shap_solar.png) and [load](data/analysis/shap_load.png), in MW. Their
+scored interval counts can differ slightly because the upstream actual series end at different times.
+The command was `eex analyze shap --days 30`. The neural integration's maximum completeness residual
+was below 0.001 EUR/MWh; no residual was redistributed to force exact sums.
 
-![Actual and forecast solar generation](data/evaluation/solar_eval_days_holdout.png)
+## Interpretation limits
 
-The average absolute miss is **817 MW**. The daylight arc is generally recognizable, with errors
-around the midday peak on some days. Nighttime zero is an explicit physical constraint when all
-aligned irradiance points are dark; it is not something to credit to statistical accuracy.
-Generation is capacity-scaled. Irradiance intervals are aligned to delivery hours, and the model
-also receives solar geometry, diffuse/DNI radiation and cloud information.
+- The evaluation scores D+1 only. It does not establish accuracy throughout the 14-day outlook.
+- Historical forecast weather is assembled from short-lead runs, which can make D+1 scores modestly
+  optimistic. Matched comparisons remain useful.
+- Eighteen holdout days are a small sample and do not cover October through December. Large spikes,
+  negative-price episodes and unpredictable quarter-hour movements remain difficult.
+- The ensemble bands represent weather-driven spread, not every source of price uncertainty.
 
-### Load
-
-![Actual and forecast load](data/evaluation/load_eval_days_holdout.png)
-
-The average absolute miss is **2,019 MW**. Calendar and temperature help reproduce the day/night
-and working-day patterns. Exceptional days, especially around holidays, can differ substantially
-from the learned pattern. Load errors also reach the price network: the oracle comparison below
-shows their downstream effect on this sample.
-
-## What the fundamental errors contribute to price
-
-The [holdout oracle report](data/evaluation/oracle_substitution_holdout.json) reuses each fitted
-price model and substitutes measured or forecast fundamentals on the same hours.
-
-| Price inputs | Price MAE | Change from all measured |
-|---|---:|---:|
-| All fundamentals measured | 25.28 EUR/MWh | reference |
-| Only wind forecast | 25.98 EUR/MWh | +0.70 EUR/MWh |
-| Only solar forecast | 25.01 EUR/MWh | -0.27 EUR/MWh |
-| Only load forecast | 27.03 EUR/MWh | +1.75 EUR/MWh |
-| All three forecast | 27.22 EUR/MWh | +1.94 EUR/MWh |
-
-Measured fundamentals are an impossible live oracle. Load has the largest isolated penalty here.
-The small negative solar delta reflects error cancellation in this finite sample. Deltas do not add
-up because the NN is nonlinear and input errors interact. The all-forecast row matches evaluation.
-
-## What the saved models use
-
-These explanations describe the final saved production models over the most recent 365 days with
-available targets. They use measured historical fundamentals and are **not** held-out accuracy tests.
-The left panel groups features and ranks their average absolute contribution; the right panel puts
-one dot per hour at its individual feature contribution. Colour indicates the input's raw value.
-Contributions describe learned associations, not causes.
-
-### Price: integrated gradients
-
-![Integrated gradients of the operational price NN](data/analysis/ig_price.png)
-
-Price uses **integrated gradients (IG)** through the actual NN. Its reference is the training-mean
-standardized input with all missingness flags cleared. Value and missingness contributions are
-combined for each original input. The method follows the path from that reference to each hour's
-inputs and measures how much each feature contributes to the price difference.
-
-<!-- price-attribution-reading:start -->
-The largest grouped contributions in this window are transfer capacity (**20.2 EUR/MWh**), GHI
-(**18.9**), calendar (**15.3**) and load (**13.4**), measured as average absolute IG contribution.
-Several inputs describing neighbouring wind and domestic generation also contribute. These sizes
-are relative to the chosen reference and need not match rankings from the former tree model.
-
-The maximum completeness residual is **0.000052 EUR/MWh**, so the approximate contributions sum
-closely to the saved NN's output on these 8,760 explained hours.
-<!-- price-attribution-reading:end -->
-
-This baseline choice matters: a contribution is relative to this reference, not a universal price
-premium. Historical weekly-lag importance describes hours where that lag exists, rather than the
-second forecast week where it is unavailable. Numerical integration is approximate; the regeneration
-logs record the maximum difference between the summed contributions plus reference and the NN's
-prediction. No residual is redistributed to force an exact sum. Price axes say IG, not SHAP.
-
-### Fundamentals: TreeSHAP
-
-![TreeSHAP of the wind model](data/analysis/shap_wind.png)
-
-Wind's per-point wind speeds capture regional differences in generation. Temperature and calendar
-can supply additional context. The grouped bar combines the effects of all features in a family
-within each hour before taking the average absolute value.
-
-![TreeSHAP of the solar model](data/analysis/shap_solar.png)
-
-Solar uses radiation, geometry, cloud and installed-capacity information. Geometry describes where
-the sun can be; radiation and cloud help distinguish clear from cloudy delivery hours. Installed
-capacity also identifies different fleet eras in the capacity-factor model.
-
-![TreeSHAP of the load model](data/analysis/shap_load.png)
-
-Load uses calendar, temperature and irradiance to represent schedules, heating/cooling demand and
-weather patterns. Correlated inputs can share or substitute for each other's contributions, so a
-small bar alone is not a reason to remove a feature.
-
-The fundamental attributions use exact **TreeSHAP**, converted to MW for wind and solar. Their
-non-negative clamps and the solar-darkness override are outside that additive explanation.
-The common `eex analyze shap` command uses IG for price and TreeSHAP for the three fundamentals.
-
-## Limits and reproduction
-
-All accuracy numbers here cover **D+1**, not the full 14-day forecast. The stitched historical
-weather feed can be modestly optimistic relative to a coherent weather run available at issue time.
-There are only 18 holdout days, with no October-December coverage. Actual live error requires
-archived issue-time forecasts scored after delivery.
-
-Development figures, including [price](data/evaluation/price_eval_days.png), contain 92 days used
-for model selection. Their [report](data/evaluation/model_eval.json) is separate from the holdout.
-The [pre-NN results](docs/history/results-before-neural-price.md) retain the former model's figures
-and numbers; they should not be read as the current model's results.
-
-Reproduce the current artifacts from CMD after activating the environment:
-
-```cmd
-eex analyze eval --seeds 1 --plot --breakdown --oracle
-eex analyze eval --seeds 1 --holdout --plot --breakdown --oracle
-eex run --train --plot --write-db --ensemble
-eex analyze shap
-```
-
-See [experimentation](docs/experimentation.md) for the evaluation contract and
-[model development](docs/model-development.md) for architecture, training and adoption evidence.
+Commands and methodology are in [Experimentation and evaluation](docs/experimentation.md), with
+source and delivery-interval contracts in [Data pipeline and sources](docs/data-pipeline.md).
