@@ -58,12 +58,12 @@ tools score D+1 because that is the horizon historical weather can represent rea
 ### Development and holdout days
 
 The YAML has exactly two top-level lists, `development` and `holdout`, because no single set can both
-choose a configuration and report its error honestly. All 92 development dates are stored together
-in chronological order:
+choose a configuration and report its error honestly. All 39 development dates are stored together
+in chronological order. Every target uses the same list:
 
 | Set | Days | Used by | Purpose |
 |---|---|---|---|
-| `development` | 92: 22 hand-picked (Jan 2025 – Jul 2026), 30 systematic and 40 random (Oct 2024 – Sep 2026) | tuning, aggregation, ablation, anchors, solar diagnostics, and `eex analyze eval` / `oracle` by default | every **selection** decision, including the end-to-end adoption gate |
+| `development` | 39 native-price-era dates, 3 Oct 2025 – 15 Sep 2026 | tuning, aggregation, ablation, anchors, solar diagnostics, and `eex analyze eval` / `oracle` by default | every **selection** decision, including the end-to-end adoption gate |
 | `holdout` | 18, Jan – Sep 2026 | only `eex analyze eval --holdout` / `oracle --holdout` | **reporting** the adopted configuration out-of-sample |
 
 Reusing the development days across tuning, aggregation, and ablation is ordinary validation
@@ -141,8 +141,10 @@ eex model tune --target price --trials 12
 
 Price tuning searches NN width, epochs, batch size, learning rate, weight decay, dropout, native price
 weight and within-hour ramp weight, using fixed seed 42 and four CPU threads. Its default score is
-price MAE on the fixed development days with at least 90 days of native price history (currently 22);
-fundamental tuning retains all 92 development days. The price training history still begins in 2023.
+price MAE on all 39 development days, the same dates used for fundamental tuning and other
+development analysis. No additional native-history age filter applies. Training still begins in 2023.
+Early October folds therefore have only a few days of native-price training labels, alongside the
+older hourly-price history; this deliberately includes the market transition.
 It preserves the current parameters unless a fresh trial wins on the same folds. Native price folds
 also report `price_shape` metrics: amplitude, ramp errors and complete-hour shape error. Other analysis
 commands keep their documented development scopes. Price tuning/ablation remain conditional on
@@ -348,7 +350,8 @@ errors are interval-weighted, so they can differ from the day-averaged headline 
 
 <!-- evaluation-benchmarks:start -->
 Quarter-hour chain, regenerated on **16 October 2026** using seed 42. Development here is the fixed
-22-day native-price subset, not the full mixed-era 92 days. The hourly baseline remains in
+former 22-day native-price subset. These recorded results precede the current 39-day calendar and
+have not been rerun on it. The hourly baseline remains in
 [historical results](history/results-hourly.md).
 
 | Model | Development MAE (22 native days) | Holdout MAE (18 days) | Holdout RMSE |
@@ -447,6 +450,34 @@ is written under `data/tuning/`.
 Every study is independently seeded and reproducible, but not resumed. The currently configured
 parameters are scored as an incumbent and retained unless a fresh trial beats them on the identical
 development cutoffs. Retune after changing features, feature semantics, or anchor geography.
+
+### Retuning on the native-price development calendar
+
+The calendar change prepares future runs; it does not update parameters, fitted models or saved
+scores. To redo tuning and evaluation locally, run these commands from CMD in the activated
+environment:
+
+```cmd
+eex model tune --target wind
+eex model tune --target solar
+eex model tune --target load
+eex model tune --target price
+eex analyze eval --seeds 1 --plot --breakdown --oracle
+```
+
+Review the development results and adopt the configuration before reporting the unchanged holdout:
+
+```cmd
+eex analyze eval --holdout --seeds 1 --plot --breakdown --oracle
+eex run --train --plot --write-db --ensemble
+eex analyze shap --days 30
+```
+
+Tuning retains the incumbent unless a trial wins on the new development days. Price tuning uses
+actual historical fundamentals; the end-to-end evaluation supplies fresh forecast fundamentals.
+The final run retrains the operational chain and refreshes forecast plots. Keep the committed
+reports, figures and benchmark readings aligned after those runs. No source backfill or weather
+point rebuilding is needed solely because the cutoff list changed.
 
 ## Reports and reproducibility
 

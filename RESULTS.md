@@ -5,6 +5,10 @@ supervision of observed within-hour changes. Wind, solar and load remain XGBoost
 15-minute delivery intervals. The [earlier hourly results](docs/history/results-hourly.md) score different target
 resolution and remain historical reference evidence.
 
+The development calendar now contains 39 native-price delivery days. The saved comparisons and
+figures below retain their original 22-day scope; they have not been rerun on the new calendar.
+The 18 holdout dates are unchanged.
+
 ## What changed in the price curve
 
 The previous price feature set missed much of the variation
@@ -43,10 +47,11 @@ quarter-hour feature/loss design rather than every hyperparameter.
 
 ## Development and holdout plots
 
-The [development report](data/evaluation/model_eval.json) covers the **22 native-price
-development days**, not the full 92-day mixed hourly/native development set. Price tuning uses this
-fixed subset with at least 90 days of native price history before each delivery day. The historical
-training rows are retained.
+The saved [development report](data/evaluation/model_eval.json) covers **22 native-price
+development days**. That experiment required at least 90 days of native-price training history.
+The current calendar has 39 native-price dates and no such minimum, shared by tuning and analysis
+for all models. Existing scores and plots have not been recomputed; historical training rows
+remain available from 2023.
 
 ![Quarter-hour development price forecasts](data/evaluation/price_eval_days.png)
 

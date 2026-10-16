@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -220,13 +221,13 @@ def test_neural_tuning_preserves_incumbent_without_tree_parameters(
     assert all("n_estimators" not in params for params in seen)
 
 
-@pytest.mark.parametrize("name", ["price", "wind"])
-def test_default_tuning_uses_native_price_days_only_for_price(
+@pytest.mark.parametrize("name", ["price", "wind", "solar", "load"])
+def test_default_tuning_uses_the_complete_development_set_for_every_model(
     name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from eex_forecast.backtest_cutoffs import DEV_CUTOFFS, native_price_development_cutoffs
+    from eex_forecast.backtest_cutoffs import DEV_CUTOFFS
 
-    expected = native_price_development_cutoffs() if name == "price" else DEV_CUTOFFS
+    expected = DEV_CUTOFFS
     seen = []
 
     def score(spec, data, params, cutoffs, days):
@@ -236,6 +237,20 @@ def test_default_tuning_uses_native_price_days_only_for_price(
     monkeypatch.setattr(tuning_ops, "_score", score)
     monkeypatch.setattr(tuning_ops, "_fold_metrics", lambda *a: ([], 0.0, 0.0))
     params = NN_TINY if name == "price" else TINY
+    monkeypatch.setattr(tuning_ops, "suggest_params", lambda _: params)
+    monkeypatch.setattr(tuning_ops, "suggest_neural_params", lambda _: params)
+
+    class FakeStudy:
+        # Exercise the cutoff routing without any optimizer trials or model fitting.
+        best_params = params
+        best_value = 0.0
+        best_trial = SimpleNamespace(number=0)
+        trials: list = []
+
+        def optimize(self, objective, **kwargs):
+            objective(None)
+
+    monkeypatch.setattr(tuning_ops.optuna, "create_study", lambda **kwargs: FakeStudy())
     result = tune(REGISTRY[name], make_timeseries(periods=48), n_trials=1, incumbent_params=params)
     assert seen and all(cutoffs == expected for cutoffs in seen)
     assert result.cutoffs == expected

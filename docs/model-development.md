@@ -2,6 +2,11 @@
 
 Last updated: **2026-10-16**.
 
+Development now uses the 39 selected native-price dates from 3 October 2025 through
+15 September 2026 for every model, with no minimum native-history age. The 18 holdout dates are
+unchanged. Retuning and evaluation on the new calendar are pending; the studies and recorded
+benchmarks below keep their original scopes.
+
 The operational price model is a **single-area neural network for Germany**. Wind, solar and load
 remain XGBoost models. There is no price-backend option, tree fallback, output smoothing or peak-price
 scaler. Public commands and forecast columns retain their existing meanings.
@@ -94,8 +99,8 @@ holdout was run.
 
 This was targeted feature/loss tuning, not a new search over every width, epoch and optimizer
 parameter. The architecture and optimizer settings below remain those transferred from the hourly
-baseline. Future price retunes score the same fixed native-era development subset and keep the
-incumbent safeguard; inspect their price-shape metrics and confirm with forecast fundamentals.
+baseline. Future retunes score the current 39-day native-era development list and keep the
+incumbent safeguard; inspect price-shape metrics and confirm with forecast fundamentals.
 
 ## Adopted price model
 
@@ -178,7 +183,8 @@ stochastic fits also change with thread count. See the
 
 <!-- current-benchmarks:start -->
 Quarter-hour chain, regenerated on **16 October 2026** using seed 42. Development here is the fixed
-22-day native-price subset, not the full mixed-era 92 days. Historical hourly scores are in
+former 22-day native-price subset, not the current 39-day calendar. These scores have not been
+recomputed after the calendar change. Historical hourly scores are in
 [historical results](history/results-hourly.md).
 
 | Model | Development MAE (22 native days) | Holdout MAE (18 days) | Holdout RMSE |

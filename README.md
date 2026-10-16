@@ -203,10 +203,12 @@ eex analyze eval --holdout --seeds 1 --plot # report the adopted configuration o
 ```
 
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
-anchors, and the end-to-end adoption gate - uses **development** days. This set has 92 days;
-price tuning uses its fixed 22-day native-market subset with at least 90 days of native training
-history. The current quarter-hour evaluation is in [RESULTS.md](RESULTS.md), including
-matched development comparisons and the 18-day reporting holdout.
+anchors, and the end-to-end adoption gate - uses the same **39 development days**, from
+3 October 2025 through 15 September 2026, all with native quarter-hour price targets. There is no
+minimum native-history age. Training still retains 2023-onward history before each cutoff.
+The **18 holdout days are unchanged**. [RESULTS.md](RESULTS.md) records the existing 22-day
+development comparison and 18-day holdout; tuning and evaluation on the new 39-day calendar are
+pending.
 
 Regenerated on **16 October 2026** with the adopted quarter-hour NN and **seed 42**. These are single-seed
 point estimates; the report does not estimate across-seed uncertainty.

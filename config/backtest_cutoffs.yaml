@@ -7,9 +7,9 @@
 #
 # development - every SELECTION decision: eex model tune, eex analyze aggregation / ablation /
 #   anchors / solar-*, and eex analyze eval / oracle when used as an adoption gate (their default).
-#   Keep it balanced: every calendar month, every weekday (Mon-Fri) plus weekends, a few German
-#   public holidays (atypical low-demand days), and two plain weekdays at the wind extremes (a
-#   near-calm day and the windiest in the span).
+#   Score the native quarter-hour price era, from 1 October 2025. The selected days cover every
+#   calendar month, weekdays, weekends, public holidays and a high-wind stress day. All four
+#   models use this same list; there is no minimum native-history age before a cutoff.
 #
 # holdout - REPORTING only: eex analyze eval --holdout / oracle --holdout. Nothing is ever tuned,
 #   ablated, aggregated, ranked or chosen on these days, which is what makes their MAE an honest
@@ -20,62 +20,9 @@
 #   2025 calendar year the weather anchors were ranked on - so they sit in 2026: two per month,
 #   January to September, balanced like the development set. October-December is not covered.
 #
-# The 92 development days combine 22 hand-picked stress days, 30 systematic days and
-# 40 randomly sampled confirmation days. All are selection data.
+# The 39 development dates are the native-price-era dates from the previous frozen calendar.
+# Training still includes all available history from 2023 before each cutoff.
 development:
-  - "2024-10-01"  # Tue
-  - "2024-10-11"  # Fri
-  - "2024-10-18"  # Fri
-  - "2024-10-29"  # Tue
-  - "2024-11-04"  # Mon
-  - "2024-11-21"  # Thu
-  - "2024-11-24"  # Sun (weekend)
-  - "2024-11-27"  # Wed
-  - "2024-12-08"  # Sun (weekend)
-  - "2024-12-12"  # Thu
-  - "2024-12-20"  # Fri
-  - "2024-12-23"  # Mon
-  - "2024-12-25"  # Wed - Erster Weihnachtstag
-  - "2025-01-01"  # Wed - Neujahr (New Year's Day)
-  - "2025-01-11"  # Sat (weekend)
-  - "2025-01-20"  # Mon
-  - "2025-01-23"  # Thu
-  - "2025-01-28"  # Tue
-  - "2025-02-14"  # Fri
-  - "2025-02-17"  # Mon
-  - "2025-02-20"  # Thu
-  - "2025-02-21"  # Fri
-  - "2025-02-28"  # Fri
-  - "2025-03-03"  # Mon
-  - "2025-03-08"  # Sat (weekend)
-  - "2025-03-19"  # Wed
-  - "2025-03-30"  # Sun (weekend)
-  - "2025-04-06"  # Sun (weekend)
-  - "2025-04-17"  # Thu
-  - "2025-04-23"  # Wed
-  - "2025-04-27"  # Sun (weekend)
-  - "2025-05-10"  # Sat (weekend)
-  - "2025-05-16"  # Fri
-  - "2025-05-21"  # Wed
-  - "2025-05-27"  # Tue
-  - "2025-06-14"  # Sat (weekend)
-  - "2025-06-21"  # Sat (weekend)
-  - "2025-06-30"  # Mon
-  - "2025-07-17"  # Thu
-  - "2025-07-19"  # Sat (weekend)
-  - "2025-07-22"  # Tue
-  - "2025-08-01"  # Fri
-  - "2025-08-03"  # Sun (weekend)
-  - "2025-08-05"  # Tue
-  - "2025-08-17"  # Sun (weekend)
-  - "2025-08-18"  # Mon - deliberate very-low-wind day (CF ~0.03, 1st pct)
-  - "2025-08-20"  # Wed
-  - "2025-08-23"  # Sat (weekend)
-  - "2025-08-24"  # Sun (weekend)
-  - "2025-08-29"  # Fri
-  - "2025-09-06"  # Sat (weekend)
-  - "2025-09-18"  # Thu
-  - "2025-09-23"  # Tue
   - "2025-10-03"  # Fri - Tag der Deutschen Einheit (German Unity Day)
   - "2025-10-10"  # Fri
   - "2025-10-17"  # Fri

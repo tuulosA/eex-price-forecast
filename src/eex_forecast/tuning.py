@@ -39,7 +39,6 @@ from eex_forecast.backtest_cutoffs import (
     DEV_CUTOFFS,
     cutoff_utc,
     horizon_end_utc,
-    native_price_development_cutoffs,
 )
 from eex_forecast.config import TUNING_DIR
 from eex_forecast.features import TIMESTAMP
@@ -403,8 +402,6 @@ def tune(
     small fresh search missed it. Scoring outside Optuna also supports defaults just beyond the search
     bounds, such as zero L1 regularisation.
     """
-    if spec.backend == "neural" and cutoffs == DEV_CUTOFFS:
-        cutoffs = native_price_development_cutoffs()
     data = _prepare(spec, frame)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     scope = f"[{spec.name}]"

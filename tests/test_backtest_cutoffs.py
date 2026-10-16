@@ -21,7 +21,6 @@ from eex_forecast.backtest_cutoffs import (
     holdout_days_within,
     horizon_end_utc,
     load_cutoff_sets,
-    native_price_development_cutoffs,
 )
 
 
@@ -43,28 +42,27 @@ def test_load_cutoff_sets_parses_yaml_into_the_frozen_tuples() -> None:
     assert len(DEV_CUTOFFS) >= 12 and len(HOLDOUT_CUTOFFS) >= 12
 
 
-def test_native_price_selection_days_are_development_only_with_sufficient_native_history() -> None:
-    selected = native_price_development_cutoffs()
+def test_development_scores_native_prices_including_the_early_transition() -> None:
     first = pd.Timestamp("2025-10-01", tz="Europe/Berlin").tz_convert("UTC")
-    assert selected
-    assert set(selected) <= set(DEV_CUTOFFS)
-    assert not set(selected) & set(HOLDOUT_CUTOFFS)
-    assert selected == tuple(
-        d for d in DEV_CUTOFFS if cutoff_utc(d) >= first + pd.Timedelta(days=90)
-    )
+    assert all(cutoff_utc(day) >= first for day in DEV_CUTOFFS)
+    assert not set(DEV_CUTOFFS) & set(HOLDOUT_CUTOFFS)
+    # Early native-price days are deliberate: no implicit 90-day training-history filter.
+    assert DEV_CUTOFFS[0] == "2025-10-03"
+    assert "2025-11-08" in DEV_CUTOFFS
+    assert "2025-12-25" in DEV_CUTOFFS
 
 
-def test_consolidated_sets_preserve_the_frozen_delivery_days() -> None:
-    """Flattening the former blocks must not silently change any benchmark's scored dates.
+def test_frozen_native_development_and_unchanged_holdout_dates() -> None:
+    """Keep the selected 39 native-price days and original 18 reporting days fixed.
 
-    These fingerprints were recorded from the merged sets before consolidation. An intentional
-    change to the frozen calendar must update them explicitly along with the benchmark scope.
+    The development fingerprint is the former 92-day set restricted to the native auction era.
+    The holdout fingerprint predates that restriction. Intentional calendar changes must update
+    these checks explicitly along with the benchmark scope.
     """
-    assert len(DEV_CUTOFFS) == 92
+    assert len(DEV_CUTOFFS) == 39
     assert len(HOLDOUT_CUTOFFS) == 18
-    assert len(native_price_development_cutoffs()) == 22
     assert hashlib.sha256("\n".join(DEV_CUTOFFS).encode()).hexdigest() == (
-        "bdfba81df87aed5619e1c2ca16f47d06000af4f97d80067bde630d289df13761"
+        "28c0943a901fd50c37e86861642d3449992f8cb6bd1f785fbe1fd731d22175c0"
     )
     assert hashlib.sha256("\n".join(HOLDOUT_CUTOFFS).encode()).hexdigest() == (
         "c5294e264521f432dffef0f47c6a6cddbcee2da43c427bccce3737553beeec52"

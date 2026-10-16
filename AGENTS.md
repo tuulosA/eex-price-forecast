@@ -180,7 +180,7 @@ docs/
   epoch count or tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
   has scored (it once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
 - **Selection uses development days; the holdout only reports.** `config/backtest_cutoffs.yaml`
-  has exactly two lists: `development` (92 dates; every choice: tuning, aggregation, ablation, anchors,
+  has exactly two lists: `development` (39 native-price-era dates; every choice: tuning, aggregation, ablation, anchors,
   solar tools, and the eval/oracle adoption gate) and `holdout` (18 dates; only
   `eex analyze eval --holdout` / `oracle --holdout`,
   writing `*_holdout.json`). Selection tools import only `DEV_CUTOFFS` and must never gain a cutoff
@@ -191,10 +191,10 @@ docs/
 - **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
   parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
-  Default price tuning uses `backtest_cutoffs.native_price_development_cutoffs` (currently 22 frozen
-  development days with at least 90 days of native price history), while fundamentals retain the full
-  development set. Training still retains 2023-onward history. Other analysis tools keep their stated
-  development scopes; do not describe a mixed-era score as native quarter-hour price skill.
+  All four models use the same 39 frozen development days in the native-price era, including the
+  early October 2025 transition. There is no implicit 90-day native-history filter. Training still
+  retains 2023-onward history. Existing 22-day reports are prior evidence, not results for the new
+  39-day calendar; do not relabel old scores without rerunning them.
 - **The adopted wind anchors are spatially selected, not the plain correlation top 20.**
   `config/weather_points.json` contains 20 German wind points with roughly 135 km minimum separation.
   Running `eex points rank --target wind` directly would replace them with the clustered correlation
