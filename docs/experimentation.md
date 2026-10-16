@@ -262,6 +262,23 @@ under-forecast in tight hours shrank. The report is `data/analysis/residual_load
 The first run (2026-10-02) found no reliable gain and no change in the bias; see the 2026-10-02
 decision in the [development record](history/model-development-before-neural-price.md#decision-history).
 
+## Wind installed-capacity input experiment
+
+The 16 October 2026 experiment compared production wind features against the same features plus
+forward-filled `wind_capacity_mw`. Both variants retained capacity-factor target scaling and the
+same tuned tree parameters. The shared walk-forward engine refitted the full configured tree count
+on all 92 development delivery days over five paired model seeds. It reported MAE, RMSE, bias,
+yearly slices and a paired-day bootstrap. Parameters were not retuned, the holdout was not evaluated,
+and production features and saved models were unchanged.
+
+Both variants used two CPU threads per fit. XGBoost's stochastic fits also depend on that count,
+so compare the paired variants within this report rather than subtracting a published benchmark
+obtained with another thread count or seed list. The report records `n_jobs` alongside the seeds.
+
+The summary at `data/analysis/wind_capacity_experiment.json` records the parameters, feature names,
+seeds, cutoffs and per-day errors. Scores average delivery days equally before averaging seeds.
+The extra feature was not adopted; see the [development record](model-development.md) for findings.
+
 ## Ablation
 
 Ablation removes selected features and measures the loss:

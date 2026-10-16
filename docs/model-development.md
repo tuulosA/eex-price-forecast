@@ -1,6 +1,6 @@
 # Model development and current decisions
 
-Last updated: **2026-10-15**.
+Last updated: **2026-10-16**.
 
 The operational price model is a **single-area neural network for Germany**. Wind, solar and load
 remain XGBoost models. There is no price-backend option, tree fallback, output smoothing or peak-price
@@ -48,6 +48,35 @@ their prediction mean did not improve MAE.
 On the study's October forecast period, the raw NN had 66 reversals versus 91 for the former tree
 model. These were forecasts, so that comparison measures shape, not multi-day accuracy. See the
 [research summary](../data/analysis/price_profile_experiment_summary.json).
+
+## Wind installed-capacity input experiment
+
+On 16 October 2026, a matched experiment added `wind_capacity_mw` as one extra wind input. Both
+variants retained capacity-factor target scaling, the 20 production wind anchors and the adopted
+700-tree parameters. It scored all 92 development days over five paired seeds with two CPU threads
+per fit; parameters were not retuned. The holdout was not evaluated and production is unchanged.
+
+| Metric | Production features | Plus capacity input |
+|---|---:|---:|
+| Mean MAE | 1,439.66 MW | 1,432.70 MW |
+| Mean daily RMSE | 1,817.57 MW | 1,806.10 MW |
+| Mean signed bias (forecast minus actual) | +104.35 MW | +11.26 MW |
+| 2024 MAE (13 days) | 1,458.57 MW | 1,448.66 MW |
+| 2025 MAE (57 days) | 1,356.11 MW | 1,339.06 MW |
+| 2026 MAE (22 days) | 1,644.95 MW | 1,665.88 MW |
+
+The average MAE gain was **6.96 MW (0.48%)**. All five seeds improved, by 2.95-10.16 MW, but the
+candidate won only **44 of 92 days**. The paired-day 90% interval for candidate minus baseline MAE
+was **-33.18 to +18.92 MW**, spanning improvement and regression. The better global bias did not
+translate into consistent day-level gains, and 2026 MAE increased by 20.93 MW.
+
+This is insufficient evidence to adopt the extra feature. Wind continues to use installed capacity
+for target normalization and MW reconstruction, without taking it as an input. The result does not
+rule out a benefit after retuning, but no downstream price gain has been established. These are
+experimental five-seed scores, not replacements for the operational benchmarks below: XGBoost's
+stochastic fits also change with thread count. See the
+[report](../data/analysis/wind_capacity_experiment.json) and
+[comparison method](experimentation.md#wind-installed-capacity-input-experiment).
 
 ## Current benchmarks
 
