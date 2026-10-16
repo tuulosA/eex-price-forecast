@@ -22,6 +22,7 @@ from eex_forecast.backtest_cutoffs import (
     holdout_days_within,
     horizon_end_utc,
     load_cutoff_sets,
+    native_price_development_cutoffs,
 )
 
 
@@ -41,6 +42,17 @@ def test_load_cutoff_sets_parses_yaml_into_the_frozen_tuples() -> None:
     assert loaded.holdout == HOLDOUT_CUTOFFS
     assert CUTOFF_SETS == {DEVELOPMENT: DEV_CUTOFFS, HOLDOUT: HOLDOUT_CUTOFFS}
     assert len(DEV_CUTOFFS) >= 12 and len(HOLDOUT_CUTOFFS) >= 12
+
+
+def test_native_price_selection_days_are_development_only_with_sufficient_native_history() -> None:
+    selected = native_price_development_cutoffs()
+    first = pd.Timestamp("2025-10-01", tz="Europe/Berlin").tz_convert("UTC")
+    assert selected
+    assert set(selected) <= set(DEV_CUTOFFS)
+    assert not set(selected) & set(HOLDOUT_CUTOFFS)
+    assert selected == tuple(
+        d for d in DEV_CUTOFFS if cutoff_utc(d) >= first + pd.Timedelta(days=90)
+    )
 
 
 def test_development_is_the_core_set_plus_the_systematic_extra_days() -> None:

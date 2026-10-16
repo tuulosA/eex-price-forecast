@@ -160,3 +160,16 @@ def horizon_end_utc(delivery_day: str, days: int) -> pd.Timestamp:
     """
     local_start = pd.Timestamp(f"{delivery_day} 00:00", tz=MARKET_TIMEZONE)
     return pd.Timestamp(local_start + pd.DateOffset(days=days)).tz_convert("UTC")
+
+
+def native_price_development_cutoffs() -> tuple[str, ...]:
+    """Frozen development days with 90 days of native quarter-hour price training history.
+
+    Historical hourly labels remain useful training data, but scoring a quarter-hour price retune on
+    mostly legacy flat hourly targets would optimise a different product. The eligibility rule is
+    time-based, independent of errors, and reads development days only. Fundamental tuning continues
+    to use the full development set; the reporting holdout is never filtered into selection.
+    """
+    first = pd.Timestamp("2025-10-01", tz=MARKET_TIMEZONE).tz_convert("UTC")
+    minimum = first + pd.Timedelta(days=90)
+    return tuple(day for day in DEV_CUTOFFS if cutoff_utc(day) >= minimum)

@@ -70,12 +70,19 @@ def test_eval_horizon_is_one_day() -> None:
 def test_quarter_hour_chain_scores_dst_day_and_reports_price_eras() -> None:
     frame = _hourly_frame("2025-09-01", "2025-11-02", freq="15min")
     cutoffs = ("2025-09-29", "2025-10-02", "2025-10-26")
-    result = run_evaluation(frame, params_by_model=FAST_PARAMS, cutoffs=cutoffs)
+    shape_params = {
+        **FAST_PARAMS,
+        "price": {**FAST_PARAMS["price"], "native_price_weight": 4, "intrahour_ramp_weight": 0.25},
+    }
+    result = run_evaluation(frame, params_by_model=shape_params, cutoffs=cutoffs)
     for evaluated in result.models:
         assert [fold["test_rows"] for fold in evaluated.folds] == [96, 96, 100]
     assert result.report["config"]["interval_minutes"] == 15
     assert result.report["price_resolution_summary"]["legacy_hourly_prices"]["n_days"] == 1
     assert result.report["price_resolution_summary"]["native_15min_prices"]["n_days"] == 2
+    assert result.report["price_shape_summary"]["seed"] == 42
+    assert result.report["price_shape_summary"]["n_days"] == 2
+    assert "inside_hour_ramp_mae" in result.report["price_shape_summary"]["mean"]
 
 
 def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
@@ -97,6 +104,7 @@ def test_run_evaluation_reports_the_complete_chain_in_the_existing_shape(
         "config",
         "models",
         "price_resolution_summary",
+        "price_shape_summary",
     ]
     assert list(result.report["summary"]) == list(ALL_MODELS)
     assert result.report["config"]["n_cutoffs"] == 2

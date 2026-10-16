@@ -1,6 +1,6 @@
 # Model development and current decisions
 
-> **15-minute development branch.** The adopted architecture is retained, with fractional-hour calendars, interpolated hourly weather and a price-resolution regime input. Existing research and benchmark values on this page describe the hourly baseline. Quarter-hour calibration and validation are separate; see [the migration guide](../QUARTER_HOURLY.md).
+> **15-minute development branch.** Price now uses explicit quarter/hour calendar interactions and supervised within-hour changes. The quarter-hour adoption evidence below is separate from the historical hourly studies. See [the migration guide](../QUARTER_HOURLY.md) for data and artifact contracts.
 
 Last updated: **2026-10-16**.
 
@@ -9,6 +9,8 @@ remain XGBoost models. There is no price-backend option, tree fallback, output s
 scaler. Public commands and forecast columns retain their existing meanings.
 
 ## Quarter-hour price-shape screen (16 October 2026)
+
+This initial screen preceded the adopted training-objective update in the following section.
 
 The initial quarter-hour forecast is too smooth within many hours. This is model behaviour, not
 interpolated price output: saved prices match direct NN predictions. About 72.5% of the latest training
@@ -50,14 +52,62 @@ the missing detail at this training budget either. **No price feature or trainin
 adopted from this screen.** Further work should test native-quarter feature/loss tuning jointly, with
 several seeds and forecast fundamentals, before claiming an improvement.
 
+## Quarter-hour price-shape adoption (16 October 2026)
+
+The follow-up retained the single DE network and added 11 calendar inputs: centred quarter indicators,
+a linear position within the hour, and its interactions with three daily sine/cosine harmonics. All
+are zero in the legacy hourly-price regime. The 50-input production matrix retains every earlier
+driver; regional weather inputs and fundamental models are unchanged.
+
+Training now minimises price MAE plus **0.25 times supervised within-hour change MAE**. Only genuine
+adjacent native-price quarters inside the same hour supply ramp labels. Missing observations, gaps,
+hour boundaries and legacy hourly targets never become ramp pairs. The loss rewards the observed
+upward or downward change, including large changes; it does not reward flat predictions. Training
+timestamps are passed separately and never become network inputs. Native-price weighting was tested
+at four, but **the adopted weight is one**: the full 2023-onward price history is retained unchanged.
+
+A six-day development grid compared the phase inputs alone, native weighting, and ramp weights
+0.25/1.0. The selected configuration was then scored on all 22 eligible native development days;
+eight non-screen days were also checked with three price seeds (42, 1055, 2068). These are development
+comparisons, not fresh holdout days. The three fundamental forecasts were freshly fitted for each
+day and held identical across price variants; additional seeds vary price only. Two folds verified
+exact feature parity with the canonical hidden-actual evaluation. See the
+[complete adoption report](../data/analysis_15min/quarter_price_adoption_experiment.json).
+
+| End-to-end metric (EUR/MWh) | Previous NN | Adopted NN |
+|---|---:|---:|
+| Price MAE, 22 days / seed 42 | 16.18 | 15.19 |
+| All quarter-to-quarter change MAE | 7.56 | 6.23 |
+| Within-hour change MAE | 5.91 | 5.36 |
+| Hour-centred shape MAE | 5.48 | 4.71 |
+| Predicted mean absolute within-hour change | 3.81 | 7.70 |
+| Price MAE, eight days / three seeds | 14.19 | 12.18 |
+| Within-hour change MAE, eight days / three seeds | 5.43 | 4.80 |
+
+Observed mean absolute within-hour change on the 22 days is **8.36 EUR/MWh**. The paired-day 90%
+interval for the price-MAE difference is **[-2.33, +0.32]**, so that mean improvement remains uncertain.
+The within-hour change-error interval is **[-0.92, -0.19]** and the hour-centred shape-error interval
+is **[-1.20, -0.37]**. The eight-day, three-seed price difference is **[-4.16, -0.30]** and its
+within-hour change difference is **[-1.02, -0.27]**. This supports the learned quarter-hour detail
+without claiming every observed fluctuation is predictable. Selection was locked before the reporting
+holdout was run.
+
+![Matched quarter-hour development forecasts](../data/analysis_15min/quarter_price_adoption.png)
+
+This was targeted feature/loss tuning, not a new search over every width, epoch and optimizer
+parameter. The architecture and optimizer settings below remain those transferred from the hourly
+baseline. Future price retunes score the same fixed native-era development subset and keep the
+incumbent safeguard; inspect their price-shape metrics and confirm with forecast fundamentals.
+
 ## Adopted price model
 
 The network has two 64-unit SiLU hidden layers and a linear output. It fits exactly 40 epochs with
-AdamW/MAE, batch size 512, learning rate 0.0015317709628184257, weight decay
+AdamW and the price-plus-observed-ramp objective above, batch size 512,
+learning rate 0.0015317709628184257, weight decay
 0.0000011527987128232402, no dropout, seed 42 and four CPU threads. The authoritative parameters are
-the `price` entry in [hyperparams_15min.json](../config/hyperparams_15min.json). These are initial
-quarter-hour parameters copied from the hourly [adoption record](../data/tuning/price_adoption.json),
-not the result of quarter-hour tuning.
+the `price` entry in [hyperparams_15min.json](../config/hyperparams_15min.json). Architecture/optimizer
+provenance is the hourly [adoption record](../data/tuning/price_adoption.json); quarter-hour feature/loss
+provenance is the adoption report above.
 
 Inputs retain the raw/cyclic calendar, weekly price lag, German weather aggregates, wind/solar/load,
 neighbour wind, French nuclear availability and per-border import capacity. This is one DE target
@@ -71,11 +121,15 @@ may be negative. There is no early stopping or temporal operation on predicted p
 
 Training, tuning, ablation, aggregation, evaluation, oracle diagnostics and weather-ensemble members
 share the estimator factory and prediction contract. Price state is numeric arrays plus versioned
-metadata in `data/models_15min/price.npz`; `price.meta.json` checks feature order, backend and resolution. Legacy
+metadata in `data/models_15min/price.npz`; `price.meta.json` checks feature order, backend, resolution
+and price feature version 2. Pre-shape-update quarter-hour models require retraining too. Legacy
 `price.json` is never loaded. Fundamentals retain native XGBoost JSON. Retrain after feature or
 parameter changes.
 
 ## Adoption evidence and trade-off
+
+**Historical hourly adoption.** This section describes the earlier tree-to-NN migration, not the
+quarter-hour feature/loss choice above.
 
 The intrinsic-profile study screened 15 configurations and compared a fixed NN and shallow-tree
 comparator on all 92 development days with matched upstream forecasts. The NN reduced normalized
@@ -126,14 +180,16 @@ stochastic fits also change with thread count. See the
 ## Current benchmarks
 
 <!-- current-benchmarks:start -->
-Historical hourly baseline, regenerated on **15 October 2026** using seed 42. Quarter-hour validation is separate.
+Quarter-hour chain, regenerated on **16 October 2026** using seed 42. Development here is the fixed
+22-day native-price subset, not the full mixed-era 92 days. Historical hourly scores are in
+[RESULTS.md](../RESULTS.md).
 
-| Model | Development MAE (92 days) | Holdout MAE (18 days) | Holdout RMSE |
+| Model | Development MAE (22 native days) | Holdout MAE (18 days) | Holdout RMSE |
 |---|---:|---:|---:|
-| Wind | 1,431.56 MW | 1,793.42 MW | 2,179.38 MW |
-| Solar | 645.53 MW | 817.07 MW | 1,423.09 MW |
-| Load | 1,746.90 MW | 2,018.92 MW | 2,304.68 MW |
-| Price | 17.07 EUR/MWh | 27.22 EUR/MWh | 41.67 EUR/MWh |
+| Wind | 1,596.82 MW | 1,779.30 MW | 2,161.77 MW |
+| Solar | 921.83 MW | 773.99 MW | 1,345.86 MW |
+| Load | 1,586.16 MW | 1,808.12 MW | 2,089.67 MW |
+| Price | 15.19 EUR/MWh | 26.78 EUR/MWh | 41.58 EUR/MWh |
 <!-- current-benchmarks:end -->
 
 Development days select changes; the 18 holdout days report the already adopted configuration and
@@ -144,10 +200,10 @@ they establish no 14-day accuracy claim.
 
 ## Diagnostics and explanations
 
-The [development eval](../data/evaluation/model_eval.json) and
-[holdout eval](../data/evaluation/model_eval_holdout.json) accompany the day panels.
-[Development oracle](../data/evaluation/oracle_substitution.json) and
-[holdout oracle](../data/evaluation/oracle_substitution_holdout.json) isolate the downstream effects of
+The [development eval](../data/evaluation_15min/model_eval.json) and
+[holdout eval](../data/evaluation_15min/model_eval_holdout.json) accompany the quarter-hour day panels.
+[Development oracle](../data/evaluation_15min/oracle_substitution.json) and
+[holdout oracle](../data/evaluation_15min/oracle_substitution_holdout.json) isolate the downstream effects of
 forecast fundamentals. `forecast_all` matches eval for the same inputs and seed. Signed deltas from
 `all_actual` are non-additive and can be negative through error cancellation.
 
@@ -156,13 +212,14 @@ with missingness flags cleared. Value and missingness contributions are combined
 Gauss-Legendre integration uses 64 points, with a 128-point retry when the completeness residual is
 above 0.01 EUR/MWh. The residual is logged rather than redistributed. This is approximate neural
 attribution, not TreeSHAP. Fundamentals retain exact TreeSHAP. Neither method establishes causes.
-See [RESULTS](../RESULTS.md) for current figures and interpretation. The
-[operational validation record](../data/analysis/price_nn_operational_validation.json) checks saved
-CSV prices against direct NN predictions and verifies database and hourly-coverage consistency.
+See [quarter-hour results](../RESULTS_15MIN.md) for current figures and interpretation. The
+[operational audit](../data/analysis_15min/quarter_price_operational_experiment.json) checks saved
+CSV prices against direct NN predictions and verifies preservation of actuals. The older
+[hourly validation record](../data/analysis/price_nn_operational_validation.json) remains historical.
 
 ## Next work
 
-- Reduce price level/extreme-regime errors while retaining the continuous response.
+- Reduce price level/extreme-regime errors while retaining learned quarter-hour structure.
 - Compare changes on development days against the adopted NN, keeping forecast fundamentals matched.
   Price tuning is conditional on actual historical fundamentals; adoption also needs end-to-end eval.
 - Keep fundamental models and weather selections fixed unless controlled experiments justify changes.

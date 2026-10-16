@@ -1,6 +1,6 @@
 # Experimentation and evaluation
 
-> This branch scores quarter-hour forecasts. Older experiment findings and benchmark tables below describe the hourly baseline. Parameters in `config/hyperparams_15min.json` start from that baseline and need development tuning; see [the migration guide](../QUARTER_HOURLY.md).
+> This branch scores quarter-hour forecasts. Older benchmark tables below describe the hourly baseline. Price has development-selected quarter-hour inputs and ramp supervision; fundamental settings remain transferred from the hourly baseline. See [the migration guide](../QUARTER_HOURLY.md).
 
 This guide is the command and methodology reference for developing `eex-price-forecast`. For the
 shortest path to a working forecast, start with the [README](../README.md). For the record of completed
@@ -14,8 +14,8 @@ more jagged curve from being treated as an accuracy gain by itself.
 
 ## Rebuilding the modelling choices
 
-The repository commits a working set of weather points and initial quarter-hour parameters copied
-from the tuned hourly baseline. You do not need this section merely to run the forecast. Use it when
+The repository commits a working set of weather points and quarter-hour price parameters; fundamental
+settings are copied from the tuned hourly baseline. You do not need this section merely to run the forecast. Use it when
 you want to regenerate candidates, choose different anchors, or tune the models yourself.
 
 Building from empty is ordered because each stage feeds the next:
@@ -118,14 +118,19 @@ Price is always the DE-only NN; wind, solar and load remain XGBoost. PyTorch is 
 base package. `eex model train --target price` fits the same two-layer SiLU architecture used by live
 prediction, ensemble members and every price analysis. There is no backend flag or tree fallback.
 
-The adopted price parameters specify 64 units per layer, 40 fixed epochs, batch 512, AdamW/MAE,
+The adopted price parameters specify 64 units per layer, 40 fixed epochs, batch 512, AdamW,
 learning rate 0.0015317709628184257, weight decay 0.0000011527987128232402, no dropout and seed 42.
 Train-only median imputation and standardization are paired with missingness indicators. The target
 uses training median/IQR scaling. The existing weekly-lag mask runs before preprocessing. Negative
 prices are allowed; neither temporal smoothing nor price scaling is applied to predictions.
+Price MAE is combined with supervised native within-hour changes at weight 0.25. Native price-row
+weight remains 1.0. Training timestamps identify genuine pairs across retained rows; they never enter
+the network. [The adoption record](model-development.md#quarter-hour-price-shape-adoption-16-october-2026)
+defines the quarter inputs, grid comparison and matched development checks.
 
 State, preprocessing, parameters and feature order are stored numerically in `data/models_15min/price.npz`.
-`price.meta.json` checks its backend and feature order. A stale `price.json` is not a usable price
+`price.meta.json` checks backend, feature order, interval resolution and price feature version 2.
+A pre-update quarter-hour snapshot must be retrained. A stale `price.json` is not a usable price
 artifact. Existing installations must reinstall the package and retrain; changing parameters or
 features also requires retraining.
 
@@ -135,10 +140,14 @@ eex model train --target price
 eex model tune --target price --trials 12
 ```
 
-Price tuning searches NN width, epochs, batch size, learning rate, weight decay and dropout, using
-fixed seed 42 and four CPU threads. It preserves the current parameters unless a fresh trial wins on
-the same development folds. Price tuning/ablation remain conditional on actual fundamentals; use
-end-to-end evaluation before adopting changes.
+Price tuning searches NN width, epochs, batch size, learning rate, weight decay, dropout, native price
+weight and within-hour ramp weight, using fixed seed 42 and four CPU threads. Its default score is
+price MAE on the fixed development days with at least 90 days of native price history (currently 22);
+fundamental tuning retains all 92 development days. The price training history still begins in 2023.
+It preserves the current parameters unless a fresh trial wins on the same folds. Native price folds
+also report `price_shape` metrics: amplitude, ramp errors and complete-hour shape error. Other analysis
+commands keep their documented development scopes. Price tuning/ablation remain conditional on
+actual fundamentals; use end-to-end evaluation and shape diagnostics before adopting changes.
 
 The [intrinsic-profile study](../data/analysis/price_profile_experiment_summary.json) is dated
 research evidence. Its former tree incumbent is historical, not an operational choice. The old `price-models` command is
@@ -339,19 +348,21 @@ costs nothing extra; rerun it after a model change to see whether a systematic e
 errors are hour-weighted, so they can differ from the day-averaged headline in the third decimal.
 
 <!-- evaluation-benchmarks:start -->
-Historical hourly baseline, regenerated on **15 October 2026** using seed 42. Quarter-hour validation is separate.
+Quarter-hour chain, regenerated on **16 October 2026** using seed 42. Development here is the fixed
+22-day native-price subset, not the full mixed-era 92 days. The hourly baseline remains in
+[RESULTS.md](../RESULTS.md).
 
-| Model | Development MAE (92 days) | Holdout MAE (18 days) | Holdout RMSE |
+| Model | Development MAE (22 native days) | Holdout MAE (18 days) | Holdout RMSE |
 |---|---:|---:|---:|
-| Wind | 1,431.56 MW | 1,793.42 MW | 2,179.38 MW |
-| Solar | 645.53 MW | 817.07 MW | 1,423.09 MW |
-| Load | 1,746.90 MW | 2,018.92 MW | 2,304.68 MW |
-| Price | 17.07 EUR/MWh | 27.22 EUR/MWh | 41.67 EUR/MWh |
+| Wind | 1,596.82 MW | 1,779.30 MW | 2,161.77 MW |
+| Solar | 921.83 MW | 773.99 MW | 1,345.86 MW |
+| Load | 1,586.16 MW | 1,808.12 MW | 2,089.67 MW |
+| Price | 15.19 EUR/MWh | 26.78 EUR/MWh | 41.58 EUR/MWh |
 <!-- evaluation-benchmarks:end -->
 
 Current reports identify each model's backend and recorded seed list. The figures show the first
-seed; `std_mae = 0` for a one-seed run does not establish zero model uncertainty. The 92 development
-days include selection data; the 18 holdout days report an already adopted configuration. Neither
+seed; `std_mae = 0` for a one-seed run does not establish zero model uncertainty. Development results
+include selection data; the 18 holdout days report an already adopted configuration. Neither
 result guarantees live 14-day accuracy. Earlier price benchmarks and their frozen evidence are
 [archived](history/model-development-before-neural-price.md).
 
@@ -406,7 +417,8 @@ IG and fundamental axes SHAP. The figures describe associations learned by the m
 
 The window includes the weekly lag on historical rows, so lag importance describes its available
 regime rather than the second forecast week. Fundamental non-negative clamps and the solar-darkness
-override remain outside the additive explanation. See [RESULTS](../RESULTS.md) for current figures.
+override remain outside the additive explanation. See [quarter-hour results](../RESULTS_15MIN.md)
+for current figures and [RESULTS](../RESULTS.md) for the historical hourly explanations.
 
 ## Solar diagnostics
 

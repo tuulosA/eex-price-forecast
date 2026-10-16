@@ -67,6 +67,7 @@ src/eex_forecast/
   features.py          # pure feature blocks + per-model builders; WEATHER_AGG + weather_strategy_block
   model.py             # ModelSpec registry + shared NN/tree factory; train/predict/persist
   price_nn.py          # operational DE price NN, preprocessing, numeric persistence and attribution
+  price_metrics.py     # native quarter-hour ramp amplitude/error and complete-hour shape diagnostics
   resolution.py        # 15-minute grid and bounded hourly-weather interpolation
   migration.py         # read-only hourly input seeding, excluding all old targets/forecasts
   backtest_cutoffs.py  # frozen development/holdout cutoffs + DST delivery-day window helpers
@@ -169,6 +170,12 @@ docs/
   `model.make_estimator` and `seeded_params` (NN `seed`, tree `random_state`). Neural preprocessing
   fits on train rows after lag masking; negative prices remain possible and outputs are never
   temporally smoothed. `price.npz` is required; `price.json` cannot satisfy price loading.
+  Quarter-hour price uses regime-gated quarter/hour interactions and price MAE plus supervised
+  within-hour ramp MAE (adopted weight 0.25; native price-row weight 1). Every fitting path must call
+  `model.fit_estimator` with aligned delivery timestamps: only genuine adjacent native quarters inside
+  one hour supply ramp targets, never gaps, legacy hourly prices or hour boundaries. Timestamps are
+  metadata, not model inputs. Price sidecars require feature version 2; older quarter-hour snapshots
+  must be retrained too.
   `model._fit` does not early-stop; its
   chronological validation slice only feeds logged metrics. Every walk-forward tool fits the configured
   epoch count or tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
@@ -184,6 +191,10 @@ docs/
 - **A retune must not regress the incumbent on the same cutoffs.** The CLI passes the currently configured
   parameters to `tuning.tune`, which scores them outside Optuna and keeps them unless a fresh trial is
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
+  Default price tuning uses `backtest_cutoffs.native_price_development_cutoffs` (currently 22 frozen
+  development days with at least 90 days of native price history), while fundamentals retain the full
+  development set. Training still retains 2023-onward history. Other analysis tools keep their stated
+  development scopes; do not describe a mixed-era score as native quarter-hour price skill.
 - **The adopted wind anchors are spatially selected, not the plain correlation top 20.**
   `config/weather_points.json` contains 20 German wind points with roughly 135 km minimum separation.
   Running `eex points rank --target wind` directly would replace them with the clustered correlation
@@ -239,7 +250,8 @@ Geometry generation and point ranking are needed only when rebuilding the commit
 Documentation is part of the behavior being changed. Keep these sources aligned in the same change:
 
 - `RESULTS.md` explains the holdout day plots and IG/TreeSHAP figures to a non-specialist reader. Keep its
-  figures, numbers, and readings in step with the committed images when they are regenerated.
+  historical hourly figures and numbers aligned. `RESULTS_15MIN.md` owns the current quarter-hour
+  development comparison, reporting holdout and price-shape figures.
 - `README.md` is the concise, forward-facing entry point: installation, minimum setup, routine use,
   forecast outputs, and headline evaluation.
 - `ENSEMBLE.md` owns the ensemble figure walkthrough, user commands and interpretation limits.

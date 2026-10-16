@@ -517,7 +517,8 @@ def analyze_shap(
         unit = result.unit
         summary = ", ".join(f"{family} {value:,.1f}" for family, value in top.items())
         typer.echo(
-            f"{result.method} {name:<5} ({len(result.values):,} h, mean absolute attribution {unit}): {summary}"
+            f"{result.method} {name:<5} ({len(result.values):,} intervals, "
+            f"mean absolute attribution {unit}): {summary}"
         )
         typer.echo(f"  plot -> {path}")
 

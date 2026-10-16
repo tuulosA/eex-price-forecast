@@ -735,6 +735,35 @@ def ntc_import_total(frame: pd.DataFrame) -> pd.Series:
     return total
 
 
+def price_market_features(timestamps: pd.Series) -> pd.DataFrame:
+    """Expose the native market's within-hour position without teaching it from legacy flat labels.
+
+    Fractional delivery hour is a smooth daily clock. Explicit quarter phase resets each hour, so a
+    small continuous NN can learn the repeated intrahour pattern without approximating 24 separate
+    discontinuities. Gating these inputs at the known auction transition preserves the older hourly
+    regime. Interactions with daily harmonics let the direction vary through the day; they contain
+    only known calendar information, never prices or forecast output transformations.
+    """
+    times = pd.to_datetime(timestamps, utc=True)
+    market = times.dt.tz_convert(MARKET_TIMEZONE)
+    native = (times >= pd.Timestamp("2025-10-01", tz=MARKET_TIMEZONE).tz_convert("UTC")).astype(
+        float
+    )
+    quarter = market.dt.minute // 15
+    phase = (quarter - 1.5) * native
+    columns = {"price_native_15min": native, "native_quarter_phase": phase}
+    for position in range(4):
+        columns[f"native_quarter_{position}"] = (
+            (quarter == position).astype(float) - 0.25
+        ) * native
+    hour = market.dt.hour + market.dt.minute / 60.0
+    for harmonic in (1, 2, 3):
+        angle = 2 * np.pi * harmonic * hour / 24
+        columns[f"quarter_hour_sin_{harmonic}"] = phase * np.sin(angle)
+        columns[f"quarter_hour_cos_{harmonic}"] = phase * np.cos(angle)
+    return pd.DataFrame(columns, index=timestamps.index)
+
+
 def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
     """Price drivers excluding the cross-border wind block: calendar + price lags + weather means +
     fundamentals + nuclear availability + per-border import transfer capacity."""
@@ -742,15 +771,7 @@ def _price_base(frame: pd.DataFrame) -> pd.DataFrame:
         [
             calendar_features(frame[TIMESTAMP]),
             price_lags(frame),
-            pd.DataFrame(
-                {
-                    "price_native_15min": (
-                        pd.to_datetime(frame[TIMESTAMP], utc=True)
-                        >= pd.Timestamp("2025-10-01", tz=MARKET_TIMEZONE).tz_convert("UTC")
-                    ).astype(float)
-                },
-                index=frame.index,
-            ),
+            price_market_features(frame[TIMESTAMP])[["price_native_15min"]],
             weather_means(frame, PRICE_WEATHER_ROLES),
             fundamentals(frame),
             nuclear_feature(frame),
@@ -835,7 +856,14 @@ def price_features_with_neighbours(
     ``none`` gives the base feature set (no neighbour wind); :func:`price_features` is this with the
     adopted :data:`PRICE_NEIGHBOUR_STRATEGY`. Used by the neighbour aggregation to A/B the aggregations.
     """
-    return pd.concat([_price_base(frame), neighbour_wind_block(frame, neighbour_strategy)], axis=1)
+    return pd.concat(
+        [
+            _price_base(frame),
+            neighbour_wind_block(frame, neighbour_strategy),
+            price_market_features(frame[TIMESTAMP]).drop(columns="price_native_15min"),
+        ],
+        axis=1,
+    )
 
 
 # -- residual load (an experimental price-model feature block) --------------------

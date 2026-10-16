@@ -218,3 +218,25 @@ def test_neural_tuning_preserves_incumbent_without_tree_parameters(
     assert result.params["hidden"] == NN_TINY["hidden"]
     assert all("seed" in params and "random_state" not in params for params in seen)
     assert all("n_estimators" not in params for params in seen)
+
+
+@pytest.mark.parametrize("name", ["price", "wind"])
+def test_default_tuning_uses_native_price_days_only_for_price(
+    name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from eex_forecast.backtest_cutoffs import DEV_CUTOFFS, native_price_development_cutoffs
+
+    expected = native_price_development_cutoffs() if name == "price" else DEV_CUTOFFS
+    seen = []
+
+    def score(spec, data, params, cutoffs, days):
+        seen.append(cutoffs)
+        return 0.0
+
+    monkeypatch.setattr(tuning_ops, "_score", score)
+    monkeypatch.setattr(tuning_ops, "_fold_metrics", lambda *a: ([], 0.0, 0.0))
+    params = NN_TINY if name == "price" else TINY
+    result = tune(REGISTRY[name], make_timeseries(periods=48), n_trials=1, incumbent_params=params)
+    assert seen and all(cutoffs == expected for cutoffs in seen)
+    assert result.cutoffs == expected
+    assert result.report["config"]["n_cutoffs"] == len(expected)

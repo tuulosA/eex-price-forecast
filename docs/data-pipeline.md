@@ -67,6 +67,11 @@ The relevant ENTSO-E publications include:
 Database timestamps are UTC and use a 15-minute delivery grid; weather samples retain their hourly source timestamps. Calendar features are derived after conversion to
 `Europe/Berlin`, so hour, weekday, weekend, month, and German public holidays follow the market's civil
 time across local midnight and daylight-saving transitions.
+Price also receives explicit quarter-within-hour inputs and daily-clock interactions, gated at the
+known transition to native quarter-hour prices. These are deterministic calendar features, not
+interpolated price outputs. The [model-development record](model-development.md#quarter-hour-price-shape-adoption-16-october-2026)
+owns their training objective and adoption evidence. Price feature version 2 requires retraining
+even when an older snapshot already has a 15-minute resolution tag.
 
 The live horizon is anchored to the last published German day-ahead price:
 

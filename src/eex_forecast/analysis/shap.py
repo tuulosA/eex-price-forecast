@@ -30,6 +30,7 @@ from eex_forecast.features import (
     TIMESTAMP,
     WEATHER_AGGREGATES,
     calendar_features,
+    price_market_features,
     solar_azimuth_features,
     solar_geometry_features,
 )
@@ -61,7 +62,9 @@ _FUNDAMENTAL_FAMILIES: dict[str, str] = {
     "load": "load",
 }
 _PROBE = pd.Series(pd.to_datetime(["2025-06-01 12:00"], utc=True))
-_CALENDAR = frozenset(calendar_features(_PROBE).columns)
+_CALENDAR = frozenset(calendar_features(_PROBE).columns) | frozenset(
+    price_market_features(_PROBE).columns
+)
 _GEOMETRY = frozenset(solar_geometry_features(_PROBE).columns) | frozenset(
     solar_azimuth_features(_PROBE).columns
 )

@@ -14,7 +14,13 @@ import pytest
 
 from eex_forecast.backtest_cutoffs import cutoff_utc, horizon_end_utc
 from eex_forecast.db import connect, read_frame, write_frame
-from eex_forecast.features import calendar_features, price_features, price_lags, weather_means
+from eex_forecast.features import (
+    calendar_features,
+    price_features,
+    price_lags,
+    price_market_features,
+    weather_means,
+)
 from eex_forecast.migration import seed_from_hourly
 from eex_forecast.resolution import FREQUENCY, STEP, interpolate_hourly, quarter_grid
 from eex_forecast.sources import entsoe
@@ -30,6 +36,28 @@ def test_weather_interpolation_preserves_samples_and_does_not_bridge_gaps() -> N
     assert result.loc[hours[1] + STEP, "temp"] == 5.0
     assert result.loc[hours[1] + STEP : hours[3] - STEP, "wind"].isna().all()
     assert result.iloc[[0, -1]].isna().all().all()
+
+
+def test_price_quarter_features_reset_each_hour_and_exclude_legacy_regime() -> None:
+    times = pd.Series(
+        pd.to_datetime(
+            [
+                "2025-09-30T21:45Z",
+                "2025-09-30T22:00Z",
+                "2025-09-30T22:15Z",
+                "2025-09-30T22:30Z",
+                "2025-09-30T22:45Z",
+                "2025-09-30T23:00Z",
+            ]
+        ),
+        index=[10, 20, 30, 40, 50, 60],
+    )
+    result = price_market_features(times)
+    assert result.index.equals(times.index)
+    assert (result.loc[10] == 0).all()
+    assert result.native_quarter_phase.tolist() == [0, -1.5, -0.5, 0.5, 1.5, -1.5]
+    assert result.native_quarter_0.tolist() == [0, 0.75, -0.25, -0.25, -0.25, 0.75]
+    assert np.isfinite(result.to_numpy()).all()
 
 
 def test_wide_ensemble_interpolation_does_not_fragment_the_frame() -> None:

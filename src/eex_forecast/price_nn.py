@@ -5,6 +5,12 @@ training-only feature/target scaling and explicit missingness indicators. It con
 production price feature matrix. In particular, missing weekly lags must remain distinguishable from
 ordinary prices after imputation. The shared training lag mask is applied before fitting preprocessing.
 
+The quarter-hour objective combines price MAE with supervised changes between adjacent native
+quarters inside an hour. Correct nonzero changes incur no ramp penalty. Legacy hourly labels, gaps
+and hour boundaries do not supply these pairs; delivery timestamps are training metadata only. A
+native-era price weight is tunable, but the adopted configuration keeps it at one. Neither the loss
+nor the calendar phase inputs alter predictions after the network returns them.
+
 The caller supplies an already train-only-winsorised target. Fixed epochs are a configuration choice,
 not selected by early stopping on the scored delivery day. Negative prices remain possible through a
 linear output. Numeric NPZ snapshots include preprocessing and feature order; loading never unpickles
@@ -48,6 +54,8 @@ class NNParams:
     dropout: float = 0.0
     seed: int = 42
     threads: int = 4
+    native_price_weight: float = 1.0
+    intrahour_ramp_weight: float = 0.0
 
     def __post_init__(self) -> None:
         for name in ("hidden", "epochs", "batch_size", "threads"):
@@ -59,6 +67,8 @@ class NNParams:
             raise ValueError("Invalid learning rate or weight decay.")
         if not 0 <= self.dropout < 1:
             raise ValueError("dropout must be in [0, 1).")
+        if not 1 <= self.native_price_weight <= 20 or not 0 <= self.intrahour_ramp_weight <= 5:
+            raise ValueError("Invalid native price weight or intrahour ramp weight.")
 
 
 @dataclass(slots=True)
@@ -196,7 +206,57 @@ class TrainedPriceNN:
             )
 
 
-def fit_price_nn(matrix: pd.DataFrame, target: pd.Series, params: NNParams) -> TrainedPriceNN:
+def price_training_structure(
+    matrix: pd.DataFrame, timestamps: pd.Series | None, params: NNParams
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.bool_]]:
+    """Identify native-era row weights and genuine adjacent quarters from training timestamps only.
+
+    Timestamp gaps, hour boundaries and legacy hourly labels never teach a quarter ramp. Timestamps
+    are fit metadata, not network inputs. Requiring aligned, unique, chronological times avoids the
+    tempting but unsafe assumption that adjacent retained rows are adjacent delivery intervals.
+    """
+    weights = np.ones(len(matrix), dtype=np.float32)
+    pairs = np.zeros(len(matrix), dtype=bool)
+    if timestamps is None:
+        if params.native_price_weight != 1 or params.intrahour_ramp_weight:
+            raise ValueError("Price shape training requires aligned delivery timestamps.")
+        return weights, pairs
+    if not timestamps.index.equals(matrix.index):
+        raise ValueError("Price training timestamps must match feature rows.")
+    times = pd.DatetimeIndex(pd.to_datetime(timestamps, utc=True))
+    if times.hasnans or not times.is_unique or not times.is_monotonic_increasing:
+        raise ValueError("Price training timestamps must be unique and chronological.")
+    if not (times == times.floor("15min")).all():
+        raise ValueError("Price training timestamps must align to quarter-hour delivery starts.")
+    native = times >= pd.Timestamp("2025-10-01", tz="Europe/Berlin").tz_convert("UTC")
+    weights[native] = params.native_price_weight
+    stamps = times.to_numpy(dtype="datetime64[ns]").astype("int64")
+    pairs[1:] = (
+        (np.diff(stamps) == pd.Timedelta(minutes=15).value)
+        & (times[1:].floor("h") == times[:-1].floor("h"))
+        & native[1:]
+        & native[:-1]
+    )
+    return weights, pairs
+
+
+def observed_ramp_loss(
+    prediction: torch.Tensor,
+    previous_prediction: torch.Tensor,
+    target: torch.Tensor,
+    previous_target: torch.Tensor,
+) -> torch.Tensor:
+    """Score the observed nonzero change; a correctly predicted steep move has zero penalty."""
+    return torch.abs((prediction - previous_prediction) - (target - previous_target)).mean()
+
+
+def fit_price_nn(
+    matrix: pd.DataFrame,
+    target: pd.Series,
+    params: NNParams,
+    *,
+    timestamps: pd.Series | None = None,
+) -> TrainedPriceNN:
     """Fit only the supplied training rows, reproducing the price model's missing-lag training gap.
 
     Targets must already be clipped on these rows alone by the fold preparer. No test inputs, target
@@ -214,6 +274,9 @@ def fit_price_nn(matrix: pd.DataFrame, target: pd.Series, params: NNParams) -> T
     center = float(target.median())
     scale = max(float(target.quantile(0.75) - target.quantile(0.25)), 1.0)
     labels = torch.from_numpy(((target.to_numpy(dtype=float) - center) / scale).astype(np.float32))
+    row_weights, valid_pairs = price_training_structure(matrix, timestamps, params)
+    weights = torch.from_numpy(row_weights)
+    paired_rows = torch.from_numpy(valid_pairs)
     previous_threads = torch.get_num_threads()
     previous_determinism = torch.are_deterministic_algorithms_enabled()
     history: list[float] = []
@@ -235,7 +298,17 @@ def fit_price_nn(matrix: pd.DataFrame, target: pd.Series, params: NNParams) -> T
                     params.batch_size
                 ):
                     optimizer.zero_grad(set_to_none=True)
-                    loss = nn.functional.l1_loss(network(inputs[batch])[:, 0], labels[batch])
+                    prediction = network(inputs[batch])[:, 0]
+                    errors = torch.abs(prediction - labels[batch])
+                    loss = (errors * weights[batch]).sum() / weights[batch].sum()
+                    if params.intrahour_ramp_weight:
+                        paired = paired_rows[batch]
+                        indices = batch[paired]
+                        if len(indices):
+                            previous = network(inputs[indices - 1])[:, 0]
+                            loss = loss + params.intrahour_ramp_weight * observed_ramp_loss(
+                                prediction[paired], previous, labels[indices], labels[indices - 1]
+                            )
                     if not bool(torch.isfinite(loss)):
                         raise ValueError("Non-finite neural price training loss.")
                     loss.backward()
@@ -272,8 +345,10 @@ class NeuralPriceEstimator:
             raise RuntimeError("Price network is not fitted.")
         return self._trained
 
-    def fit(self, matrix: pd.DataFrame, target: pd.Series) -> NeuralPriceEstimator:
-        self._trained = fit_price_nn(matrix, target, self.params)
+    def fit(
+        self, matrix: pd.DataFrame, target: pd.Series, *, timestamps: pd.Series | None = None
+    ) -> NeuralPriceEstimator:
+        self._trained = fit_price_nn(matrix, target, self.params, timestamps=timestamps)
         return self
 
     def predict(self, matrix: pd.DataFrame) -> np.ndarray[Any, Any]:

@@ -39,19 +39,23 @@ from eex_forecast.backtest_cutoffs import (
     DEV_CUTOFFS,
     cutoff_utc,
     horizon_end_utc,
+    native_price_development_cutoffs,
 )
 from eex_forecast.config import TUNING_DIR
 from eex_forecast.features import TIMESTAMP
 from eex_forecast.model import (
+    Estimator,
     ModelSpec,
     apply_serve_unavailable_lag_mask,
     apply_train_nan_lag_mask,
     capacity_for,
     capacity_scaled,
+    fit_estimator,
     make_estimator,
     postprocess_predictions,
     seeded_params,
 )
+from eex_forecast.price_metrics import quarter_price_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +104,7 @@ class _FoldPrediction:
     actual: pd.Series
     prediction: pd.Series
     capacity: pd.Series | None
+    estimator: Estimator
 
 
 def _prepare(spec: ModelSpec, frame: pd.DataFrame) -> _Data:
@@ -135,7 +140,7 @@ def _predict_fold(
     x_train = apply_train_nan_lag_mask(data.matrix[train])
     x_test = apply_serve_unavailable_lag_mask(data.matrix[test], data.times[test], start)
     booster = make_estimator(spec, params)
-    booster.fit(x_train, y_train)
+    fit_estimator(booster, x_train, y_train, data.times[train])
     prediction = postprocess_predictions(
         spec,
         booster.predict(x_test),
@@ -148,6 +153,7 @@ def _predict_fold(
         actual=data.actual[test],
         prediction=prediction,
         capacity=data.capacity[test] if data.capacity is not None else None,
+        estimator=booster,
     )
 
 
@@ -160,7 +166,7 @@ def _score_fold(
         return None
 
     error = fold.actual.to_numpy() - fold.prediction.to_numpy()
-    return {
+    result = {
         "delivery_day": delivery_day,
         "start_utc": fold.times.min().isoformat(),
         "end_utc": fold.times.max().isoformat(),
@@ -168,6 +174,9 @@ def _score_fold(
         "mae": float(np.mean(np.abs(error))),
         "rmse": float(np.sqrt(np.mean(error**2))),
     }
+    if spec.backend == "neural":
+        result["price_shape"] = quarter_price_metrics(fold.times, fold.actual, fold.prediction)
+    return result
 
 
 def _fold_metrics(
@@ -366,6 +375,10 @@ def suggest_neural_params(trial: optuna.Trial) -> dict[str, Any]:
         "dropout": trial.suggest_categorical("dropout", [0.0, 0.025, 0.05]),
         "seed": 42,
         "threads": 4,
+        "native_price_weight": trial.suggest_categorical("native_price_weight", [1.0, 2.0, 4.0]),
+        "intrahour_ramp_weight": trial.suggest_categorical(
+            "intrahour_ramp_weight", [0.0, 0.25, 1.0]
+        ),
     }
 
 
@@ -390,6 +403,8 @@ def tune(
     small fresh search missed it. Scoring outside Optuna also supports defaults just beyond the search
     bounds, such as zero L1 regularisation.
     """
+    if spec.backend == "neural" and cutoffs == DEV_CUTOFFS:
+        cutoffs = native_price_development_cutoffs()
     data = _prepare(spec, frame)
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     scope = f"[{spec.name}]"

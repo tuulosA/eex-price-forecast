@@ -1,6 +1,6 @@
 # eex-price-forecast
 
-> **15-minute development branch.** Wind, solar, load and price forecasts now use quarter-hour delivery intervals. Follow [the migration guide](QUARTER_HOURLY.md) for the isolated database, retraining and historical price-resolution transition. Published hourly benchmarks below are historical reference scores, not validation of this branch.
+> **15-minute development branch.** Wind, solar, load and price forecasts use quarter-hour delivery intervals. Price learns within-hour variation through explicit calendar inputs and supervised price changes. Follow [the migration guide](QUARTER_HOURLY.md) for isolated files and retraining, and [quarter-hour results](RESULTS_15MIN.md) for the current evidence.
 
 Short-term **German day-ahead electricity price forecasting** for the EEX / EPEX SPOT DE-LU bidding
 zone. The package forecasts up to 14 unknown German delivery days from ECMWF weather, German
@@ -10,7 +10,7 @@ wind/solar/load fundamentals, and cross-border market drivers.
 
 ![German wind, solar generation and load: recent actuals and forecasts](data/forecast_15min/fundamentals.png)
 
-> Quarter-hour example outputs from the migrated pipeline. Parameters are initial values pending a dedicated quarter-hour retune.
+> Quarter-hour outputs from the refreshed, retrained pipeline. Price uses the adopted quarter-hour feature/loss update; fundamental parameters remain transferred from the hourly baseline.
 
 ## What it does
 
@@ -53,7 +53,7 @@ It predicts prices directly, with no output smoothing or peak scaler. The fundam
 XGBoost models. The price model uses their forecasts where future actuals are unavailable. It also sees:
 
 - the 168-hour price lag where it exists at serve time;
-- German market-local calendar and holiday features;
+- German market-local calendar, holiday and regime-gated quarter/hour features;
 - German weather aggregates;
 - neighbour wind for DK, NL, PL, FR, BE, CH, CZ, and AT;
 - French scheduled nuclear availability;
@@ -61,6 +61,8 @@ XGBoost models. The price model uses their forecasts where future actuals are un
 
 All stored timestamps are UTC. Calendar features are derived in `Europe/Berlin` so local midnight,
 weekends, holidays, and daylight-saving transitions match the German market.
+Price training combines level MAE with observed changes between adjacent native quarters inside
+each hour, at weight 0.25. It learns these movements directly; no jitter is added to predictions.
 
 ## Quickstart
 
@@ -90,7 +92,8 @@ Set `ENTSO_E_API_KEY` in `.env.local`. The key comes from the
 
 ### First forecast
 
-The repository already contains selected weather points and tuned hyperparameters. Starting from an
+The repository contains selected weather points and adopted price parameters. Fundamental settings
+are transferred from the hourly baseline. Starting from an
 empty local database:
 
 ```bash
@@ -202,27 +205,29 @@ eex analyze eval --holdout --seeds 1 --plot # report the adopted configuration o
 ```
 
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
-anchors, and the end-to-end adoption gate - is made on 92 **development** days. The headline below
-is scored on 18 **holdout** days (January-September 2026) that nothing was ever tuned or chosen on:
+anchors, and the end-to-end adoption gate - uses **development** days. The base set has 92 days;
+price tuning uses its fixed 22-day native-market subset with at least 90 days of native training
+history. The current quarter-hour evaluation is in [RESULTS_15MIN.md](RESULTS_15MIN.md), including
+matched development comparisons and the 18-day reporting holdout.
 
-Regenerated on 15 October 2026 with the operational NN and **seed 42**. These are single-seed
+Regenerated on **16 October 2026** with the adopted quarter-hour NN and **seed 42**. These are single-seed
 point estimates; the report does not estimate across-seed uncertainty.
 
 | Model | MAE | RMSE |
 |---|---:|---:|
-| Wind | 1,793.42 MW | 2,179.38 MW |
-| Solar | 817.07 MW | 1,423.09 MW |
-| Load | 2,018.92 MW | 2,304.68 MW |
-| Price | 27.22 EUR/MWh | 41.67 EUR/MWh |
+| Wind | 1,779.30 MW | 2,161.77 MW |
+| Solar | 773.99 MW | 1,345.86 MW |
+| Load | 1,808.12 MW | 2,089.67 MW |
+| Price | 26.78 EUR/MWh | 41.58 EUR/MWh |
 
-![Actual vs D+1 forecast price on each holdout day](data/evaluation/price_eval_days_holdout.png)
+![Actual vs D+1 quarter-hour price forecast on each holdout day](data/evaluation_15min/price_eval_days_holdout.png)
 
 > Each panel is one holdout day: the actual price in black, the D+1 forecast in blue, each on its
 > own y-scale. Written by `eex analyze eval --holdout --plot`.
 
-Three holdout days are extreme - troughs of -414 and -499 EUR/MWh on 26 April and 1 May, and a
-666 EUR/MWh peak on 24 June. Those three account for 43% of the price error; without them the MAE is
-18.62 EUR/MWh. With 18 days, the figure moves noticeably with which days are in the sample.
+The day panels expose missed negative-price episodes and scarcity peaks, along with better captured
+ordinary days. With 18 days, the figure moves noticeably with the sample. The previous hourly
+benchmarks and explanations remain in [the historical results](RESULTS.md).
 
 A few things are worth keeping in mind when reading these figures:
 
@@ -245,13 +250,14 @@ locations, and interpretation.
 
 Price tuning uses the operational NN; there is no backend switch. The
 [model development record](docs/model-development.md) explains the adopted configuration, measured
-smoothness/accuracy trade-off and current benchmarks.
+quarter-hour shape/accuracy comparisons and historical benchmarks.
 
 ## Documentation
 
 | Document | Purpose |
 |---|---|
-| [Results explained](RESULTS.md) | Plain-language walkthrough of the holdout forecasts and attribution plots, for non-specialists |
+| [Quarter-hour results](RESULTS_15MIN.md) | Current development comparisons, holdout forecasts and within-hour price detail |
+| [Historical hourly results](RESULTS.md) | Earlier hourly holdout forecasts and attribution plots |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
 | [Weather ensemble forecasts](ENSEMBLE.md) | Ensemble figure, interpretation, commands and limitations |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |

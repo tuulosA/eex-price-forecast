@@ -35,6 +35,9 @@ forecast error. They are not calibrated predictive intervals: a p10-p90 band doe
 
 The mean is an average across weather scenarios, so it can have gentler peaks than an individual
 member. No temporal smoothing is applied to the predictions.
+The learned quarter/hour calendar pattern is shared by the members. The bands do not add or sample
+unexplained quarter-hour price noise; the operational price NN is the same one used by the
+[deterministic forecast](README.md#model-overview).
 
 ## Generate the ensemble
 

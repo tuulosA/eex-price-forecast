@@ -57,10 +57,12 @@ from eex_forecast.model import (
     TrainedModel,
     apply_train_nan_lag_mask,
     capacity_scaled,
+    fit_estimator,
     load_params,
     make_estimator,
     seeded_params,
 )
+from eex_forecast.price_metrics import quarter_price_metrics
 from eex_forecast.resolution import INTERVAL_MINUTES
 from eex_forecast.tuning import seed_list
 
@@ -171,7 +173,7 @@ def _fit_before(
     matrix = spec.build_features(frame)
     x_train = apply_train_nan_lag_mask(matrix.loc[train])
     booster = make_estimator(spec, params)
-    booster.fit(x_train, y_train)
+    fit_estimator(booster, x_train, y_train, times.loc[train])
     return TrainedModel(spec, booster, list(matrix.columns))
 
 
@@ -629,6 +631,26 @@ def _evaluation_result(
                 ),
             }
     report["price_resolution_summary"] = price_resolution_summary
+    shapes = {
+        str(day): measured
+        for day, rows in first_hourly.groupby("delivery_day", sort=True)
+        if (
+            measured := quarter_price_metrics(
+                rows[TIMESTAMP],
+                rows[REGISTRY["price"].target_column],
+                rows[REGISTRY["price"].forecast_column],
+            )
+        )
+    }
+    report["price_shape_summary"] = {
+        "seed": seed_values[0],
+        "n_days": len(shapes),
+        "mean": {
+            key: float(np.mean([row[key] for row in shapes.values() if key in row]))
+            for key in sorted({key for row in shapes.values() for key in row})
+        },
+        "by_delivery_day": shapes,
+    }
     assert first_hourly is not None  # seed_list always yields at least one seed
     return EvaluationResult(results, report, first_hourly)
 

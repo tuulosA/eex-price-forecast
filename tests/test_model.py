@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,19 @@ def test_train_predicts_non_negative_generation(timeseries_frame: pd.DataFrame) 
     assert predictions.notna().all()
     assert (predictions >= 0).all()  # generation cannot be negative (spec.non_negative)
     assert trained.feature_names  # the training feature order was recorded
+
+
+def test_old_quarter_hour_price_contract_requires_retraining(
+    tmp_path: Path, timeseries_frame: pd.DataFrame
+) -> None:
+    trained = train(REGISTRY["price"], timeseries_frame.head(48), params=NN_TINY)
+    trained.save(tmp_path)
+    path = tmp_path / "price.meta.json"
+    metadata = json.loads(path.read_text(encoding="utf-8"))
+    metadata.pop("feature_version")
+    path.write_text(json.dumps(metadata), encoding="utf-8")
+    with pytest.raises(ValueError, match="feature contract changed"):
+        TrainedModel.load(REGISTRY["price"], tmp_path)
 
 
 def test_train_ships_the_configured_tree_count(timeseries_frame: pd.DataFrame) -> None:

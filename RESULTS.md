@@ -1,6 +1,6 @@
 # Results explained
 
-> **Historical hourly baseline.** All figures and numbers on this page describe the hourly model before the 15-minute migration. They do not measure quarter-hour forecast accuracy. New evaluation reports belong under `data/evaluation_15min/`; see [the migration guide](QUARTER_HOURLY.md).
+> **Historical hourly baseline.** All figures and numbers on this page describe the hourly model before the 15-minute migration. They do not measure quarter-hour forecast accuracy. Current evidence is in [quarter-hour results](RESULTS_15MIN.md); see also [the migration guide](QUARTER_HOURLY.md).
 
 Updated **15 October 2026** for the operational neural price model.
 

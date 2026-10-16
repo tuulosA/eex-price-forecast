@@ -3,8 +3,10 @@
 This branch runs the German wind, solar, load and neural price chain on **15-minute delivery
 intervals**, using history from 2023 onward. It is an experimental resolution migration. The hourly
 configuration, fitted artifacts and benchmark reports remain available separately; their scores do
-not establish this branch's accuracy. The copied hyperparameters are starting values, not a quarter-hour
-retune. Wind installed capacity remains target scaling only, as decided in the preceding experiment.
+not establish this branch's accuracy. The price model has development-selected quarter/hour inputs
+and supervision of observed within-hour changes. Fundamental parameters and the base NN architecture
+are transferred from the hourly baseline; a broad retune of every parameter has not been performed.
+Wind installed capacity remains target scaling only, as decided in the preceding experiment.
 
 ## Target history and market transition
 
@@ -48,11 +50,18 @@ when rebuilding those inputs at native event boundaries.
 - The weekly price lag stays **168 elapsed hours**, or 672 quarters, and uses timestamp lookups.
   The first lag whose look-back reaches the unavailable forecast origin is masked too.
 - Wind/solar/load remain XGBoost; the DE price model remains the mandatory SiLU neural network.
-  Models are retrained and tagged with `interval_minutes=15`; hourly artifacts are rejected.
+  Price adds regime-gated quarter/hour calendar interactions and trains with price MAE plus 0.25 times
+  observed within-hour ramp MAE. All history remains in training with native price-row weight 1.0.
+  Models are tagged with `interval_minutes=15`; price also requires feature version 2. Hourly and
+  pre-shape-update quarter-hour price artifacts must be retrained.
 - Evaluation still trains strictly before each frozen development/holdout delivery day. Reports
   record interval resolution and split price scores between legacy hourly-price days and native
   quarter-hour-price days. The overall score mixes these regimes and must not be presented as
   native quarter-hour price accuracy over the entire 2023-onward history.
+- Default price tuning scores the 22 frozen development days with at least 90 days of native price
+  history. Fundamental tuning retains all 92 development days. Evaluation reports include
+  `price_shape_summary` for their first coherent price seed, reporting amplitude separately from
+  errors in the actual changes and the within-hour shape.
 - Ensemble weather is interpolated separately for each member before predicting the full chain.
   Outputs are summarized per quarter, never interpolated after prediction. Every target starts
   after its own last actual; common member coverage excludes internal gaps and unsupported tails.
@@ -111,10 +120,11 @@ ensemble outputs and plots were generated. The saved forecast values match direc
 forecasting left the measured target columns unchanged. See the committed
 [validation record](data/analysis_15min/quarter_validation.json) for coverage and output boundaries.
 
-The migration passed 337 automated tests, lint, formatting and strict type checking. A one-day
+The code passes 352 automated tests, lint, formatting and strict type checking. A one-day
 walk-forward chain on the final development day, 15 September 2026, also completed with 96 native
-delivery intervals. This is a functional check, not a performance benchmark: the complete development
-evaluation, quarter-hour retune and holdout evaluation have not been run.
+delivery intervals. This initial smoke test was followed by the matched native-price development
+study and reporting-only holdout evaluation described in [quarter-hour results](RESULTS_15MIN.md).
+The full 92-day mixed-era development evaluation and a broad hyperparameter retune have not been run.
 
 A quarter-hour grid does not by itself reproduce quarter-hour price variation. Weather interpolation
 adds no new weather information, the initial price calendar varies continuously within an hour, and
@@ -122,5 +132,9 @@ the pre-October-2025 price labels are repeated hourly values. The current exampl
 smooth within many hours. Resolution-specific price-shape experiments must score both price error
 and observed quarter-to-quarter changes; matching visual roughness alone is not an adoption test.
 The initial [22-day price-shape screen](docs/model-development.md#quarter-hour-price-shape-screen-16-october-2026)
-restores movement amplitude with explicit quarter/hour interactions, but does not establish a joint
-accuracy improvement. It leaves the operational price inputs and training window unchanged.
+did not justify adoption alone. The subsequent
+[feature/loss study](docs/model-development.md#quarter-hour-price-shape-adoption-16-october-2026) adopted
+quarter/hour interactions with supervised ramps after matched forecast-fundamental and additional-seed
+checks. The current operational run is recorded in
+[its audit](data/analysis_15min/quarter_price_operational_experiment.json); its prices are direct NN
+outputs and its measured target columns are preserved.

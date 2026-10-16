@@ -1,0 +1,29 @@
+{
+  "run_at_utc": "2026-10-16T12:57:25.450131+00:00",
+  "model_feature_version": 2,
+  "feature_count": 50,
+  "native_quarter_inputs_present": true,
+  "all_actual_columns_unchanged_by_forecast": true,
+  "unknown_forecasts_match_direct_nn_predictions": true,
+  "forecast_intervals": 1252,
+  "first_unknown_utc": "2026-10-17T22:00:00+00:00",
+  "last_unknown_utc": "2026-10-30T22:45:00+00:00",
+  "parameters": {
+    "hidden": 64,
+    "epochs": 40,
+    "batch_size": 512,
+    "learning_rate": 0.0015317709628184257,
+    "weight_decay": 1.1527987128232402e-06,
+    "dropout": 0.0,
+    "seed": 42,
+    "threads": 4,
+    "native_price_weight": 1.0,
+    "intrahour_ramp_weight": 0.25
+  },
+  "input_refresh_completed": true,
+  "ensemble_members": 51,
+  "ensemble_summary_intervals": 1346,
+  "attribution_window_days": 30,
+  "attribution_rows_price": 2880,
+  "attribution_max_completeness_error_eur_mwh": 9.3e-05
+}

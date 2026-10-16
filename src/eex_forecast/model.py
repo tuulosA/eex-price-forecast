@@ -206,6 +206,7 @@ class TrainedModel:
                     "backend": self.spec.backend,
                     "feature_names": self.feature_names,
                     "interval_minutes": INTERVAL_MINUTES,
+                    "feature_version": 2 if self.spec.backend == "neural" else 1,
                 },
                 indent=2,
             )
@@ -229,6 +230,10 @@ class TrainedModel:
             raise ValueError("Model resolution differs; retrain on the 15-minute database.")
         if meta.get("backend", "xgboost") != spec.backend:
             raise ValueError(f"Wrong backend for '{spec.name}'; run `eex model train`.")
+        if spec.backend == "neural" and meta.get("feature_version") != 2:
+            raise ValueError(
+                "Price feature contract changed; retrain the quarter-hour price model."
+            )
         if spec.backend == "neural":
             from eex_forecast.price_nn import NeuralPriceEstimator
 
@@ -360,12 +365,32 @@ def _validation_metrics(
     }
 
 
+def fit_estimator(
+    estimator: Estimator,
+    matrix: pd.DataFrame,
+    target: pd.Series,
+    timestamps: pd.Series | None = None,
+) -> None:
+    """Give neural training delivery-time metadata without adding it to the learned input matrix.
+
+    Every fitting path calls this helper so native-era weighting and observed-ramp supervision cannot
+    silently disappear in tuning or evaluation. Tree estimators retain their ordinary fit interface.
+    """
+    from eex_forecast.price_nn import NeuralPriceEstimator
+
+    if isinstance(estimator, NeuralPriceEstimator):
+        estimator.fit(matrix, target, timestamps=timestamps)
+    else:
+        estimator.fit(matrix, target)
+
+
 def _fit(
     spec: ModelSpec,
     matrix: pd.DataFrame,
     target: pd.Series,
     params: dict[str, Any],
     capacity: pd.Series | None = None,
+    timestamps: pd.Series | None = None,
 ) -> tuple[Estimator, dict[str, Any], dict[str, float]]:
     """Fit all rows for the configured tree count or neural epochs, logging validation metrics.
 
@@ -385,13 +410,18 @@ def _fit(
     scope = f"[{spec.name}]"
     final = make_estimator(spec, params)
     if len(matrix) < _MIN_ROWS_FOR_VALIDATION:
-        final.fit(matrix, target)
+        fit_estimator(final, matrix, target, timestamps)
         return final, {}, {}
 
     split = int(len(matrix) * (1.0 - _VAL_FRACTION))
     logger.info("%s scoring a %d-row chronological validation slice", scope, len(matrix) - split)
     validator = make_estimator(spec, params)
-    validator.fit(matrix.iloc[:split], target.iloc[:split])
+    fit_estimator(
+        validator,
+        matrix.iloc[:split],
+        target.iloc[:split],
+        timestamps.iloc[:split] if timestamps is not None else None,
+    )
 
     # Score the validation slice with the exact production post-processing contract.
     y_val = target.iloc[split:].to_numpy()
@@ -409,7 +439,7 @@ def _fit(
     diagnostics = _residual_diagnostics(y_val - pred_val)
     metrics = _validation_metrics(y_val, pred_val)
 
-    final.fit(matrix, target)
+    fit_estimator(final, matrix, target, timestamps)
     return final, diagnostics, metrics
 
 
@@ -477,7 +507,12 @@ def train(
     capacity = capacity_for(spec, frame)
     train_matrix = apply_train_nan_lag_mask(matrix[mask])
     booster, diagnostics, metrics = _fit(
-        spec, train_matrix, target[mask], params, capacity[mask] if capacity is not None else None
+        spec,
+        train_matrix,
+        target[mask],
+        params,
+        capacity[mask] if capacity is not None else None,
+        pd.to_datetime(frame.loc[mask, features.TIMESTAMP], utc=True),
     )
 
     if metrics:

@@ -11,7 +11,14 @@ import pytest
 
 pytest.importorskip("torch")
 
-from eex_forecast.price_nn import FeatureScaling, NNParams, TrainedPriceNN, fit_price_nn
+from eex_forecast.price_nn import (
+    FeatureScaling,
+    NNParams,
+    TrainedPriceNN,
+    fit_price_nn,
+    observed_ramp_loss,
+    price_training_structure,
+)
 
 
 def _training() -> tuple[pd.DataFrame, pd.Series]:
@@ -71,8 +78,72 @@ def test_missing_labels_and_misaligned_training_rows_are_rejected() -> None:
 
 
 @pytest.mark.parametrize(
-    "overrides", [{"epochs": 0}, {"dropout": 1.0}, {"learning_rate": float("nan")}, {"seed": -1}]
+    "overrides",
+    [
+        {"epochs": 0},
+        {"dropout": 1.0},
+        {"learning_rate": float("nan")},
+        {"seed": -1},
+        {"native_price_weight": float("nan")},
+        {"intrahour_ramp_weight": -1},
+    ],
 )
 def test_bad_neural_parameters_are_rejected(overrides: dict[str, float]) -> None:
     with pytest.raises(ValueError):
         replace(NNParams(), **overrides)
+
+
+def test_ramp_pairs_exclude_hour_boundaries_gaps_and_legacy_labels() -> None:
+    times = pd.Series(
+        pd.to_datetime(
+            [
+                "2025-09-30T20:00Z",
+                "2025-09-30T20:15Z",  # legacy
+                "2025-09-30T22:00Z",
+                "2025-09-30T22:15Z",  # native transition
+                "2025-09-30T22:45Z",
+                "2025-09-30T23:00Z",
+                "2025-09-30T23:15Z",
+            ]
+        )
+    )
+    matrix = pd.DataFrame({"x": np.arange(len(times))})
+    weights, pairs = price_training_structure(
+        matrix, times, NNParams(native_price_weight=4, intrahour_ramp_weight=1)
+    )
+    assert weights.tolist() == [1, 1, 4, 4, 4, 4, 4]
+    assert pairs.tolist() == [False, False, False, True, False, False, True]
+
+
+def test_observed_ramp_loss_rewards_correct_nonzero_changes() -> None:
+    import torch
+
+    actual = torch.tensor([20.0, -15.0])
+    previous = torch.tensor([0.0, 10.0])
+    assert observed_ramp_loss(actual + 100, previous + 100, actual, previous).item() == 0
+    assert observed_ramp_loss(previous, previous, actual, previous).item() > 0
+    assert observed_ramp_loss(previous, actual, actual, previous).item() > 0
+
+
+def test_shape_training_requires_times_and_roundtrips_without_prediction_times(
+    tmp_path: Path,
+) -> None:
+    matrix, target = _training()
+    params = NNParams(epochs=2, hidden=8, native_price_weight=4, intrahour_ramp_weight=0.25)
+    with pytest.raises(ValueError, match="timestamps"):
+        fit_price_nn(matrix, target, params)
+    times = pd.Series(pd.date_range("2026-01-01", periods=len(matrix), freq="15min", tz="UTC"))
+    fitted = fit_price_nn(matrix, target, params, timestamps=times)
+    second = fit_price_nn(matrix, target, params, timestamps=times)
+    pd.testing.assert_series_equal(fitted.predict_features(matrix), second.predict_features(matrix))
+    fitted.save(tmp_path / "price.npz")
+    restored = TrainedPriceNN.load(tmp_path / "price.npz")
+    pd.testing.assert_series_equal(
+        fitted.predict_features(matrix), restored.predict_features(matrix)
+    )
+    pd.testing.assert_series_equal(
+        fitted.predict_features(matrix).iloc[[7, 2]],
+        fitted.predict_features(matrix.iloc[[7, 2]]),
+    )
+    with pytest.raises(ValueError, match="chronological"):
+        fit_price_nn(matrix, target, params, timestamps=times.iloc[::-1].reset_index(drop=True))
