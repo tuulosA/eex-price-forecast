@@ -33,7 +33,6 @@ data/**
 !data/ablation/*.json
 !data/analysis/*_experiment.json
 !data/analysis/correlation_*.csv
-!data/analysis/quarter_validation.json
 !data/rank/*.csv
 # the bidding-zone candidate grids (`eex points grid`)
 !data/candidates/grid_*.csv
@@ -46,6 +45,11 @@ data/**
 !data/history/hourly_20261016/config/*.json
 !data/history/hourly_20261016/evaluation/*.json
 !data/history/hourly_20261016/tuning/*.json
+!data/history/research_20261016/analysis/*.json
+!data/history/research_20261016/evaluation/*.json
+!data/history/research_20261016/config/*.json
+!data/history/before_retune_20261016/hyperparams.json
+!data/history/before_retune_20261016/evaluation/*.json
 # Fitted models and local research tools stay local, including in archived directories.
 data/history/**/models/
 data/**/local_tools/
