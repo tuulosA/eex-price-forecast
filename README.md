@@ -40,14 +40,15 @@ ECMWF weather
 ```
 
 Wind and solar learn capacity factors and are converted back to MW using ENTSO-E installed capacity.
-The adopted German wind anchors are 20 geographically diverse points at roughly 135 km minimum spacing.
+German wind uses 20 geographically diverse weather points at roughly 135 km minimum spacing.
 Solar combines irradiance components, cloud cover, deterministic solar geometry, the installed
 capacity (so the model can tell fleet eras apart as output per unit of capacity drifts), and a physical
 zero-generation constraint in darkness.
 
-The price model is a DE-only neural network with two 64-unit SiLU layers, trained for 40 fixed epochs.
-It predicts prices directly, with no output smoothing or peak scaler. The fundamentals remain
-XGBoost models. The price model uses their forecasts where future actuals are unavailable. It also sees:
+Wind, solar and load use XGBoost models. The DE price model is a neural network with two SiLU hidden
+layers and a linear output. Layer width, training epochs and optimizer settings are configured in
+`config/hyperparams.json`. The price model uses fundamental forecasts where actuals are unavailable,
+and predicts prices directly. It also sees:
 
 - the 168-hour price lag where it exists at serve time;
 - German market-local calendar, holiday and regime-gated quarter/hour features;
@@ -59,7 +60,7 @@ XGBoost models. The price model uses their forecasts where future actuals are un
 All stored timestamps are UTC. Calendar features are derived in `Europe/Berlin` so local midnight,
 weekends, holidays, and daylight-saving transitions match the German market.
 Price training combines level MAE with observed changes between adjacent native quarters inside
-each hour, at weight 0.25. It learns these movements directly; no jitter is added to predictions.
+each hour, at weight 0.25. Native-price training rows have a configurable weight; the model learns the within-hour movements directly.
 
 ## Quickstart
 
@@ -110,7 +111,7 @@ PyTorch is a required dependency. Price state is saved as `data/models/price.npz
 To generate and rank your own weather candidates or tune different model configurations, follow the
 [experimentation guide](docs/experimentation.md).
 
-Runtime files use `data/eex.db`, `data/models/` and `data/forecast/`; adopted parameters live in
+Runtime files use `data/eex.db`, `data/models/` and `data/forecast/`; model parameters live in
 `config/hyperparams.json`. Set `DB_PATH` in `.env.local` to override the database location. Model
 evaluation and analysis reports are written under `data/evaluation/` and `data/analysis/`.
 
@@ -143,9 +144,8 @@ in [Weather ensemble](#weather-ensemble-optional) below:
 eex run --train --plot --ensemble
 ```
 
-> Retrain after changing features, weather points, feature semantics, or hyperparameters. Persisted
-> feature order protects column alignment, but it cannot make an artifact trained under old semantics
-> valid under new ones.
+> Retrain after changing features, weather points, feature semantics, or hyperparameters. Model
+> artifacts record their feature order and delivery resolution.
 
 ## Forecast output
 
@@ -205,29 +205,26 @@ eex analyze eval --holdout --seeds 1 --plot # report the adopted configuration o
 Two sets of frozen delivery days are scored. Every modelling choice - tuning, aggregation, ablation,
 anchors, and the end-to-end adoption gate - uses the same **39 development days**, from
 3 October 2025 through 15 September 2026, all with native quarter-hour price targets. There is no
-minimum native-history age. Training still retains 2023-onward history before each cutoff.
-The **18 holdout days are unchanged**. [RESULTS.md](RESULTS.md) records the existing 22-day
-development comparison and 18-day holdout; tuning and evaluation on the new 39-day calendar are
-pending.
+minimum native-history age. Each fold trains on available history from 2023 before its cutoff.
+The **18 holdout days** cover January through September 2026. [RESULTS.md](RESULTS.md) explains the
+scores and forecast figures.
 
-Regenerated on **16 October 2026** with the adopted quarter-hour NN and **seed 42**. These are single-seed
-point estimates; the report does not estimate across-seed uncertainty.
+Holdout evaluation dated **18 October 2026**, averaged across model seeds **42, 1055 and 2068**:
 
 | Model | MAE | RMSE |
 |---|---:|---:|
-| Wind | 1,779.30 MW | 2,161.77 MW |
-| Solar | 773.99 MW | 1,345.86 MW |
-| Load | 1,808.12 MW | 2,089.67 MW |
-| Price | 26.78 EUR/MWh | 41.58 EUR/MWh |
+| Wind | 1,599.00 MW | 1,973.99 MW |
+| Solar | 820.60 MW | 1,427.95 MW |
+| Load | 1,787.55 MW | 2,053.79 MW |
+| Price | 26.31 EUR/MWh | 41.50 EUR/MWh |
 
 ![Actual vs D+1 quarter-hour price forecast on each holdout day](data/evaluation/price_eval_days_holdout.png)
 
 > Each panel is one holdout day: the actual price in black, the D+1 forecast in blue, each on its
-> own y-scale. Written by `eex analyze eval --holdout --plot`.
+> own y-scale. The figure shows seed 42; the table averages three seeds.
 
-The day panels expose missed negative-price episodes and scarcity peaks, along with better captured
-ordinary days. With 18 days, the figure moves noticeably with the sample. The previous hourly
-benchmarks and explanations remain in [the historical results](docs/history/results-hourly.md).
+The day panels show how well the forecast captures daily profiles, negative-price episodes and
+scarcity peaks. With 18 days, the aggregate error depends strongly on the sampled market conditions.
 
 A few things are worth keeping in mind when reading these figures:
 
@@ -248,16 +245,14 @@ deliberately does not maintain one.
 See [Experimentation and evaluation](docs/experimentation.md) for methodology, command options, report
 locations, and interpretation.
 
-Price tuning uses the operational NN; there is no backend switch. The
-[model development record](docs/model-development.md) explains the adopted configuration, measured
-quarter-hour shape/accuracy comparisons and historical benchmarks.
+The [model development guide](docs/model-development.md) explains the model configuration,
+feature contracts and development priorities.
 
 ## Documentation
 
 | Document | Purpose |
 |---|---|
 | [Forecast results](RESULTS.md) | Current development comparisons, holdout forecasts and within-hour price detail |
-| [Historical hourly results](docs/history/results-hourly.md) | Earlier hourly holdout forecasts and attribution plots |
 | [Experimentation and evaluation](docs/experimentation.md) | Point rebuilding, tuning, aggregation, ablation, eval, oracle, and diagnostics |
 | [Weather ensemble forecasts](ENSEMBLE.md) | Ensemble figure, interpretation, commands and limitations |
 | [Data pipeline and sources](docs/data-pipeline.md) | Backfill windows, weather variables, timestamp alignment, cross-border inputs, the weather ensemble, and source details |

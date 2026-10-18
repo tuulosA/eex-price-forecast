@@ -5,10 +5,8 @@ shortest path to a working forecast, start with the [README](../README.md). For 
 experiments, rejected ideas, and current priorities, see the
 [model-development record](model-development.md).
 
-The initial [quarter-hour price-shape screen](model-development.md#quarter-hour-price-shape-screen-16-october-2026)
-is a price-only, one-seed development experiment. Its reports distinguish error in predicted prices,
-within-hour changes and hour-centred shape from movement amplitude. These metrics prevent a visually
-more jagged curve from being treated as an accuracy gain by itself.
+Price-shape diagnostics report price error, within-hour change error, hour-centred shape error
+and movement amplitude separately. A visually jagged curve does not by itself establish accuracy.
 
 ## Rebuilding the modelling choices
 
@@ -85,8 +83,7 @@ is a fresh holdout of later days, not a second look at the same ones.
 The weather ensemble (`eex forecast --ensemble`) is deliberately **outside** this design and cannot be
 added to it. Open-Meteo retains individual ensemble members for only about three days, so there is no
 history to replay at the frozen cutoffs; the ensemble ships as a diagnostic rather than a scored result.
-See [Weather ensemble](data-pipeline.md#weather-ensemble) for the source contract and
-[the development record](history/model-development-before-neural-price.md#weather-ensemble-forecasting) for what was measured.
+See [Weather ensemble](data-pipeline.md#weather-ensemble) for the source and storage contracts.
 
 ### Known weather optimism
 
@@ -111,50 +108,42 @@ This leads to two different evaluation contracts:
 Live prediction and every scoring path share the same natural-unit post-processing: capacity-factor
 reversal, non-negative clipping, and the solar-darkness constraint.
 
-## Operational neural price model
+## Neural price model
 
-Price is always the DE-only NN; wind, solar and load remain XGBoost. PyTorch is installed with the
-base package. `eex model train --target price` fits the same two-layer SiLU architecture used by live
-prediction, ensemble members and every price analysis. There is no backend flag or tree fallback.
+Price uses a DE-only neural network with two SiLU hidden layers and a linear output. Wind, solar and
+load use XGBoost. Training, prediction, ensemble members and analysis share the model factory and
+preprocessing. PyTorch is installed with the base package.
 
-The adopted price parameters specify 64 units per layer, 40 fixed epochs, batch 512, AdamW,
-learning rate 0.0015317709628184257, weight decay 0.0000011527987128232402, no dropout and seed 42.
-Train-only median imputation and standardization are paired with missingness indicators. The target
-uses training median/IQR scaling. The existing weekly-lag mask runs before preprocessing. Negative
-prices are allowed; neither temporal smoothing nor price scaling is applied to predictions.
-Price MAE is combined with supervised native within-hour changes at weight 0.25. Native price-row
-weight remains 1.0. Training timestamps identify genuine pairs across retained rows; they never enter
-the network. [The adoption record](model-development.md#quarter-hour-price-shape-adoption-16-october-2026)
-defines the quarter inputs, grid comparison and matched development checks.
+The authoritative parameters are in `config/hyperparams.json`; the
+[model configuration guide](model-development.md#price-model) describes the inputs and objective.
+Training-only median imputation and standardization include missingness indicators. The price target
+uses training median/IQR scaling. Weekly-lag masking is applied before preprocessing.
+
+Price MAE is combined with supervised within-hour changes. The parameters `native_price_weight` and
+`intrahour_ramp_weight` control native-price row weighting and change-loss weighting. Only adjacent
+native quarters inside the same hour provide change targets. Delivery timestamps identify the pairs
+without becoming neural inputs. Predictions are direct network outputs in EUR/MWh.
 
 State, preprocessing, parameters and feature order are stored numerically in `data/models/price.npz`.
-`price.meta.json` checks backend, feature order, interval resolution and price feature version 2.
-A pre-update quarter-hour snapshot must be retrained. A stale `price.json` is not a usable price
-artifact. Existing installations must reinstall the package and retrain; changing parameters or
-features also requires retraining.
+`price.meta.json` validates backend, feature order, delivery resolution and feature version.
+Retrain models when changing their features, feature semantics or parameters.
 
 ```cmd
-pip install -e ".[dev]"
 eex model train --target price
-eex model tune --target price --trials 12
+eex model tune --target price --trials 20
 ```
 
-Price tuning searches NN width, epochs, batch size, learning rate, weight decay, dropout, native price
-weight and within-hour ramp weight, using fixed seed 42 and four CPU threads. Its default score is
-price MAE on all 39 development days, the same dates used for fundamental tuning and other
-development analysis. No additional native-history age filter applies. Training still begins in 2023.
-Early October folds therefore have only a few days of native-price training labels, alongside the
-older hourly-price history; this deliberately includes the market transition.
-It preserves the current parameters unless a fresh trial wins on the same folds. Native price folds
-also report `price_shape` metrics: amplitude, ramp errors and complete-hour shape error. Other analysis
-commands keep their documented development scopes. Price tuning/ablation remain conditional on
-actual fundamentals; use end-to-end evaluation and shape diagnostics before adopting changes.
+Price tuning searches width, epochs, batch size, learning rate, weight decay, dropout, native-price
+weight and within-hour change-loss weight. Every target scores all 39 development days. Each fold
+trains on available history from 2023 before its cutoff, including hourly auction prices before
+October 2025 as specified in the [source contract](data-pipeline.md#target-history-and-interval-semantics).
+There is no minimum native-history age, so early October folds include only a few days of native
+price training labels.
 
-The [intrinsic-profile study](../data/history/hourly_20261016/analysis/price_profile_experiment_summary.json) is dated
-research evidence. Its former tree incumbent is historical, not an operational choice. The old `price-models` command is
-retired; its detailed workflow and prior results are in the
-[archived development record](history/model-development-before-neural-price.md). Current choices
-and the smoothness/accuracy trade-off are recorded in [model development](model-development.md).
+The configured incumbent is scored alongside trials and is selected unless a trial improves MAE.
+Price folds report `price_shape` metrics for amplitude, ramp errors and complete-hour shape error.
+Price tuning and ablation use actual historical fundamentals; confirm candidates with end-to-end
+evaluation using forecast fundamentals.
 
 ## Quick inspection
 
@@ -180,9 +169,8 @@ data).
 
 Correlation is useful for orientation, but it is not evidence that a feature improves held-out MAE,
 and it looks at one feature at a time. Model attribution shows how a model uses a feature given the
-others: the week-earlier price is the price model's strongest correlate (+0.55) yet only the ninth
-of its attribution feature families, because load, sunshine, and wind already carry most of that
-information.
+others. Correlated inputs can carry overlapping information, so attribution and held-out
+feature comparisons answer different questions from a one-feature correlation.
 
 ## Aggregation
 
@@ -205,7 +193,7 @@ Available strategies include:
 - `raw`: every point column;
 - `cube`: wind-only mean plus `mean(v³)`.
 
-Wind and load currently use `raw`. Solar uses `stats` for GHI while retaining its adopted geometry,
+Wind and load use `raw`. Solar uses `stats` for GHI alongside geometry,
 direct/diffuse/DNI, and cloud features. Neighbour aggregation is a price-model experiment and includes a
 `none` baseline.
 
@@ -215,7 +203,7 @@ for wind and solar. Both are scored back in MW.
 ## Weather-anchor diversity
 
 Individual target correlation can select many nearby points that describe the same weather regime.
-Anchor analysis compares the adopted 20-point set for each sub-model with spatial alternatives without
+Anchor analysis compares each model's configured anchors with spatial alternatives without
 modifying `config/weather_points.json` or the production database:
 
 ```bash
@@ -228,19 +216,14 @@ eex analyze anchors wind --coverage-weights 0,0.2,0.4 --candidate-pool 80
 eex analyze anchors wind --redundancy-penalties 0.5,1 --candidate-pool 80
 ```
 
-Alternative histories are cached under `data/weather_cache/<model>_anchors/`. Wind retains speed and
-co-located temperature; load retains temperature and irradiance; solar retains GHI plus its complete
+Alternative histories are cached under `data/weather_cache/<model>_anchors/`. Wind uses speed and
+co-located temperature; load uses temperature and irradiance; solar uses GHI plus its complete
 GTI/direct/diffuse/DNI/cloud contract. Reports are written to
 `data/analysis/<model>_anchor_experiment.json`.
 
 The analyzer explicitly marks each variant's weather columns before calling the shared feature builder.
 Normal training and forecasting instead use only columns belonging to `config/weather_points.json`;
 extra columns left in SQLite by an earlier experiment are intentionally ignored.
-
-The adopted 135 km / 20-point wind set reduced wind MAE by about 38% in the isolated five-seed
-experiment and by 40.8% after production backfill and matched retuning. Exact results and the tested
-alternatives are recorded in the
-[development record](model-development.md) and `data/analysis/wind_anchor_experiment.json`.
 
 ### Neighbour-wind points per country
 
@@ -259,10 +242,6 @@ while the day bootstrap shows how much the result depends on which days were sam
 cached under `data/weather_cache/neighbour_anchors/`; the report is
 `data/analysis/neighbour_anchor_experiment.json`.
 
-The first run (2026-10-02) found three or more points per country about 0.3 EUR/MWh better on the
-development days; the change passed the end-to-end gate but not the holdout and was reverted. See
-the 2026-10-02 decision in the [development record](history/model-development-before-neural-price.md#decision-history).
-
 ## Residual load
 
 ```bash
@@ -276,26 +255,6 @@ variant on the development days with actual fundamentals, over several seeds, wi
 bootstrap of the difference from production. For production and the best variant it also rebuilds
 the interval predictions and reports the bias by price regime and hour, to show whether the
 under-forecast in tight hours shrank. The report is `data/analysis/residual_load_experiment.json`.
-The first run (2026-10-02) found no reliable gain and no change in the bias; see the 2026-10-02
-decision in the [development record](history/model-development-before-neural-price.md#decision-history).
-
-## Wind installed-capacity input experiment
-
-The 16 October 2026 experiment compared production wind features against the same features plus
-forward-filled `wind_capacity_mw`. Both variants retained capacity-factor target scaling and the
-same tuned tree parameters. The shared walk-forward engine refitted the full configured tree count
-on all 92 development delivery days over five paired model seeds. It reported MAE, RMSE, bias,
-yearly slices and a paired-day bootstrap. Parameters were not retuned, the holdout was not evaluated,
-and production features and saved models were unchanged.
-
-Both variants used two CPU threads per fit. XGBoost's stochastic fits also depend on that count,
-so compare the paired variants within this report rather than subtracting a published benchmark
-obtained with another thread count or seed list. The report records `n_jobs` alongside the seeds.
-
-The summary at `data/history/hourly_20261016/analysis/wind_capacity_experiment.json` records the parameters, feature names,
-seeds, cutoffs and per-day errors. Scores average delivery days equally before averaging seeds.
-The extra feature was not adopted; see the [development record](model-development.md) for findings.
-
 ## Ablation
 
 Ablation removes selected features and measures the loss:
@@ -348,25 +307,10 @@ error would remain if every day's average level were exact. It reuses the eval's
 costs nothing extra; rerun it after a model change to see whether a systematic error shrank. Its
 errors are interval-weighted, so they can differ from the day-averaged headline in the third decimal.
 
-<!-- evaluation-benchmarks:start -->
-Quarter-hour chain, regenerated on **16 October 2026** using seed 42. Development here is the fixed
-former 22-day native-price subset. These recorded results precede the current 39-day calendar and
-have not been rerun on it. The hourly baseline remains in
-[historical results](history/results-hourly.md).
-
-| Model | Development MAE (22 native days) | Holdout MAE (18 days) | Holdout RMSE |
-|---|---:|---:|---:|
-| Wind | 1,596.82 MW | 1,779.30 MW | 2,161.77 MW |
-| Solar | 921.83 MW | 773.99 MW | 1,345.86 MW |
-| Load | 1,586.16 MW | 1,808.12 MW | 2,089.67 MW |
-| Price | 15.19 EUR/MWh | 26.78 EUR/MWh | 41.58 EUR/MWh |
-<!-- evaluation-benchmarks:end -->
-
-Current reports identify each model's backend and recorded seed list. The figures show the first
-seed; `std_mae = 0` for a one-seed run does not establish zero model uncertainty. Development results
-include selection data; the 18 holdout days report an already adopted configuration. Neither
-result guarantees live 14-day accuracy. Earlier price benchmarks and their frozen evidence are
-[archived](history/model-development-before-neural-price.md).
+[Forecast results](../RESULTS.md) explains the reported metrics and figures. Each JSON report
+records its cutoff list, model backends and seed list. Day panels show the first seed; headline
+scores average across all requested seeds. Development results supply selection evidence, while
+holdout results report an accepted configuration. Neither establishes live 14-day accuracy.
 
 ## Oracle substitutions
 
@@ -401,7 +345,7 @@ eex analyze shap --target price --days 90
 ```
 
 Explains saved production artifacts over recent history with measured fundamentals. The command
-retains its `shap` name, but uses **integrated gradients for price** and **TreeSHAP for fundamentals**.
+uses **integrated gradients for price** and **TreeSHAP for fundamentals**.
 It writes `data/analysis/ig_price.png` and `shap_wind.png`, `shap_solar.png`, `shap_load.png`.
 
 For the NN, a standardized zero vector (training means, all missingness flags cleared) is the
@@ -409,7 +353,7 @@ reference. Gauss-Legendre integration follows the fitted network from that refer
 physical-value and missingness contributions are combined per original feature. The default is 64
 quadrature points, retried at 128 if the maximum completeness residual exceeds 0.01 EUR/MWh. The
 maximum residual is logged. These are approximate neural attributions, not SHAP values, and no
-residual is redistributed to make the sums appear exact. Fundamental TreeSHAP remains exact in
+residual is redistributed to make the sums appear exact. Fundamental TreeSHAP is exact in
 model output units; wind/solar contributions are converted from capacity factor to MW.
 
 Both methods use the same two-panel presentation: feature-family mean absolute contribution on the
@@ -419,8 +363,8 @@ IG and fundamental axes SHAP. The figures describe associations learned by the m
 
 The window includes the weekly lag on historical rows, so lag importance describes its available
 regime rather than the second forecast week. Fundamental non-negative clamps and the solar-darkness
-override remain outside the additive explanation. See [quarter-hour results](../RESULTS.md)
-for current figures and [historical results](history/results-hourly.md) for the historical hourly explanations.
+override are outside the additive explanation. See [Forecast results](../RESULTS.md)
+for figures and interpretation.
 
 ## Solar diagnostics
 
@@ -451,11 +395,10 @@ Every study is independently seeded and reproducible, but not resumed. The curre
 parameters are scored as an incumbent and retained unless a fresh trial beats them on the identical
 development cutoffs. Retune after changing features, feature semantics, or anchor geography.
 
-### Retuning on the native-price development calendar
+### Retuning and evaluation
 
-The calendar change prepares future runs; it does not update parameters, fitted models or saved
-scores. To redo tuning and evaluation locally, run these commands from CMD in the activated
-environment:
+Run these commands from CMD in the activated environment to tune all models and evaluate
+the complete chain on development days:
 
 ```cmd
 eex model tune --target wind
@@ -465,7 +408,7 @@ eex model tune --target price
 eex analyze eval --seeds 1 --plot --breakdown --oracle
 ```
 
-Review the development results and adopt the configuration before reporting the unchanged holdout:
+Review the development results and adopt the configuration before reporting on holdout days:
 
 ```cmd
 eex analyze eval --holdout --seeds 1 --plot --breakdown --oracle
@@ -473,7 +416,7 @@ eex run --train --plot --write-db --ensemble
 eex analyze shap --days 30
 ```
 
-Tuning retains the incumbent unless a trial wins on the new development days. Price tuning uses
+Tuning retains the incumbent unless a trial wins on the development days. Price tuning uses
 actual historical fundamentals; the end-to-end evaluation supplies fresh forecast fundamentals.
 The final run retrains the operational chain and refreshes forecast plots. Keep the committed
 reports, figures and benchmark readings aligned after those runs. No source backfill or weather
@@ -488,8 +431,6 @@ point rebuilding is needed solely because the cutoff list changed.
 | `data/aggregation/` | feature-representation comparisons |
 | `data/ablation/` | feature-removal comparisons |
 | `data/analysis/` | correlations, error slices, feature/anchor studies, IG and SHAP plots |
-| `data/history/hourly_20261016/` | archived hourly model parameters, reports and figures |
-| `data/history/pre_nn_20261015/` | archived tree-price benchmark evidence |
 | `data/rank/` | saved point rankings |
 
 Generated reports are the detailed source of truth. The

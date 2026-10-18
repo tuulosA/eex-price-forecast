@@ -3,8 +3,8 @@
 The model handoff is weather -> XGBoost wind/solar/load -> the operational DE price NN. Price uses
 the actual-or-forecast fundamental coalesce and regional drivers. It returns raw 15-minute prices with no temporal output filter or peak scaler.
 PyTorch is required. Training writes numeric state and preprocessing to `data/models/price.npz`, with
-a backend/feature-order sidecar `price.meta.json`; legacy price trees are not loaded. Fundamentals
-retain native XGBoost JSON and their capacity/clipping/darkness contracts. Weather-ensemble members
+a backend/feature-order sidecar `price.meta.json`. Fundamental models are saved as XGBoost JSON
+and use capacity scaling, non-negative clipping and the solar-darkness constraint. Weather-ensemble members
 call this same saved NN after forecasting their own fundamentals, then aggregate member outputs.
 
 This guide documents how data enters `eex-price-forecast`, how timestamps and forecast horizons are
@@ -66,8 +66,8 @@ Database timestamps are UTC and use a 15-minute delivery grid; weather samples r
 time across local midnight and daylight-saving transitions.
 Price also receives explicit quarter-within-hour inputs and daily-clock interactions, gated at the
 known transition to native quarter-hour prices. These are deterministic calendar features, not
-interpolated price outputs. The [model-development record](model-development.md#quarter-hour-price-shape-adoption-16-october-2026)
-owns their training objective and adoption evidence. Saved models declare `interval_minutes=15`;
+interpolated price outputs. The [model configuration guide](model-development.md#price-model)
+describes their training objective. Saved models declare `interval_minutes=15`;
 price also declares feature version 2. Loading checks this metadata and the persisted feature order.
 
 The live horizon is anchored to the last published German day-ahead price:
@@ -145,8 +145,8 @@ Baltic conditions are represented; temperature/load and solar rank the `land` po
 several bidding zones (DK, SE, NO) get one country-wide grid partitioned into their zones. The grids
 are committed as `data/candidates/grid_<zone>.csv`.
 
-The committed selections live in `config/weather_points.json`. Current production uses the adopted
-135 km-spaced, 20-point German wind set.
+The selected points are configured in `config/weather_points.json`. Wind uses 20 German points
+at roughly 135 km minimum spacing.
 
 Primary and auxiliary variables are:
 
@@ -157,9 +157,8 @@ Primary and auxiliary variables are:
 | Solar | shortwave radiation (GHI) | direct, diffuse, DNI, cloud cover, and GTI |
 | Neighbour wind | `wind_speed_100m` | none |
 
-Production solar uses GHI, direct/diffuse/DNI, cloud statistics, and deterministic solar geometry. GTI
-is fetched so its controlled experiment remains reproducible, but it was not adopted because it did not
-improve the five-seed backtest.
+Solar features use GHI, diffuse irradiance, DNI, cloud statistics and deterministic solar geometry.
+Direct radiation and GTI are fetched for diagnostics and controlled feature experiments.
 
 Open-Meteo derives some radiation products rather than exposing independent native ECMWF fields. They
 are physically shaped transformations of the forecast, not separate observations.
@@ -243,7 +242,7 @@ Per-border values are stored as `ntc_imp_<border>` and `ntc_exp_<border>`. For e
 capacity is used, and its last published value is carried over the far horizon; month-ahead only fills
 where no week-ahead has been published, because its levels differ systematically from the week-ahead
 history the price model trains on. The price model reads the nine per-border imports
-(`ntc_imp_<border>`); the exports remain stored for experiments. Per-border imports replaced the import and export totals on 2026-10-05.
+(`ntc_imp_<border>`). Export capacities are stored for experiments.
 
 ## Weather ensemble
 

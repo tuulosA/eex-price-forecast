@@ -29,7 +29,7 @@ Forecasting is two-stage: **weather → three generation sub-models → price mo
 
 ```
 src/eex_forecast/
-  config.py            # paths, DE constants (HORIZON_DAYS=14, FORECAST_HISTORY_DAYS=14), env Settings
+  config.py            # paths, DE constants (HORIZON_DAYS=14, FORECAST_HISTORY_DAYS), env Settings
   db/
     schema.py          # `timeseries` table; separate actual/forecast columns; ensure_columns adds weather cols
     database.py        # connect / upsert (non-clobbering) / read_frame / read_target_series
@@ -52,7 +52,7 @@ src/eex_forecast/
     residual_load.py   # residual-load feature variants for price, with the regime-bias check
     comparison.py      # shared per-day errors and day-level bootstrap for experiments
     evaluation.py      # end-to-end 24h eval + oracle-substitution price diagnostics
-    price_models.py    # historical frozen-input utilities; challenger CLI retired
+    price_models.py    # frozen-input utilities for offline price experiments
     price_profiles.py  # dated intrinsic price-shape research on frozen development inputs
     breakdown.py       # systematic-error breakdown of an eval: bias by regime/hour/season/day type
     solar.py           # solar error slices + physics/irradiance feature A/B commands
@@ -139,7 +139,7 @@ docs/
 - **Serve known-ahead inputs the way their history was stored.** The NTC history is week-ahead, so the
   forecast horizon carries the last week-ahead value forward (`sources.ntc.blend_week_over_month`);
   month-ahead fills only where no week-ahead exists. Do not reintroduce a month-ahead far horizon:
-  its levels differ (DK1 500 vs 1,875 MW), and that mismatch caused a ~40 EUR/MWh shift in the former tree price model. D+1 backtests cannot catch such far-horizon mismatches, so check any new known-ahead input's
+  its levels differ (DK1 500 vs 1,875 MW), so switching between them introduces a train/serve level mismatch. D+1 backtests cannot catch such far-horizon mismatches, so check any new known-ahead input's
   horizon values against its history. `ntc_imp_dk1` can act as a period marker as well as a physical driver; its neural effect is nonlinear,
   and a change in its published level remains a known risk.
 - **The actual-or-forecast coalesce** (`features.fundamentals`) and **sub-models-before-price ordering**
@@ -163,22 +163,21 @@ docs/
   reproduces the price model's serve-time lag handling: it trains with the `train_nan` gap
   (`model.apply_train_nan_lag_mask`) and nulls `price_lag_168h` on far-horizon test rows that would not
   have it at serve (`model.apply_serve_unavailable_lag_mask`). Without this the backtest feeds the far
-  horizon a lag no live forecast has and flatters its worth — the leak that hid the two-lag bug.
+  horizon a lag no live forecast has and overstates its predictive value.
 - **Fundamentals fit exactly `n_estimators`; price fits exactly `epochs`.** Price is always neural,
   selected by `ModelSpec.backend`, never by CLI flags or artifact fallback. Every fitting path uses
   `model.make_estimator` and `seeded_params` (NN `seed`, tree `random_state`). Neural preprocessing
   fits on train rows after lag masking; negative prices remain possible and outputs are never
   temporally smoothed. `price.npz` is required; `price.json` cannot satisfy price loading.
   Quarter-hour price uses regime-gated quarter/hour interactions and price MAE plus supervised
-  within-hour ramp MAE (adopted weight 0.25; native price-row weight 1). Every fitting path must call
+  within-hour ramp MAE, with weights from `config/hyperparams.json`. Every fitting path must call
   `model.fit_estimator` with aligned delivery timestamps: only genuine adjacent native quarters inside
   one hour supply ramp targets, never gaps, legacy hourly prices or hour boundaries. Timestamps are
-  metadata, not model inputs. Price sidecars require feature version 2; older quarter-hour snapshots
-  must be retrained too.
+  metadata, not model inputs. Price sidecars require feature version 2.
   `model._fit` does not early-stop; its
   chronological validation slice only feeds logged metrics. Every walk-forward tool fits the configured
-  epoch count or tree count unchanged, so reintroducing early stopping in training would ship models no benchmark
-  has scored (it once cut price to 322 of 850 trees and worsened frozen-cutoff solar MAE by 224 MW).
+  epoch count or tree count. Production fitting must use that same budget for the benchmark to describe
+  the deployed model.
 - **Selection uses development days; the holdout only reports.** `config/backtest_cutoffs.yaml`
   has exactly two lists: `development` (39 native-price-era dates; every choice: tuning, aggregation, ablation, anchors,
   solar tools, and the eval/oracle adoption gate) and `holdout` (18 dates; only
@@ -193,8 +192,8 @@ docs/
   better. Keep that safeguard and its `"incumbent"` tuning-report entry when changing the search flow.
   All four models use the same 39 frozen development days in the native-price era, including the
   early October 2025 transition. There is no implicit 90-day native-history filter. Training still
-  retains 2023-onward history. Existing 22-day reports are prior evidence, not results for the new
-  39-day calendar; do not relabel old scores without rerunning them.
+  uses 2023-onward history. Reports must state their scored dates and seeds; do not relabel scores
+  from a different calendar or fitted configuration.
 - **The adopted wind anchors are spatially selected, not the plain correlation top 20.**
   `config/weather_points.json` contains 20 German wind points with roughly 135 km minimum separation.
   Running `eex points rank --target wind` directly would replace them with the clustered correlation
@@ -228,9 +227,9 @@ docs/
 
 PyTorch is required. Price configuration lives in the `price` entry of `config/hyperparams.json`;
 tree-only parameters must be rejected for price. `eex model tune --target price` searches NN parameters
-and retains the incumbent unless a trial wins. The historical `price-models` command is retired.
+and retains the incumbent unless a trial wins.
 `eex analyze eval --oracle` writes matched eval/oracle reports from one fitted chain per fold. Price
-attribution is integrated gradients (`ig_price.png`); fundamentals retain `shap_<model>.png`.
+attribution is integrated gradients (`ig_price.png`); fundamental TreeSHAP uses `shap_<model>.png`.
 
 ```bash
 pip install -e ".[dev]"          # install package + dev tools
@@ -263,6 +262,9 @@ Documentation is part of the behavior being changed. Keep these sources aligned 
 - `docs/model-development.md` owns current benchmarks, experiment findings, decisions, priorities, and
   explicitly deferred work.
 - `AGENTS.md` owns code orientation, invariants, test expectations, and this documentation map.
+- Current-facing documentation describes the system in the present tense. Keep migration
+  instructions, superseded benchmarks and dated implementation narratives under `docs/history/`
+  and `data/history/`; do not promote them in the README or current usage guides.
 
 When CLI syntax, setup order, output columns/files, source behavior, feature semantics, adopted
 configuration, or evaluation methodology changes, update every affected document before finishing.
