@@ -58,3 +58,29 @@ def test_refresh_recent_refetches_a_rolling_window(
     assert result["entsoe"]["prices"] == 1
     assert result["weather"]["ws_de01"] == 4
     assert "nuclear" not in result and "ntc" not in result
+
+
+def test_weather_backfill_paces_every_point_through_one_limiter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A shared limiter is what keeps a multi-year first backfill under the minutely budget."""
+    from eex_forecast.weather.ratelimit import RateLimiter
+
+    limiters: list[object] = []
+    points = [
+        SimpleNamespace(lat=52.0, lon=9.0, variable="temperature_2m", column="t_de01"),
+        SimpleNamespace(lat=53.0, lon=10.0, variable="temperature_2m", column="t_de02"),
+    ]
+
+    def fake_fetch_history(*args: object, **kwargs: object) -> pd.DataFrame:
+        limiters.append(kwargs["limiter"])
+        return pd.DataFrame()
+
+    monkeypatch.setattr(backfill_ops, "load_points_config", lambda: {"temp": points})
+    monkeypatch.setattr(backfill_ops, "fetch_history", fake_fetch_history)
+
+    backfill_ops.backfill_weather(tmp_path / "weather.sqlite", start="2023-01-01", end="2026-10-26")
+
+    assert len(limiters) == 2
+    assert isinstance(limiters[0], RateLimiter)
+    assert limiters[0] is limiters[1]

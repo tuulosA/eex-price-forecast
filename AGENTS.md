@@ -39,7 +39,8 @@ src/eex_forecast/
   weather/
     geometry.py        # download land, land+EEZ outline, and bidding-zone polygons (GISCO / Marine Regions / TSOs)
     grid.py            # bidding-zone candidate grids, land/sea labelled (pure-Python point-in-ring; no shapely)
-    openmeteo.py       # Open-Meteo client (archive history + forecast)
+    openmeteo.py       # Open-Meteo client (archive history + forecast); history request cost
+    ratelimit.py       # weighted minutely limiter shared by weather backfill and ensemble
     point_search.py    # rank candidates by best lagged Pearson vs a target series; points config I/O
   analysis/            # offline `eex analyze ...` implementations; depends on core, never vice versa
     correlation.py     # per-model correlations on each model's own features (+ CSV)
@@ -57,7 +58,7 @@ src/eex_forecast/
     breakdown.py       # systematic-error breakdown of an eval: bias by regime/hour/season/day type
     solar.py           # solar error slices + physics/irradiance feature A/B commands
   ensemble/            # optional weather-ensemble product; depends on core, never vice versa
-    client.py          # Open-Meteo Ensemble API (ecmwf_ifs025, 51 members) + weighted rate limiter
+    client.py          # Open-Meteo Ensemble API (ecmwf_ifs025, 51 members), paced requests
     propagate.py       # run the trained chain once per member; clip to member coverage
     store.py           # two SQLite files: permanent per-member forecasts, prunable raw weather
     summary.py         # mean + p10/p25/p50/p75/p90 across members

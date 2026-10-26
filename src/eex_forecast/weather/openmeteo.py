@@ -26,6 +26,7 @@ import pandas as pd
 import requests
 
 from eex_forecast.config import HORIZON_DAYS, get_settings
+from eex_forecast.weather.ratelimit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,21 @@ _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _RETRY_ATTEMPTS = 4
 _RETRY_BACKOFF_S = 2
 _TIMEOUT_S = 60
+# Open-Meteo's free-tier throttle is per minute, so a 429 cannot clear in a few seconds: a short
+# exponential backoff spends every attempt inside the same blocked minute and then fails the whole run
+# (which is how a first full weather backfill on a new machine died after ~50 points). A rate-limited
+# request therefore always waits at least a full window before retrying; other retryable statuses keep
+# the quick backoff.
+_RATE_LIMITED = 429
+_RATE_LIMIT_WAIT_S = 65.0
+
+# Open-Meteo weights a request by the data it returns: one call per ten variables per fourteen days,
+# fractionally, and never less than one call. This matches the observed failure of an unpaced
+# 2023-onward backfill to within a request or two - the weight crossed ~600 in each calendar minute
+# just where its 429s struck - and is consistent with the measured ensemble cost once its 51 members
+# are counted as series. It is an estimate; the limiter's 80% budget absorbs small errors.
+_VARIABLES_PER_CALL = 10
+_DAYS_PER_CALL = 14
 
 
 def _prepare_request(url: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -82,10 +98,10 @@ def get_json(
     """Public alias of the retrying, key-aware GET used by every Open-Meteo endpoint.
 
     The ensemble client (:mod:`eex_forecast.ensemble.client`) reuses this so retry/backoff and
-    customer-endpoint routing are defined once rather than reimplemented per endpoint. It passes a longer
-    ``backoff_s`` because Open-Meteo's ensemble throttle is a *minutely* budget: its 429 says "try again
-    in one minute", so the default few-second backoff would exhaust its attempts still inside the same
-    blocked minute.
+    customer-endpoint routing are defined once rather than reimplemented per endpoint. A 429 always
+    waits at least :data:`_RATE_LIMIT_WAIT_S` whatever ``backoff_s`` says, because the throttle is a
+    *minutely* budget; the ensemble also passes a longer ``backoff_s`` so its server errors back off in
+    minutes too.
     """
     return _get_json(url, params, attempts=attempts, backoff_s=backoff_s)
 
@@ -108,7 +124,17 @@ def _get_json(
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else None
             if status in _RETRYABLE_STATUS and attempt < attempts - 1:
-                time.sleep(backoff_s * 2**attempt)
+                delay = backoff_s * 2**attempt
+                if status == _RATE_LIMITED:
+                    delay = max(delay, _RATE_LIMIT_WAIT_S)
+                    # Announce before sleeping so a minute of silence does not look like a hang.
+                    logger.warning(
+                        "Open-Meteo rate limit (HTTP 429): waiting %.0fs before retry %d/%d",
+                        delay,
+                        attempt + 1,
+                        attempts - 1,
+                    )
+                time.sleep(delay)
                 last_exc = exc
                 continue
             raise
@@ -138,6 +164,20 @@ def _as_date(value: str | date | datetime) -> str:
     return pd.Timestamp(value).strftime("%Y-%m-%d")
 
 
+def history_request_cost(
+    variables: Sequence[str], *, start: str | date | datetime, end: str | date | datetime
+) -> float:
+    """The weighted free-tier cost of one :func:`fetch_history` request over ``[start, end]``.
+
+    ``variables / 10 * days / 14`` with both dates inclusive, floored at one call. A four-year solar
+    request (six variables) costs about sixty, so a full multi-year backfill is several minutes of the
+    600-per-minute budget and has to be paced; a 14-day ``eex update`` request costs the one-call floor.
+    """
+    days = (pd.Timestamp(end).normalize() - pd.Timestamp(start).normalize()).days + 1
+    weight = max(len(variables), 1) / _VARIABLES_PER_CALL * max(days, 1) / _DAYS_PER_CALL
+    return max(weight, 1.0)
+
+
 def fetch_history(
     lat: float,
     lon: float,
@@ -145,6 +185,7 @@ def fetch_history(
     start: str | date | datetime,
     end: str | date | datetime,
     variables: Sequence[str],
+    limiter: RateLimiter | None = None,
 ) -> pd.DataFrame:
     """Hourly weather **history** at a coordinate over ``[start, end]`` (inclusive, UTC).
 
@@ -152,7 +193,12 @@ def fetch_history(
     forecast uses - so the sub-models train on the exact weather distribution they are served at forecast
     time. (The ERA5 *reanalysis* archive would be a different, smoother "truth" field the models never see
     live - a train/serve mismatch that badly hurt the wind forecast.)
+
+    ``limiter`` paces a multi-point backfill against the minutely budget, charging
+    :func:`history_request_cost` before the request is sent; a single ad-hoc call needs none.
     """
+    if limiter is not None:
+        limiter.acquire(history_request_cost(variables, start=start, end=end))
     payload = _get_json(
         HISTORICAL_FORECAST_URL,
         {

@@ -136,6 +136,16 @@ eex backfill weather --start 2023-01-01 --role neighbour_wind
 Upserts write only non-null values, allowing different sources and weather points to compose into the
 same quarter-hour rows.
 
+**Weather backfill is paced against Open-Meteo's free tier.** The free tier allows 600 weighted calls
+per minute, and a history request counts as one call per ten variables per fourteen days, never less
+than one. A 2023-onward request for a six-variable solar point is therefore about 60 calls, and the
+full configured backfill is about 2,800. Unpaced, it exhausts the minutely budget after a few dozen
+points. `eex backfill weather` paces every request through the same rolling-window limiter as the
+weather ensemble, spending 80% of the budget evenly, so a full backfill takes about six minutes. The
+command logs its estimated cost and duration up front. Any HTTP 429 that still occurs waits at least a
+full minute before retrying, because a few-second backoff would retry inside the same blocked minute.
+A full backfill fits inside the 5,000-per-hour cap; running two within one hour does not.
+
 ## Weather points and variables
 
 Candidates come from one grid per bidding zone (`eex points grid`, `weather/grid.py`): a ~50 km
@@ -272,7 +282,8 @@ per-member outputs are archived locally, since that is the only way such a histo
 
 **Rate limiting is mandatory, not defensive.** Each request returns one series per variable *per
 member*, so 20 consecutive six-variable requests exhaust the free tier's 600-per-minute budget. The
-client paces requests through a rolling-window limiter and backs off in minutes rather than seconds,
+client paces requests through the rolling-window limiter shared with the weather backfill
+(`weather/ratelimit.py`) and backs off in minutes rather than seconds,
 because the throttle is minutely. An unpaced first implementation failed with HTTP 429 partway through
 the points.
 

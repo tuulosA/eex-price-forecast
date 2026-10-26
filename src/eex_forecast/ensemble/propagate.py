@@ -29,7 +29,6 @@ from eex_forecast.ensemble.client import (
     ENSEMBLE_MEMBERS,
     ENSEMBLE_MODEL,
     MEMBER_COLUMN,
-    RateLimiter,
     fetch_ensemble_forecast,
     request_cost,
 )
@@ -44,6 +43,7 @@ from eex_forecast.resolution import (
     quarter_grid,
 )
 from eex_forecast.weather.point_search import load_points_config, point_columns
+from eex_forecast.weather.ratelimit import RateLimiter
 
 logger = logging.getLogger(__name__)
 

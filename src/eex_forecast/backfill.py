@@ -18,8 +18,9 @@ from eex_forecast.config import DEFAULT_REFRESH_DAYS
 from eex_forecast.db import connect, upsert
 from eex_forecast.db.schema import create_schema
 from eex_forecast.sources import entsoe, ntc, nuclear
-from eex_forecast.weather.openmeteo import fetch_history
+from eex_forecast.weather.openmeteo import fetch_history, history_request_cost
 from eex_forecast.weather.point_search import load_points_config, point_columns
+from eex_forecast.weather.ratelimit import MINUTE_BUDGET, RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,12 @@ def backfill_weather(
     Requires that ``eex points rank`` has chosen points (``config/weather_points.json``). ``roles``
     restricts the fetch to the named point-search roles (e.g. ``["neighbour_wind"]`` to add just the
     cross-border points without re-pulling every German point); ``None`` fetches all configured roles.
+
+    Every request is paced through one shared :class:`RateLimiter`. A multi-year history request is
+    dozens of weighted Open-Meteo calls, so an unpaced first backfill exhausts the free tier's minutely
+    budget after a few dozen points and fails with HTTP 429. Pacing spends the budget evenly instead,
+    which makes a 2023-onward backfill take a few minutes rather than fail part way. The short
+    ``eex update`` window costs one call per point, so pacing adds nothing noticeable there.
     """
     end = end or _weather_end()
     config = load_points_config()
@@ -132,13 +139,29 @@ def backfill_weather(
     if not plan:
         raise RuntimeError("No weather points configured - run `eex points rank` first.")
 
+    limiter = RateLimiter()
+    budget = sum(
+        history_request_cost(list(point_columns(role, point)), start=start, end=end)
+        for role, point in plan
+    )
+    logger.info(
+        "Backfilling weather for %d points (~%.0f weighted API calls, ~%.0f min paced)",
+        len(plan),
+        budget,
+        budget / MINUTE_BUDGET,
+    )
     counts: dict[str, int] = {}
     with connect(db_path) as conn:
         create_schema(conn)
         for role, point in plan:
             columns = point_columns(role, point)  # Open-Meteo variable -> database column
             history = fetch_history(
-                point.lat, point.lon, start=start, end=end, variables=list(columns)
+                point.lat,
+                point.lon,
+                start=start,
+                end=end,
+                variables=list(columns),
+                limiter=limiter,
             )
             if history.empty:
                 continue
